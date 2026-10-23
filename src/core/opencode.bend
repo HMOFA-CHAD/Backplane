@@ -17,8 +17,35 @@ import ./acp.bend as AC
 #   tool_call_update, named by what it does (the command, the file, the
 #   pattern, the URL);
 # - a failure says how to fix opencode (not Grok's sign-in).
+# - the thread's model is the session's own pick (session/set_config_option
+#   "model", 5 in a fresh session, 15 in a resumed one), sent before the
+#   prompt: opencode takes a session's pick over its agent's model and that
+#   over the config's "model" (OPENCODE_CONFIG_CONTENT), so an agent with a
+#   model of its own (a default agent's) never quietly runs instead; a
+#   model it refuses fails the turn. No model picked: opencode's own
+#   default (its default agent's model, else its config's).
 # Request ids: 1 initialize, 2 session/new or session/resume, 7
-# session/new after a lost session, 3 the prompt.
+# session/new after a lost session, 5/15 the model, 3 the prompt.
+
+type OcpTurn is Data:
+  OcpTurn{acp: AC.AcpTurn, model: String}
+
+def Ocp.acp(t: OcpTurn) -> AC.AcpTurn:
+  match t:
+    case OcpTurn{a, _}:
+      a
+
+def Ocp.model(t: OcpTurn) -> String:
+  match t:
+    case OcpTurn{_, m}:
+      m
+
+# whether the thread picked a model ("" and "default" are opencode's own)
+def Ocp.picked(+m: String) -> Bool:
+  Bool.not(Bool.or(String.is_empty(m), String.eq(m, "default")))
+
+def Ocp.set_model(+id: Nat, +sid: String, +model: String) -> String:
+  AC.Acp.rpc(id, "session/set_config_option", J.Json.obj([J.KV{"sessionId", J.Str{sid}}, J.KV{"configId", J.Str{"model"}}, J.KV{"value", J.Str{model}}]))
 
 def Ocp.new.rpc(+id: Nat, +cwd: String, +mcp: String) -> String:
   AC.Acp.rpc(id, "session/new", J.Json.obj([J.KV{"cwd", J.Str{cwd}}, J.KV{"mcpServers", AC.Acp.mcp(mcp)}]))
@@ -102,8 +129,24 @@ def Ocp.fail(a: AC.Acp, +msg: String) -> AC.AcpOut:
 
 # the session is open: note it, then the prompt (Backplane's instructions
 # first in a fresh one)
-def Ocp.opened(fresh: Bool, a: AC.Acp, +t: AC.AcpTurn, +sid: String) -> AC.AcpOut:
-  AC.AcpOut{Ocp.with_sid(a, sid), [AC.Acp.say.k(fresh, t, sid)], [AC.Acp.event("thread.started", [J.KV{"thread_id", J.Str{sid}}])], Nil{}}
+# the model first when the thread picked one, else the prompt
+def Ocp.next(+fresh: Bool, +t: OcpTurn, +sid: String) -> String:
+  Bool.pick(String, Ocp.picked(Ocp.model(t)), Ocp.set_model(Bool.pick(Nat, fresh, 5n, 15n), sid, Ocp.model(t)), AC.Acp.say.k(fresh, Ocp.acp(t), sid))
+
+def Ocp.opened(+fresh: Bool, a: AC.Acp, +t: OcpTurn, +sid: String) -> AC.AcpOut:
+  AC.AcpOut{Ocp.with_sid(a, sid), [Ocp.next(fresh, t, sid)], [AC.Acp.event("thread.started", [J.KV{"thread_id", J.Str{sid}}])], Nil{}}
+
+def Ocp.sid(a: AC.Acp) -> String:
+  match a:
+    case AC.Acp{s, _, _, _}:
+      s
+
+# the model taken: the prompt (Backplane's instructions first when fresh)
+def Ocp.say(fresh: Bool, +a: AC.Acp, +t: OcpTurn) -> AC.AcpOut:
+  AC.AcpOut{a, [AC.Acp.say.k(fresh, Ocp.acp(t), Ocp.sid(a))], Nil{}, Nil{}}
+
+def Ocp.unmodel(+t: OcpTurn, +msg: String) -> String:
+  "opencode refused the model " ++ Ocp.model(t) ++ ": " ++ msg
 
 # what the person is told once a lost session was replaced: the agent
 # starts without the earlier conversation (Backplane's history is kept)
@@ -119,30 +162,38 @@ def Ocp.renewed.k(o: AC.AcpOut, +old: String) -> AC.AcpOut:
     case AC.AcpOut{a, send, emit, asks}:
       AC.AcpOut{a, send, List.append(&2, String, emit, [Ocp.notice(Ocp.renewed.msg(old))]), asks}
 
-def Ocp.renewed(a: AC.Acp, +t: AC.AcpTurn, +o: J.Json) -> AC.AcpOut:
-  Ocp.renewed.k(Ocp.opened(True{}, a, t, J.Json.get_str(J.Json.get_obj(o, "result"), "sessionId", "")), AC.Acp.session(t))
+def Ocp.renewed(a: AC.Acp, +t: OcpTurn, +o: J.Json) -> AC.AcpOut:
+  Ocp.renewed.k(Ocp.opened(True{}, a, t, J.Json.get_str(J.Json.get_obj(o, "result"), "sessionId", "")), AC.Acp.session(Ocp.acp(t)))
 
 # session/new answers its id; session/resume none (the thread's own)
-def Ocp.answered(a: AC.Acp, +t: AC.AcpTurn, +o: J.Json) -> AC.AcpOut:
-  Ocp.opened(String.is_empty(AC.Acp.session(t)), a, t, J.Json.get_str(J.Json.get_obj(o, "result"), "sessionId", AC.Acp.session(t)))
+def Ocp.answered(a: AC.Acp, +t: OcpTurn, +o: J.Json) -> AC.AcpOut:
+  Ocp.opened(String.is_empty(AC.Acp.session(Ocp.acp(t))), a, t, J.Json.get_str(J.Json.get_obj(o, "result"), "sessionId", AC.Acp.session(Ocp.acp(t))))
 
 # a resume that failed because the session is gone opens a fresh one; any
 # other failure ends the turn
-def Ocp.reopen(renew: Bool, a: AC.Acp, +t: AC.AcpTurn, +o: J.Json) -> AC.AcpOut:
+def Ocp.reopen(renew: Bool, a: AC.Acp, +t: OcpTurn, +o: J.Json) -> AC.AcpOut:
   match renew:
     case True{}:
-      AC.AcpOut{a, [Ocp.renew(t)], Nil{}, Nil{}}
+      AC.AcpOut{a, [Ocp.renew(Ocp.acp(t))], Nil{}, Nil{}}
     case False{}:
       Ocp.fail(a, Ocp.error(o))
 
-def Ocp.reply.k(i: Nat, ok: Bool, a: AC.Acp, +t: AC.AcpTurn, +o: J.Json) -> AC.AcpOut:
+def Ocp.reply.k(i: Nat, ok: Bool, a: AC.Acp, +t: OcpTurn, +o: J.Json) -> AC.AcpOut:
   match i ok:
     case 1n True{}:
-      AC.AcpOut{a, [Ocp.open(t)], Nil{}, Nil{}}
+      AC.AcpOut{a, [Ocp.open(Ocp.acp(t))], Nil{}, Nil{}}
     case 2n True{}:
       Ocp.answered(a, t, o)
     case 2n False{}:
-      Ocp.reopen(Bool.and(Bool.not(String.is_empty(AC.Acp.session(t))), Ocp.lost(Ocp.error(o))), a, t, o)
+      Ocp.reopen(Bool.and(Bool.not(String.is_empty(AC.Acp.session(Ocp.acp(t)))), Ocp.lost(Ocp.error(o))), a, t, o)
+    case 5n True{}:
+      Ocp.say(True{}, a, t)
+    case 15n True{}:
+      Ocp.say(False{}, a, t)
+    case 5n False{}:
+      Ocp.fail(a, Ocp.unmodel(t, Ocp.error(o)))
+    case 15n False{}:
+      Ocp.fail(a, Ocp.unmodel(t, Ocp.error(o)))
     case 7n True{}:
       Ocp.renewed(a, t, o)
     case 3n True{}:
@@ -237,14 +288,14 @@ def Ocp.req.k(upd: Bool, +a: AC.Acp, +t: AC.AcpTurn, +o: J.Json) -> AC.AcpOut:
     case False{}:
       AC.Acp.line.k(True{}, a, t, o)
 
-def Ocp.line.k(req: Bool, +a: AC.Acp, +t: AC.AcpTurn, +o: J.Json) -> AC.AcpOut:
+def Ocp.line.k(req: Bool, +a: AC.Acp, +t: OcpTurn, +o: J.Json) -> AC.AcpOut:
   match req:
     case True{}:
-      Ocp.req.k(String.eq(J.Json.get_str(o, "method", ""), "session/update"), a, t, o)
+      Ocp.req.k(String.eq(J.Json.get_str(o, "method", ""), "session/update"), a, Ocp.acp(t), o)
     case False{}:
       Ocp.reply.k(Ocp.id(o), String.eq(J.Json.show(J.Json.get_obj(o, "error")), "null"), a, t, o)
 
-def Ocp.line.parsed(m: Maybe<&2, J.Json>, +a: AC.Acp, +t: AC.AcpTurn) -> AC.AcpOut:
+def Ocp.line.parsed(m: Maybe<&2, J.Json>, +a: AC.Acp, +t: OcpTurn) -> AC.AcpOut:
   match m:
     case Some{+o}:
       Ocp.line.k(Bool.not(String.is_empty(J.Json.get_str(o, "method", ""))), a, t, o)
@@ -252,7 +303,7 @@ def Ocp.line.parsed(m: Maybe<&2, J.Json>, +a: AC.Acp, +t: AC.AcpTurn) -> AC.AcpO
       AC.AcpOut{a, Nil{}, Nil{}, Nil{}}
 
 # one line from opencode
-def Ocp.line(+a: AC.Acp, +t: AC.AcpTurn, line: String) -> AC.AcpOut:
+def Ocp.line(+a: AC.Acp, +t: OcpTurn, line: String) -> AC.AcpOut:
   Ocp.line.parsed(J.Json.parse(line), a, t)
 
 # Models (Settings and the picker)

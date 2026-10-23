@@ -8,11 +8,16 @@ import ../src/core/json.bend as J
 # lost session opened afresh, tool calls named once their input is known,
 # opencode's own failure hints. Lines shaped as opencode 2.1.3 sends them.
 
-def turn(+sid: String) -> A.AcpTurn:
-  A.AcpTurn{"/tmp/p", "http://127.0.0.1:1/mcp/t?token=x", "RULES", "hello", sid, False{}}
+# a turn with no model picked (opencode's own default)
+def turn(+sid: String) -> O.OcpTurn:
+  O.OcpTurn{A.AcpTurn{"/tmp/p", "http://127.0.0.1:1/mcp/t?token=x", "RULES", "hello", sid, False{}}, ""}
 
-def turn.ask(+sid: String) -> A.AcpTurn:
-  A.AcpTurn{"/tmp/p", "http://127.0.0.1:1/mcp/t?token=x", "RULES", "hello", sid, True{}}
+def turn.ask(+sid: String) -> O.OcpTurn:
+  O.OcpTurn{A.AcpTurn{"/tmp/p", "http://127.0.0.1:1/mcp/t?token=x", "RULES", "hello", sid, True{}}, ""}
+
+# a turn whose thread picked a model
+def turn.m(+sid: String, +m: String) -> O.OcpTurn:
+  O.OcpTurn{A.AcpTurn{"/tmp/p", "http://127.0.0.1:1/mcp/t?token=x", "RULES", "hello", sid, False{}}, m}
 
 def outs(o: A.AcpOut) -> String:
   match o:
@@ -70,6 +75,14 @@ def main() -> IO(Unit):
   +ocwd = O.Ocp.line(a0, old, "{\"jsonrpc\":\"2.0\",\"id\":2,\"error\":{\"code\":-32602,\"message\":\"session S0 does not belong to cwd: /tmp/p\"}}")
   +onew = O.Ocp.line(a0, old, "{\"jsonrpc\":\"2.0\",\"id\":7,\"result\":{\"sessionId\":\"S2\"}}")
   +onewfail = O.Ocp.line(a0, old, "{\"jsonrpc\":\"2.0\",\"id\":7,\"error\":{\"code\":-32000,\"message\":\"No models are available\"}}")
+  +ds = {"opencode/deepseek-v4.1-flash" : String}
+  +om1 = O.Ocp.line(a0, turn.m("S0", ds), "{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"configOptions\":[]}}")
+  +om2 = O.Ocp.line(st(om1), turn.m("S0", ds), "{\"jsonrpc\":\"2.0\",\"id\":15,\"result\":{\"configOptions\":[]}}")
+  +omf1 = O.Ocp.line(a0, turn.m("", ds), "{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"sessionId\":\"S5\"}}")
+  +omf2 = O.Ocp.line(st(omf1), turn.m("", ds), "{\"jsonrpc\":\"2.0\",\"id\":5,\"result\":{\"configOptions\":[]}}")
+  +omx = O.Ocp.line(st(om1), turn.m("S0", "opencode/nope"), "{\"jsonrpc\":\"2.0\",\"id\":15,\"error\":{\"code\":-32602,\"message\":\"Invalid params: model not found: opencode/nope\"}}")
+  +omd = O.Ocp.line(a0, turn.m("S0", "default"), "{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"configOptions\":[]}}")
+  +omr = O.Ocp.line(a0, turn.m("S0", ds), "{\"jsonrpc\":\"2.0\",\"id\":7,\"result\":{\"sessionId\":\"S6\"}}")
   +oboom = O.Ocp.line(a0, old, "{\"jsonrpc\":\"2.0\",\"id\":2,\"error\":{\"code\":-32603,\"message\":\"boom\"}}")
   +onf = O.Ocp.line(a0, turn(""), "{\"jsonrpc\":\"2.0\",\"id\":2,\"error\":{\"code\":-32602,\"message\":\"session not found: S0\"}}")
   +oauth = O.Ocp.line(a0, old, "{\"jsonrpc\":\"2.0\",\"id\":3,\"error\":{\"code\":-32000,\"message\":\"Authentication required\"}}")
@@ -122,5 +135,18 @@ def main() -> IO(Unit):
     C.Check.str("oc before open ignored", outs(oearly), "")
     C.Check.str("oc permission parks", method(asks(operm)), "session/request_permission")
     C.Check.str("oc permission detail", A.Acp.detail(J.Json.get_obj(Maybe.default(&2, J.Json, J.Json.parse(asks(operm)), J.Null{}), "params")), "/tmp/p/src/a.bend")
+    C.Check.str("oc model resumed set first", sends(om1), "{\"jsonrpc\":\"2.0\",\"id\":15,\"method\":\"session/set_config_option\",\"params\":{\"sessionId\":\"S0\",\"configId\":\"model\",\"value\":\"opencode/deepseek-v4.1-flash\"}}")
+    C.Check.str("oc model resumed started", emits(om1), "{\"type\":\"thread.started\",\"thread_id\":\"S0\"}")
+    C.Check.str("oc model resumed then prompt", method(sends(om2)), "session/prompt")
+    C.Check.str("oc model resumed no instructions", has(sends(om2), "<backplane_instructions>"), "no")
+    C.Check.str("oc model fresh set id", rid(sends(omf1)), "5")
+    C.Check.str("oc model fresh then prompt", method(sends(omf2)), "session/prompt")
+    C.Check.str("oc model fresh instructions", has(sends(omf2), "<backplane_instructions>\\nRULES"), "yes")
+    C.Check.str("oc model fresh session", has(sends(omf2), "\"sessionId\":\"S5\""), "yes")
+    C.Check.str("oc model refused fails", emits(omx), "{\"type\":\"turn.failed\",\"message\":\"opencode refused the model opencode/nope: Invalid params: model not found: opencode/nope (pick another opencode model in the composer)\"}")
+    C.Check.str("oc model refused ends", done(st(omx)), "done")
+    C.Check.str("oc model default prompts", method(sends(omd)), "session/prompt")
+    C.Check.str("oc model renewed set fresh", rid(sends(omr)), "5")
+    C.Check.str("oc model renewed notice", has(emits(omr), "\"type\":\"notice\""), "yes")
     C.Check.str("oc rel", O.Ocp.rel("/tmp/p", "/tmp/p/x"), "x")
     C.Check.str("oc rel outside", O.Ocp.rel("/tmp/p", "/tmp/pq/x"), "/tmp/pq/x")
