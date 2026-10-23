@@ -17,10 +17,12 @@ Object.assign(process.env,env);
 const shellQuote=s=>"'"+s.replaceAll("'", "'\"'\"'")+"'";
 const wrapper=home+'/fixture-service';fs.writeFileSync(wrapper,'#!/bin/sh\nexec '+shellQuote(stage+'/payload/backplane-serve')+' "$@" >>'+shellQuote(out+'/service-stdio.log')+' 2>&1\n',{mode:0o755});
 const service=new Service({home,binary:wrapper,web:stage+'/payload/web',expectedVersion:info.version});
+const resume=process.env.SHEET_NAV_SUFFIX==='1';const retained=resume?JSON.parse(fs.readFileSync(process.env.SHEET_NAV_PREFIX_RECEIPT)):null;
+if(retained){assert.equal(retained.source,info.commit);assert(retained.checks.includes('returning to a manually panned sheet preserves its camera'));}
 let app,page,step='bootstrap';const checks=[],observations={};
-const result=state=>({state,source:info.commit,stage,step,checks,observations,home,liveProfileTouched:false,phoneRuntime:'not run'});
+const result=state=>({state,source:info.commit,stage,step,checks,observations,home,liveProfileTouched:false,phoneRuntime:'not run',retainedPrefix:retained?{receipt:process.env.SHEET_NAV_PREFIX_RECEIPT,checks:retained.checks}:null});
 async function ready(id='sheet-a'){await page.waitForFunction(id=>document.documentElement.dataset.backplaneRemoteReady==='true'&&document.querySelector('main')?.dataset.thread===id&&document.querySelector('main')?.getAttribute('aria-busy')!=='true',id);}
-async function current(value){await page.waitForFunction(value=>document.querySelector('.sch-tree .sch-name[aria-current="page"]')?.dataset.value===value,value);await ready();}
+async function current(value,id='sheet-a'){await page.waitForFunction(value=>document.querySelector('.sch-tree .sch-name[aria-current="page"]')?.dataset.value===value,value);await ready(id);}
 async function scene(){await page.waitForFunction(()=>{const c=document.querySelector('#plot'),s=window.__sheetScene;return c&&s?.key===c.dataset.key&&s.strokes>0&&c.clientWidth>100&&c.clientHeight>80;});}
 async function action(name){await page.locator(`[data-on-click="${name}"]`).click();await ready();}
 async function matrix(){return page.evaluate(()=>({...window.__sheetScene}));}
@@ -41,17 +43,24 @@ async function geometry(){return page.evaluate(()=>{const box=el=>{const r=el.ge
  const rows=await page.locator('.sch-tree .sch-name').evaluateAll(es=>es.map(e=>({value:e.dataset.value,text:e.textContent})));
  assert.equal(rows.length,5);assert.equal(new Set(rows.map(r=>r.value.split('\t')[2])).size,5);
  const top=rows[0],children=rows.slice(1);observations.rows=rows;assert.equal(await page.locator('[data-on-click="sch-up"]').isDisabled(),true);assert.equal(await page.locator('[data-on-click="sch-root"]').isDisabled(),true);
+ let hit;
+ if(!resume){
  checks.push('actual copied demo renders root and four unique repeated-file instances with disabled root boundaries');
  step='repeated-branches';for(const child of children){await page.locator('.sch-tree .sch-name').filter({hasText:child.text}).click();await current(child.value);await scene();assert.equal(await page.locator('.sch-tree .sch-name[aria-current="page"]').count(),1);assert((await page.locator('.sch-pos').innerText()).match(/Sheet [2-5] of 5/));}
  checks.push('each repeated child selects alone, renders real geometry and shows its KiCad page');
  step='up-history';const last=children.at(-1);await action('sch-up');await current(top.value);await action('sch-back');await current(last.value);await action('sch-fwd');await current(top.value);
  await page.locator('.sch-tree .sch-name').filter({hasText:children[0].text}).click();await current(children[0].value);await action('sch-root');await current(top.value);checks.push('Up/Top and Back/Forward move between exact instances');
- step='canvas-child';await scene();const hit=await page.evaluate(()=>{const c=document.querySelector('#plot'),r=c.getBoundingClientRect(),s=window.__sheetScene,f=c.dataset.sheets.split('\n')[0].split('\t'),n=f[3].split(/\s+/).map(Number);return{value:f.slice(0,3).join('\t'),x:r.x+s.ox+(n[0]+n[2])*500*s.scale,y:r.y+s.oy+(n[1]+n[3])*500*s.scale};});
+ step='canvas-child';await scene();hit=await page.evaluate(()=>{const c=document.querySelector('#plot'),r=c.getBoundingClientRect(),s=window.__sheetScene,f=c.dataset.sheets.split('\n')[0].split('\t'),n=f[3].split(/\s+/).map(Number);return{value:f.slice(0,3).join('\t'),x:r.x+s.ox+(n[0]+n[2])*500*s.scale,y:r.y+s.oy+(n[1]+n[3])*500*s.scale};});
  assert(Number.isFinite(hit.x)&&Number.isFinite(hit.y));await page.mouse.click(hit.x,hit.y);await current(hit.value);await scene();checks.push('trusted pointer click on the actual root sheet symbol enters its exact instance');
  step='pan-return';const before=await matrix(),c=await page.locator('#plot').boundingBox();await page.mouse.move(c.x+c.width/2,c.y+c.height/2);await page.mouse.down();await page.mouse.move(c.x+c.width/2+25,c.y+c.height/2+15,{steps:4});await page.mouse.up();
  await page.waitForFunction(old=>window.__sheetScene.ox!==old.ox||window.__sheetScene.oy!==old.oy,before);const moved=await matrix();
  await action('sch-up');await current(top.value);await action('sch-back');await current(hit.value);await scene();const returned=await matrix();for(const k of ['scale','ox','oy'])assert(Math.abs(returned[k]-moved[k])<0.01,`return camera ${k}`);checks.push('returning to a manually panned sheet preserves its camera');
- step='thread-isolation';await page.locator('.sidebar [data-on-click="select"][data-value="sheet-b"]').first().click();await ready('sheet-b');assert.equal(await page.locator('#viewer').count(),0);await page.locator('.sidebar [data-on-click="select"][data-value="sheet-a"]').first().click();await ready();await current(hit.value);checks.push('other thread stays closed and returning restores this instance');
+ }else{step='suffix-prerequisite';hit={value:children[0].value};await page.locator('.sch-tree .sch-name').filter({hasText:children[0].text}).click();await current(hit.value);await scene();}
+ step='thread-isolation';await page.locator('.sidebar [data-on-click="select"][data-value="sheet-b"]').first().click();await ready('sheet-b');
+ observations.freshSibling={viewerCount:await page.locator('#viewer').count(),hierarchyRows:await page.locator('.sch-tree .sch-name').count()};
+ await page.locator('[data-on-click="view-kind"][data-value="schematic"]').first().click();await page.locator('.sch-tree .sch-name').first().waitFor();await current(top.value,'sheet-b');
+ await page.locator('.sch-tree .sch-name').filter({hasText:children[1].text}).click();await current(children[1].value,'sheet-b');
+ await page.locator('.sidebar [data-on-click="select"][data-value="sheet-a"]').first().click();await ready();await current(hit.value);checks.push('two threads keep distinct selected instances when returning');
  step='keyboard-and-fold';await action('sch-root');await current(top.value);const fold=page.locator('.sch-tree .sch-fold').first();await fold.focus();await page.keyboard.press('Space');await page.waitForFunction(()=>document.querySelectorAll('.sch-tree .sch-name').length===1);assert(await fold.evaluate(el=>el===document.activeElement));await page.keyboard.press('Enter');await page.waitForFunction(()=>document.querySelectorAll('.sch-tree .sch-name').length===5);checks.push('Space/Enter fold and expand without losing focus or selection');
  observations.desktop=await geometry();await page.screenshot({path:out+'/desktop.png'});
  step='390-geometry';await page.setViewportSize({width:390,height:844});await page.emulateMedia({reducedMotion:'reduce'});await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));observations.mobile=await geometry();assert(observations.mobile.tree.height<=844*.28+2);assert(observations.mobile.documentWidth<=390);
