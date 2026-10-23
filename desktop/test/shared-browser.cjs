@@ -79,8 +79,12 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
    preferences:{sandbox:v.webContents.getLastWebPreferences().sandbox,nodeIntegration:v.webContents.getLastWebPreferences().nodeIntegration,contextIsolation:v.webContents.getLastWebPreferences().contextIsolation}})).filter(v=>v.url.startsWith(siteOrigin));
  },site.origin);
  const inspect=async id=>app.evaluate(({webContents},id)=>webContents.fromId(id).executeJavaScript(`JSON.stringify({...fixtureState,entry:document.querySelector('#entry').value,active:document.activeElement?.id,hasFocus:document.hasFocus(),profile:localStorage.fixtureProfile,tab:sessionStorage.fixtureTab})`).then(JSON.parse),id);
+ const geometry=async()=>({
+  native:await app.evaluate(({BrowserWindow})=>{const w=BrowserWindow.getAllWindows().find(w=>!w.isDestroyed());return{content:w.getContentBounds(),window:w.getBounds(),zoom:w.webContents.getZoomFactor(),focused:w.isFocused(),views:w.contentView.children.filter(v=>v.webContents).map(v=>({id:v.webContents.id,bounds:v.getBounds(),visible:v.getVisible()}))};}),
+  renderer:await page.evaluate(()=>{const node=document.querySelector('[data-desktop-browser-owner]'),r=node?.getBoundingClientRect();return{width:innerWidth,height:innerHeight,dpr:devicePixelRatio,surface:r?{x:r.x,y:r.y,width:r.width,height:r.height}:null};})
+ });
  const humanClick=async(id,selector)=>app.evaluate(async({webContents},{id,selector})=>{
-  const wc=webContents.fromId(id),point=await wc.executeJavaScript(`(()=>{const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()`);
+  const wc=webContents.fromId(id),point=await wc.executeJavaScript(`(()=>{const element=document.querySelector(${JSON.stringify(selector)}),r=element.getBoundingClientRect(),x=Math.round(r.x+r.width/2),y=Math.round(r.y+r.height/2);if(x<0||y<0||x>=innerWidth||y>=innerHeight||!element.contains(document.elementFromPoint(x,y)))throw Error('Fixture human target is outside visible guest viewport');return{x,y}})()`);
   wc.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...point});wc.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...point});
  },{id,selector});
  const refFor=(snapshot,role,name)=>{
@@ -104,6 +108,19 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
   }catch{wire.decodeErrors++;}};
   wireTap.on('Network.webSocketFrameSent',e=>record('sent',e));wireTap.on('Network.webSocketFrameReceived',e=>record('received',e));await wireTap.send('Network.enable');
   await page.waitForFunction(async()=>window.backplaneDesktop?.browser&&(await window.backplaneDesktop.browser.state()).phase==='ready');
+  // Playwright's renderer-only viewport can exceed the actual native window.
+  // Native guests are correctly clamped to that window; use real desktop
+  // geometry for this isolated fixture instead of an emulated 1440px page.
+  const windowGeometry={before:await geometry()};
+  const saveGeometry=()=>fs.writeFileSync(path.join(out,'native-window-geometry.json'),JSON.stringify(windowGeometry,null,2)+'\n');
+  saveGeometry();
+  const requested=page.viewportSize()||{width:1440,height:960};
+  await app.evaluate(({BrowserWindow},size)=>{const w=BrowserWindow.getAllWindows().find(w=>!w.isDestroyed());w.setContentSize(size.width,size.height);},requested);
+  await wireTap.send('Emulation.clearDeviceMetricsOverride');
+  windowGeometry.afterResize=await geometry();saveGeometry();
+  const content=await app.evaluate(({BrowserWindow})=>{const w=BrowserWindow.getAllWindows().find(w=>!w.isDestroyed());return{...w.getContentBounds(),zoom:w.webContents.getZoomFactor()};});
+  await page.waitForFunction(({width,height,zoom})=>Math.abs(innerWidth*zoom-width)<=2&&Math.abs(innerHeight*zoom-height)<=2,content,{timeout:4000});
+  windowGeometry.aligned=await geometry();saveGeometry();
   await select(threadId);
   await tool('preview_open',{url:site.origin+'/one'});
   await page.locator(`[data-bfield="brurl:${threadId}"]`).waitFor();
@@ -176,11 +193,12 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
   await app.evaluate(async({BrowserWindow},{id})=>new Promise((resolve,reject)=>{
    const start=Date.now();function observe(){
     const w=BrowserWindow.getAllWindows().find(w=>!w.isDestroyed()),views=w?.contentView.children||[];
-    if(views.some(v=>v.webContents?.id===id&&v.getVisible())&&!views.some(v=>v.getVisible()&&v.webContents?.getURL().endsWith('/browser-shield.html'))){resolve();return;}
+    if(views.some(v=>v.webContents?.id===id&&v.getVisible()&&v.getBounds().width>100&&v.getBounds().height>80)&&!views.some(v=>v.getVisible()&&v.webContents?.getURL().endsWith('/browser-shield.html'))){resolve();return;}
     if(Date.now()-start>=4000){reject(Error('Native human presentation did not become ready'));return;}setTimeout(observe,16);
    }observe();
   }),{id});
-  const humanInput={initial,beforeHuman};
+  windowGeometry.beforeHuman=await geometry();saveGeometry();
+  const humanInput={initial,beforeHuman,geometry:windowGeometry.beforeHuman};
   const saveHuman=()=>fs.writeFileSync(path.join(out,'human-input-observation.json'),JSON.stringify(humanInput,null,2)+'\n');
   // Native input is sent once. Main's sendInputEvent returning is not an
   // acknowledgement that Chromium's renderer has processed that input.
