@@ -33,7 +33,7 @@ def need(cs: List<&2, M.Change>) -> String:
 def states.go(rs: List<&2, P.PRow>) -> List<&2, String>:
   match rs:
     case Nil{}: Nil{}
-    case r <> t: (P.PRow.id(r) ++ "=" ++ P.PRow.state(r)) <> states.go(t)
+    case +r <> t: (P.PRow.id(r) ++ "=" ++ P.PRow.state(r)) <> states.go(t)
 
 def states(cs: List<&2, M.Change>) -> String:
   String.join(states.go(P.Plane.need(plane(cs))), ",")

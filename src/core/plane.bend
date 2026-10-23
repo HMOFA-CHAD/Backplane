@@ -1282,7 +1282,7 @@ def Plane.read(+st: M.State, +now: Nat, +pre: String, +name: String, +idle: Bool
 def Plane.need.states.go(rs: List<&2, PRow>) -> List<&2, String>:
   match rs:
     case Nil{}: Nil{}
-    case r <> t: (PRow.id(r) ++ "=" ++ PRow.state(r)) <> Plane.need.states.go(t)
+    case +r <> t: (PRow.id(r) ++ "=" ++ PRow.state(r)) <> Plane.need.states.go(t)
 
 def Plane.need.states(u: U.Ui, now: Nat) -> String:
   String.join(Plane.need.states.go(Plane.need(Plane.signals.of(u, now, True{}))), ",")
