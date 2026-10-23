@@ -38,11 +38,16 @@ def Tree.raw.k(ok: Bool, p: String) -> String:
     case False{}: ""
 
 # Invalid, missing and cross-project links never swallow a conversation.
+def Tree.raw.from(+s: M.State, +id: String, p: String) -> String:
+  match p:
+    case SNil{}: ""
+    case SCon{+c, +t}:
+      Tree.raw.k(Bool.and(Bool.not(String.eq(id, SCon{c, t})),
+        Bool.and(Tree.alive(M.State.thread.get(s, id)), Bool.and(Tree.alive(M.State.thread.get(s, SCon{c, t})),
+          String.eq(Tree.project(M.State.thread.get(s, id)), Tree.project(M.State.thread.get(s, SCon{c, t})))))), SCon{c, t})
+
 def Tree.raw(+s: M.State, +id: String) -> String:
-  +p = M.Setting.get(s, Tree.key(id), "")
-  Tree.raw.k(Bool.and(Bool.not(String.is_empty(p)), Bool.and(Bool.not(String.eq(id, p)),
-    Bool.and(Tree.alive(M.State.thread.get(s, id)), Bool.and(Tree.alive(M.State.thread.get(s, p)),
-      String.eq(Tree.project(M.State.thread.get(s, id)), Tree.project(M.State.thread.get(s, p))))))), p)
+  Tree.raw.from(s, id, M.Setting.get(s, Tree.key(id), ""))
 
 # Creation permits at most 64 levels. Corrupt settings, including a cycle
 # unrelated to the starting row, fall back to roots instead of recursing.
@@ -53,14 +58,22 @@ def Tree.chain(fuel: Nat, +s: M.State, id: String, +origin: String) -> Bool:
     case 1n+n SCon{+c, +t}:
       Bool.and(Bool.not(String.eq(SCon{c, t}, origin)), Tree.chain(n, s, Tree.raw(s, SCon{c, t}), origin))
 
+def Tree.parent.at(+s: M.State, +id: String, +p: String) -> String:
+  Tree.raw.k(Tree.chain(64n, s, p, id), p)
+
 def Tree.parent(+s: M.State, +id: String) -> String:
-  Tree.raw.k(Tree.chain(64n, s, Tree.raw(s, id), id), Tree.raw(s, id))
+  Tree.parent.at(s, id, Tree.raw(s, id))
 
 # Archiving affects one conversation. Live children of an archived parent
 # become roots; the saved relationship remains for unarchive and deep links.
+def Tree.display_parent.at(+s: M.State, +id: String, p: String) -> String:
+  match p:
+    case SNil{}: ""
+    case SCon{+c, +t}:
+      Tree.raw.k(Tree.same(Tree.archived(M.State.thread.get(s, id)), Tree.archived(M.State.thread.get(s, SCon{c, t}))), SCon{c, t})
+
 def Tree.display_parent(+s: M.State, +id: String) -> String:
-  +p = Tree.parent(s, id)
-  Tree.raw.k(Tree.same(Tree.archived(M.State.thread.get(s, id)), Tree.archived(M.State.thread.get(s, p))), p)
+  Tree.display_parent.at(s, id, Tree.parent(s, id))
 
 # Tree.root validates the entire raw ancestry once before entering root.go.
 # Its remaining suffix cannot contain a cycle or an invalid project edge.
