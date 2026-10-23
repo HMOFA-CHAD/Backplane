@@ -114,7 +114,8 @@ class ProducerTests(unittest.TestCase):
                 S.configured_environment(env)
 
     def test_wrong_endpoint_key_and_inherited_compile_overrides(self):
-        for key, val in [("BACKPLANE_TELEMETRY_URL", "https://other.invalid"), ("BACKPLANE_TELEMETRY_KEY", "a"),
+        for key, val in [("BACKPLANE_TELEMETRY_URL", "https://backplane.works/api/v1/events"),
+                         ("BACKPLANE_TELEMETRY_URL", "https://other.invalid"), ("BACKPLANE_TELEMETRY_KEY", "a"),
                          ("BACKPLANE_TELEMETRY_KID", "dev-test"), ("BACKPLANE_GOOGLE_CLIENT_SECRET", "$(bad)")]:
             with self.assertRaises(ValueError):
                 S.configured_environment({**self.env, key: val})

@@ -168,7 +168,7 @@ def check_bake(env, channel):
         raise ValueError("final release compile requires shared Google client input pair")
     if env.get("BACKPLANE_TELEMETRY_BAKE") != "1":
         raise ValueError("final release compile requires telemetry BAKE1")
-    if env.get("BACKPLANE_TELEMETRY_URL") != "https://backplane.works/api/v1/events":
+    if env.get("BACKPLANE_TELEMETRY_URL") != "https://backplaneworks.com/api/v1/events":
         raise ValueError("approved telemetry endpoint input missing or different")
     if not re.fullmatch(r"rel-[a-z0-9-]{1,28}", env.get("BACKPLANE_TELEMETRY_KID", "")):
         raise ValueError("release telemetry KID missing or invalid")
@@ -376,7 +376,7 @@ def configured_service(receipt, version, channel):
         item = config.get(label, {})
         if item.get("requested") is not True or item.get("requiredInputsPresent") is not True:
             raise ValueError("final configured service requires native Google and telemetry bake")
-    if config.get("telemetry", {}).get("endpoint") != "https://backplane.works/api/v1/events":
+    if config.get("telemetry", {}).get("endpoint") != "https://backplaneworks.com/api/v1/events":
         raise ValueError("actual native compile endpoint differs from approved input")
     if (config.get("version"), config.get("versionStamp"), config.get("telemetryChannel")) != (version, version, channel):
         raise ValueError("native compile identity differs from package")

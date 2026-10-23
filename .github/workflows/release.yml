@@ -38,7 +38,7 @@ on:
         type: string
       telemetry_url:
         description: Future producer compile endpoint; not a key or runtime override
-        default: https://backplane.works/api/v1/events
+        default: https://backplaneworks.com/api/v1/events
         type: string
   workflow_call:
     inputs:
@@ -64,7 +64,7 @@ on:
         default: ''
         type: string
       telemetry_url:
-        default: https://backplane.works/api/v1/events
+        default: https://backplaneworks.com/api/v1/events
         type: string
 
 permissions:

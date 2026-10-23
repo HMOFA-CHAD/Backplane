@@ -10,8 +10,9 @@ def key() -> String:
 
 def main() -> IO(Unit):
   do IO<Unit>:
-    check("production HTTPS configured tuple evaluates without native overflow", T.Tm.config.ok("", "https://backplane.works/api/v1/events", "rel-fixture", key(), "release"))
-    check("production HTTPS never classifies as loopback", Bool.not(T.Tm.loopback("https://backplane.works/api/v1/events")))
+    check("production HTTPS configured tuple evaluates without native overflow", T.Tm.config.ok("", "https://backplaneworks.com/api/v1/events", "rel-fixture", key(), "release"))
+    check("production HTTPS never classifies as loopback", Bool.not(T.Tm.loopback("https://backplaneworks.com/api/v1/events")))
+    check("legacy receiver endpoint refused", Bool.not(T.Tm.config.ok("", "https://backplane.works/api/v1/events", "rel-fixture", key(), "release")))
     check("another HTTPS endpoint still refused", Bool.not(T.Tm.config.ok("", "https://example.invalid/api/v1/events", "rel-fixture", key(), "release")))
     check("valid loopback test tuple preserved", T.Tm.config.ok("1", "http://127.0.0.1:4567/api/v1/events", "dev-fixture", key(), "dev"))
     check("production cannot use loopback endpoint", Bool.not(T.Tm.config.ok("", "http://127.0.0.1:4567/api/v1/events", "rel-fixture", key(), "release")))
@@ -33,7 +34,7 @@ def main() -> IO(Unit):
     C.Check.str("native maximum plus one refused", Nat.show(T.Tm.num("281474976710656")), "0")
     C.Check.str("JS safe integer above native limit refused", Nat.show(T.Tm.num("9007199254740991")), "0")
     C.Check.str("long leading zero representation preserved", Nat.show(T.Tm.num("0000000000000000000000000001")), "1")
-    check("missing key still refused", Bool.not(T.Tm.config.ok("", "https://backplane.works/api/v1/events", "rel-fixture", "", "release")))
+    check("missing key still refused", Bool.not(T.Tm.config.ok("", "https://backplaneworks.com/api/v1/events", "rel-fixture", "", "release")))
     C.Check.str("fourteen digit upper range preserved", Nat.show(T.Tm.num("99999999999999")), "99999999999999")
     C.Check.str("fifteen digit lower range preserved", Nat.show(T.Tm.num("100000000000000")), "100000000000000")
     C.Check.str("lexically below native maximum preserved", Nat.show(T.Tm.num("281474976710654")), "281474976710654")
