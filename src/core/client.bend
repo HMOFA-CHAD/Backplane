@@ -60,6 +60,7 @@ import ./order.bend as OR
 import ./tools.bend as TO
 import ./mailview.bend as MV
 import ./mail.bend as ML
+import ./thin-chat.bend as TC
 
 # The client state, Elm-style, shared by the native window and the web
 # page: a host feeds server messages to Ui.recv and user actions to Ui.act,
@@ -11046,6 +11047,11 @@ def Page.delivery.receipt(e: M.Entry) -> Bool:
     case M.Msg{_, _, _, _, _}:
       False{}
 
+# Shared with bounded memory and stored thin materialization. The caller
+# enables this projection only for a bot/uberbot conversation timeline.
+def Page.chat.hidden(e: M.Entry) -> Bool:
+  TC.Chat.hidden(e)
+
 # Chat-only projection during the bounded newest scan. Hidden receipts do
 # not consume a page slot or create a false earlier sentinel. Source entries
 # stay in the model; stop after n+1 visible entries, as the ordinary pager.
@@ -11058,7 +11064,7 @@ def Page.newest.visible.go(es: List<&2, M.Entry>, +th: String, +since: Nat, st: 
     case Nil{} PW{l, acc}:
       PW{l, acc}
     case +e <> t PW{1n+k, acc}:
-      Page.newest.visible.go(t, th, since, Page.newest.cut(Nat.is_lt(Nat.add(Page.entry.at(e), 3600n), since), Page.newest.step(Bool.and(Bool.not(Page.delivery.receipt(e)), Page.mine(String.eq(Page.entry.thread(e), th), e, th)), e, PW{1n+k, acc})))
+      Page.newest.visible.go(t, th, since, Page.newest.cut(Nat.is_lt(Nat.add(Page.entry.at(e), 3600n), since), Page.newest.step(Bool.and(Bool.not(Page.chat.hidden(e)), Page.mine(String.eq(Page.entry.thread(e), th), e, th)), e, PW{1n+k, acc})))
 
 def Page.newest.visible.from(hide: Bool, +es: List<&2, M.Entry>, +th: String, +since: Nat, +n: Nat) -> Win:
   match hide:

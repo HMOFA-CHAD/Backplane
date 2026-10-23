@@ -334,7 +334,7 @@ def BU.chat.entries.go(es: List<&2, M.Entry>, acc: List<&2, M.Entry>) -> List<&2
   match es:
     case Nil{}: List.reverse(&2, M.Entry, acc)
     case +e <> t:
-      BU.chat.entries.go(t, BU.chat.entries.keep(U.Page.delivery.receipt(e), e, acc))
+      BU.chat.entries.go(t, BU.chat.entries.keep(U.Page.chat.hidden(e), e, acc))
 
 def BU.chat.entries.k(hide: Bool, es: List<&2, M.Entry>) -> List<&2, M.Entry>:
   match hide:

@@ -59,8 +59,12 @@ def Q.sql.page() -> String:
 
 # Fixed event-field predicate, case sensitive and independent of summary
 # wording. Apply inside both branches BEFORE their limits and the union.
+def Q.sql.chat.empty.assistant() -> String:
+  "(kind = 'msg' AND role = 'assistant' AND NOT (substr(id, 1, 2) = 't:' AND instr(substr(id, 3), ':') > 1)" ++
+  " AND trim(text, char(9) || char(10) || char(11) || char(12) || char(13) || char(32)) = '')"
+
 def Q.sql.chat.keep() -> String:
-  " AND NOT (kind = 'act' AND role = 'info' AND akind = 'ride' AND substr(id, 1, 5) = 'ride:')"
+  " AND NOT ((kind = 'act' AND role = 'info' AND akind = 'ride' AND substr(id, 1, 5) = 'ride:') OR " ++ Q.sql.chat.empty.assistant() ++ ")"
 
 def Q.sql.page.chat() -> String:
   "SELECT * FROM (SELECT * FROM (SELECT " ++ Q.cols.prefix() ++ " FROM entry WHERE thread = ?1 AND seq < ?2" ++ Q.sql.chat.keep() ++ " ORDER BY seq DESC LIMIT ?3)" ++
