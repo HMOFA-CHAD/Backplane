@@ -1480,6 +1480,46 @@ def Switch.num(s: String, +acc: Nat) -> Nat:
     case SCon{Chr{+c}, t}:
       Switch.num(t, Nat.add(Nat.mul(acc, 10n), U32.to_nat((c - 48 : U32))))
 
+# Worktrees made again
+# ---------------------
+# A removed worktree (its branch kept) is made again by the thread's next
+# message (hub.bend's Hub.revive). The hub records when it asked
+# (Worktree.again.key, cleared when the worktree came or could not be
+# made), and the thread waits for it only while that ask is fresh. Its last
+# activity says nothing of a rebuild: a turn that just ended and whose
+# worktree was then removed is not being made again, so a message then
+# asks for it instead of waiting for a worktree nobody makes (laws
+# wt_again_*). A new thread still waits for its first worktree from its
+# creation (Worktree.pending).
+
+def Worktree.again.key(+th: String) -> String:
+  "wt.again." ++ th
+
+# when the hub last asked for the thread's worktree again (0: not asked)
+def Worktree.again.at(+s: State, +th: String) -> Nat:
+  Switch.num(Setting.get(s, Worktree.again.key(th), ""), 0n)
+
+def Worktree.kept(t: Thread) -> Bool:
+  match t:
+    case Thread{_, _, _, _, _, _, _, _, _, _, _, _, _, br, _, _, _, _, _, _, _}:
+      Bool.not(String.is_empty(br))
+
+def Worktree.waits.kept(+s: State, t: Thread, +now: Nat) -> Bool:
+  Thread{+id, _, _, _, _, _, _, _, _, _, _, _, en, _, +wt, _, _, _, _, _, _} = t
+  Worktree.pending.k(en, wt, Worktree.again.at(s, id), now)
+
+def Worktree.waits.k(kept: Bool, +s: State, +t: Thread, +now: Nat) -> Bool:
+  match kept:
+    case True{}:
+      Worktree.waits.kept(s, t, now)
+    case False{}:
+      Worktree.pending(t, now)
+
+# whether a thread's worktree is being made now: a new thread's first one
+# (from its creation), or a removed one the hub asked for again
+def Worktree.waits(+s: State, +t: Thread, +now: Nat) -> Bool:
+  Worktree.waits.k(Worktree.kept(t), s, t, now)
+
 def Switch.seen(s: State, +th: String, +p: String) -> Nat:
   Switch.num(Setting.get(s, Switch.seen.key(th, p), "0"), 0n)
 

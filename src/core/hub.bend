@@ -2153,8 +2153,24 @@ def Wt.start(+s: M.State, +now: Nat, +thread: String, +first: Bool) -> Step:
   Wt.start.k(Bool.and(Bool.not(Hub.running(Hub.thread(s, thread))), M.Queue.waiting(s, thread)), first,
     Hub.thread(s, thread), Hub.cwd(s, Hub.thread(s, thread)), M.Queue.of(s, thread), now, Hub.seq(s), thread)
 
+# the record that the hub asked for it, so a message while it is being made
+# waits for it rather than asking twice (model.bend's Worktree.waits)
+def Wt.asked(+th: String, +now: Nat) -> List<&2, M.Change>:
+  [M.SettingSet{M.Worktree.again.key(th), Nat.show(now), now}]
+
+# the record cleared once the worktree came, could not be made, or went
+def Wt.answered(+s: M.State, +th: String, +now: Nat) -> List<&2, M.Change>:
+  Bool.pick(List<&2, M.Change>, Nat.is_eq(M.Worktree.again.at(s, th), 0n), Nil{}, [M.SettingSet{M.Worktree.again.key(th), "", now}])
+
+# the laws' example: a worktree thread whose turn completed at 5 and whose
+# worktree was removed at 6 (its branch b1 kept), with more of its log after
+def Wt.demo(cs: List<&2, M.Change>) -> M.State:
+  M.State.replay(List.append(&2, M.Change, [M.ProjectCreated{"p1", "p", "/p", 1n}, M.ThreadCreated{"t1", "p1", "x", M.Worktree{}, "", "", "claude", "", 1n},
+    M.WorktreeSet{"t1", "b1", "/p/.backplane/worktrees/b1", 2n}, M.MessagePosted{"t1", "m1", M.User{}, "go", 3n}, M.TurnChanged{"t1", M.Running{}, 3n},
+    M.TurnChanged{"t1", M.Completed{}, 5n}, M.WorktreeRemoved{"t1", 6n}], cs), M.State.empty())
+
 def Wt.ready(+s: M.State, +now: Nat, +client: U32, +id: String, +thread: String, +c: M.Change) -> Step:
-  Step.before([c], [Reply.ok(client, id)], Wt.start(M.State.replay([c], s), now, thread, String.is_empty(M.Merge.branch(Hub.thread(s, thread)))))
+  Step.before(c <> Wt.answered(s, thread, now), [Reply.ok(client, id)], Wt.start(M.State.replay([c], s), now, thread, String.is_empty(M.Merge.branch(Hub.thread(s, thread)))))
 
 def Hub.agentm(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json, +m: String) -> Step:
   match i:
@@ -2169,7 +2185,7 @@ def Hub.agentm(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.
     case 4n:
       Merge.found(M.Merge.due(s, Hub.thread(s, J.Json.get_str(p, "thread", ""))), s, now, client, id, J.Json.get_str(p, "thread", ""), J.Json.get_str(p, "url", ""))
     case 5n:
-      Step.reply(client, id, [M.WorktreeRemoved{J.Json.get_str(p, "thread", ""), now}])
+      Step.reply(client, id, M.WorktreeRemoved{J.Json.get_str(p, "thread", ""), now} <> Wt.answered(s, J.Json.get_str(p, "thread", ""), now))
     case 6n:
       Title.got(s, now, client, id, J.Json.get_str(p, "thread", ""), p)
     case 7n:
@@ -2408,13 +2424,15 @@ def Wt.revive(+s: M.State, +th: String) -> Out:
 
 # whether a message makes a thread's removed worktree again first: the
 # thread is idle, its worktree is gone, and it is not being made already
+# (pending: model.bend's Worktree.waits, a fresh ask of the hub's, never the
+# thread's last activity)
 def Hub.revive(+running: Bool, gone: Bool, +pending: Bool) -> Bool:
   Bool.and(Bool.not(running), Bool.and(gone, Bool.not(pending)))
 
 def Hub.post.v(revive: Bool, +running: Bool, +pending: Bool, +s: M.State, +now: Nat, +thread: String, +msg: String, role: M.Role, +text: String) -> Step:
   match revive:
     case True{}:
-      Step.before(Nil{}, [Wt.revive(s, thread)], Hub.post.go(True{}, Hub.thread(s, thread), Hub.cwd(s, Hub.thread(s, thread)), M.Queue.of(s, thread), now, thread, msg, role, text))
+      Step.before(Wt.asked(thread, now), [Wt.revive(s, thread)], Hub.post.go(True{}, Hub.thread(s, thread), Hub.cwd(s, Hub.thread(s, thread)), M.Queue.of(s, thread), now, thread, msg, role, text))
     case False{}:
       Hub.deliver(running, pending, s, now, thread, msg, role, text)
 
@@ -2422,7 +2440,7 @@ def Hub.post.w(+running: Bool, gone: Bool, +pending: Bool, +s: M.State, +now: Na
   Hub.post.v(Hub.revive(running, gone, pending), running, pending, s, now, thread, msg, role, text)
 
 def Hub.post(+s: M.State, +now: Nat, +thread: String, +msg: String, role: M.Role, +text: String) -> Step:
-  Hub.post.w(Hub.running(Hub.thread(s, thread)), M.Worktree.gone(Hub.thread(s, thread)), M.Worktree.pending(Hub.thread(s, thread), now), s, now, thread, msg, role, text)
+  Hub.post.w(Hub.running(Hub.thread(s, thread)), M.Worktree.gone(Hub.thread(s, thread)), M.Worktree.waits(s, Hub.thread(s, thread), now), s, now, thread, msg, role, text)
 
 # a message from another thread (thread_send, a delegated task's result,
 # a launched thread's report, a wake): delivered like any other
@@ -2431,7 +2449,7 @@ def Hub.post(+s: M.State, +now: Nat, +thread: String, +msg: String, role: M.Role
 def Hub.inbox.v(revive: Bool, +running: Bool, +pending: Bool, +s: M.State, +now: Nat, +from: String, +to: String, role: M.Role, +text: String, +msg: String) -> Step:
   match revive:
     case True{}:
-      Step.before(Nil{}, [Wt.revive(s, to)], Hub.post.go(True{}, Hub.thread(s, to), Hub.cwd(s, Hub.thread(s, to)), M.Queue.of(s, to), now, to,
+      Step.before(Wt.asked(to, now), [Wt.revive(s, to)], Hub.post.go(True{}, Hub.thread(s, to), Hub.cwd(s, Hub.thread(s, to)), M.Queue.of(s, to), now, to,
         msg, role, text))
     case False{}:
       Hub.deliver(running, pending, s, now, to, msg, role, text)
@@ -2700,7 +2718,7 @@ def Mail.request.mark(+valid: Bool, +s: M.State, +now: Nat, +client: U32, +id: S
 # The delivery kernel keeps the exact Step promised by
 # inbox_running_delivers. Production inbound funnels add metadata around it.
 def Hub.inbox.id(+s: M.State, +now: Nat, +from: String, +to: String, role: M.Role, +text: String, +msg: String) -> Step:
-  Hub.inbox.w(Hub.running(Hub.thread(s, to)), M.Worktree.gone(Hub.thread(s, to)), M.Worktree.pending(Hub.thread(s, to), now), s, now, from, to, role, text, msg)
+  Hub.inbox.w(Hub.running(Hub.thread(s, to)), M.Worktree.gone(Hub.thread(s, to)), M.Worktree.waits(s, Hub.thread(s, to), now), s, now, from, to, role, text, msg)
 
 def Hub.answer.plan(impl: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +ask: String, +answer: String, +th: String) -> Step:
   match impl:
@@ -2822,7 +2840,7 @@ def Hub.post.steer.k(go: Bool, +s: M.State, +now: Nat, +thread: String, +msg: St
 # else is delivered like any message
 def Hub.post.steer(+s: M.State, +now: Nat, +thread: String, +msg: String, role: M.Role, +text: String) -> Step:
   Hub.post.steer.k(Bool.and(Hub.running(Hub.thread(s, thread)), Bool.and(Bool.not(String.eq(Hub.provider(Hub.thread(s, thread)), "claude")),
-    Bool.and(Bool.not(M.Worktree.pending(Hub.thread(s, thread), now)), Bool.not(M.Worktree.gone(Hub.thread(s, thread)))))), s, now, thread, msg, role, text)
+    Bool.and(Bool.not(M.Worktree.waits(s, Hub.thread(s, thread), now)), Bool.not(M.Worktree.gone(Hub.thread(s, thread)))))), s, now, thread, msg, role, text)
 
 def Hub.post.mode.k(steer: Bool, +s: M.State, +now: Nat, +thread: String, +msg: String, role: M.Role, +text: String) -> Step:
   match steer:
@@ -6779,7 +6797,7 @@ def Run.escalate.to(person: Bool, +s: M.State, +now: Nat, +bot: String, +conv: S
     case False{}:
       +th = BT.Bot.thread(BT.World.bot(M.State.bots(s), bot))
       +msg = Hub.id("esc", now, Hub.seq(s))
-      Origin.step(Hub.deliver(Hub.running(Hub.thread(s, th)), M.Worktree.pending(Hub.thread(s, th), now), s, now, th, msg, M.System{}, "[mailroom escalation from " ++ conv ++ "] " ++ text), th, msg, ML.Origin{"mailroom:" ++ conv, "escalation", conv}, now)
+      Origin.step(Hub.deliver(Hub.running(Hub.thread(s, th)), M.Worktree.waits(s, Hub.thread(s, th), now), s, now, th, msg, M.System{}, "[mailroom escalation from " ++ conv ++ "] " ++ text), th, msg, ML.Origin{"mailroom:" ++ conv, "escalation", conv}, now)
 
 def Run.input(+s: M.State, +r: ML.Run) -> String:
   MD.Disposition.current(s, r)
@@ -7929,7 +7947,7 @@ def Run.deliver.current(r: Maybe<&2, ML.Run>, +s: M.State, fallback: String) -> 
 
 def Run.deliver.ready(+s: M.State, +now: Nat, +th: String, +body: MB.Body) -> Step:
   +m = MB.Body.mail(body)
-  Origin.step(Hub.deliver(Hub.running(Hub.thread(s, th)), M.Worktree.pending(Hub.thread(s, th), now), s, now, th, ML.Mail.id(m), M.User{},
+  Origin.step(Hub.deliver(Hub.running(Hub.thread(s, th)), M.Worktree.waits(s, Hub.thread(s, th), now), s, now, th, ML.Mail.id(m), M.User{},
     "[mail " ++ ML.Mail.conv(m) ++ " · " ++ ML.Mail.kind(m) ++ " from " ++ Mail.name(s, ML.Mail.from(m)) ++ "]\nCurrent actionable input: " ++ ML.Mail.id(m) ++ "\n" ++ MB.Body.text(body)), th, ML.Mail.id(m), ML.Origin{ML.Mail.from(m), ML.Mail.kind(m), ML.Mail.conv(m)}, now)
 
 # Server has loaded the last 20 bodies, newest first. Keep the most

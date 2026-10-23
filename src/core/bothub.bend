@@ -243,7 +243,7 @@ def Bots.msg.id(+from: String, +msg: String) -> String:
 # a message into a bot's thread, delivered at once (B.Hub.deliver: a
 # running turn takes it); its id names the sender for the link visuals
 def Bots.inbox.raw(+s: M.State, +now: Nat, +from: String, +to: String, +msg: String, +text: String) -> B.Step:
-  B.Origin.step(B.Hub.deliver(B.Hub.running(B.Hub.thread(s, to)), M.Worktree.pending(B.Hub.thread(s, to), now), s, now, to,
+  B.Origin.step(B.Hub.deliver(B.Hub.running(B.Hub.thread(s, to)), M.Worktree.waits(s, B.Hub.thread(s, to), now), s, now, to,
     Bots.msg.id(from, msg), M.User{}, text), to, Bots.msg.id(from, msg), ML.Mail.classify(M.Link.from(Bots.msg.id(from, msg)), Bots.msg.id(from, msg), False{}, text), now)
 
 def Bots.inbox(+s: M.State, +now: Nat, +from: String, +to: String, +msg: String, +text: String) -> B.Step:
@@ -557,7 +557,7 @@ def Bots.delete.k(live: Bool, +s: M.State, +now: Nat, +client: U32, +id: String,
 # mail. Bypass provenance even when the person types an envelope prefix.
 def Bots.person(+s: M.State, +now: Nat, +bot: BT.Bot, +msg: String, +text: String) -> B.Step:
   B.Step.before([M.BotWoke{BT.Bot.id(bot), 0n, now}], Nil{},
-    B.Hub.deliver(B.Hub.running(B.Hub.thread(s, BT.Bot.thread(bot))), M.Worktree.pending(B.Hub.thread(s, BT.Bot.thread(bot)), now), s, now, BT.Bot.thread(bot), msg, M.User{}, text))
+    B.Hub.deliver(B.Hub.running(B.Hub.thread(s, BT.Bot.thread(bot))), M.Worktree.waits(s, B.Hub.thread(s, BT.Bot.thread(bot)), now), s, now, BT.Bot.thread(bot), msg, M.User{}, text))
 
 def Bots.say.id(+mid: String, live: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +bot: String, +text: String) -> B.Step:
   match live:
