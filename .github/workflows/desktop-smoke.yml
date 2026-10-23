@@ -11,7 +11,7 @@ on:
     inputs:
       target:
         type: choice
-        options: [linux-x64, linux-arm64, darwin-arm64]
+        options: [linux-x64, linux-arm64, darwin-arm64, windows-x64]
         required: true
       stage_url:
         type: string
@@ -41,7 +41,7 @@ concurrency:
 
 jobs:
   smoke:
-    runs-on: ${{ inputs.target == 'linux-x64' && 'ubuntu-24.04' || inputs.target == 'linux-arm64' && 'ubuntu-24.04-arm' || 'macos-15' }}
+    runs-on: ${{ inputs.target == 'linux-x64' && 'ubuntu-24.04' || inputs.target == 'linux-arm64' && 'ubuntu-24.04-arm' || inputs.target == 'windows-x64' && 'windows-2025' || 'macos-15' }}
     timeout-minutes: 30
     env:
       TARGET: ${{ inputs.target }}

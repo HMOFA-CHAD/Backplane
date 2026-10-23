@@ -8,7 +8,7 @@ const p = require('../produce-release.cjs');
 
 function stageDir(modes) {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-windigest-'));
-  fs.writeFileSync(path.join(d, 'STAGE.json'), JSON.stringify({kind: 'backplane-electron-desktop-stage', target: 'windows-x64', release: {version: '0.12.1'}}));
+  fs.writeFileSync(path.join(d, 'STAGE.json'), JSON.stringify({kind: 'backplane-electron-desktop-stage', target: 'windows-x64', release: {version: '0.12.2'}}));
   for (const [name, mode] of Object.entries(modes)) { fs.mkdirSync(path.dirname(path.join(d, name)), {recursive: true}); fs.writeFileSync(path.join(d, name), name); fs.chmodSync(path.join(d, name), mode); }
   return d;
 }
