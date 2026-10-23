@@ -28,6 +28,11 @@ def agains(os: List<&2, B.Out>) -> Nat:
     case Nil{}: 0n
     case o <> rest: Nat.add(again.one(o), agains(rest))
 
+def turn(st: M.TurnState) -> String:
+  match st:
+    case M.Running{}: "running"
+    case _: "turn"
+
 def kinds.one(c: M.Change) -> String:
   match c:
     case M.MessagePosted{_, _, _, _, _}: "post"
@@ -39,11 +44,6 @@ def kinds.one(c: M.Change) -> String:
     case M.WorktreeRemoved{_, _}: "removed"
     case M.SettingSet{k, v, _}: Bool.pick(String, String.starts_with(k, "wt.again."), "ask=" ++ v, "setting")
     case _: "other"
-
-def turn(st: M.TurnState) -> String:
-  match st:
-    case M.Running{}: "running"
-    case _: "turn"
 
 def kinds.go(cs: List<&2, M.Change>) -> List<&2, String>:
   match cs:
