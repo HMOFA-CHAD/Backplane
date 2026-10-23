@@ -81,7 +81,7 @@ def main() -> IO(Unit):
     C.Check.str("phone actual watch cancel authority unchanged", field(MB.Mob.sub.signals.loc(I.En{}, running, info), "cancel"), SB.Subs.cancel(running))
     C.Check.str("phone sub actual signal field", field(MB.Mob.sub.signals.loc(I.En{}, held, info), "state"), "inactive")
     C.Check.str("phone sub raw explanatory state retained", field(MB.Mob.sub.signals.loc(I.En{}, held, info), "stateLabel"), U.StateWord.label(I.En{}, "held"))
-    C.Check.str("plane launched/delegated parent active section", P.Plane.signal(ix, U.Ui.state(u), t), "working")
+    C.Check.str("plane launched/delegated parent waits on active child", P.Plane.signal(ix, U.Ui.state(u), t), "waiting")
     C.Check.str("new plane places actual parent in run", String.join(P.Plane.ids(P.Plane.run(P.Plane.signals.of(ui(child(), True{}), 20n, True{}))), ","), "p")
     C.Check.str("new plane excludes queued child from run", String.join(P.Plane.ids(P.Plane.run(P.Plane.signals.of(ui(Nil{}, True{}), 20n, True{}))), ","), "")
     C.Check.str("new plane counts actual parent only", Nat.show(P.PTally.run(P.Plane.tally(u, ix, U.Side.rows.ix(U.Ui.state(u), ix, 20n)))), "1")
