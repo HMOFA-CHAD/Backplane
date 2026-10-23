@@ -20,6 +20,15 @@ export function utf8Bytes(text) {
 const bounded = (s, n) => typeof s === 'string' && utf8Bytes(s) <= n;
 const integer = (n, max = MAX_REVISION) => Number.isSafeInteger(n) && n >= 0 && n <= max;
 const sameTarget = (a, b) => record(a) && record(b) && a.kind === b.kind && a.id === b.id;
+const revision = s => bounded(s, 32) && /^(0|[1-9][0-9]*)$/.test(s);
+// Revisions are decimal protocol strings, potentially larger than JS integers.
+const coversRevision = (a, b) => revision(a) && revision(b) && (a.length > b.length || a.length === b.length && a >= b);
+function coverChanged(link, shownRevision) {
+  if (link.changedRevision !== null && coversRevision(shownRevision, link.changedRevision)) {
+    link.changedRevision = null;
+    if (!link.readInvalidated) link.invalidated = false;
+  } else if (link.changedRevision !== null) link.invalidated = true;
+}
 export function viewTarget(t) {
   return record(t) && Object.keys(t).length === 2 && Object.keys(t).every(k => k === 'kind' || k === 'id') && ['thread', 'bot', 'room', 'recent'].includes(t.kind) &&
     bounded(t.id, 1024) && (t.kind === 'recent' ? t.id === '' : t.id.length > 0);
@@ -113,7 +122,7 @@ export class ThinViews {
   connect(hub, greeting) {
     if (!bounded(hub, 1024) || !hub || !viewGreeting(greeting)) return { compatibilityRequired: true, cmds: [] };
     const abandoned = this.disconnect(hub, 'connection changed');
-    const link = { hub, greeting: snapshot(greeting), revision: 0, viewId: '', target: null, shown: null, viewRevision: '', updatePending: false, updateId: null, invalidated: false };
+    const link = { hub, greeting: snapshot(greeting), revision: 0, viewId: '', target: null, shown: null, viewRevision: '', updatePending: false, updateId: null, invalidated: false, changedRevision: null, readInvalidated: false };
     this.links.set(hub, link);
     return { connected: true, abandoned, cmds: [] };
   }
@@ -129,14 +138,14 @@ export class ThinViews {
     if (!l || !viewTarget(target)) return { failed: 'invalid view selection', cmds: [] };
     if (session && own(session, 'route') && !compactRoute(session.route, target)) return { failed: 'invalid view route', cmds: [] };
     if (l.revision >= MAX_REVISION) return { failed: 'view revision exhausted', cmds: [] };
-    l.target = snapshot(target); l.viewId = ''; l.viewRevision = ''; l.updatePending = false; l.updateId = null; l.invalidated = false;
+    l.target = snapshot(target); l.viewId = ''; l.viewRevision = ''; l.updatePending = false; l.updateId = null; l.invalidated = false; l.changedRevision = null; l.readInvalidated = false;
     return this.request(hub, 'view.open', { session, cid });
   }
   request(hub, method, args = {}) {
     const l = this.links.get(hub);
     if (!l || !l.target || !METHODS.has(method)) return { failed: 'view unavailable', cmds: [] };
     if (method !== 'view.open' && !l.viewId) return { failed: 'view not ready', cmds: [] };
-    if (method === 'view.update' && l.updatePending) { l.invalidated = true; return { coalesced: true, cmds: [] }; }
+    if (method === 'view.update' && l.updatePending) { l.invalidated = true; l.readInvalidated = true; return { coalesced: true, cmds: [] }; }
     let count = 0;
     for (const c of this.calls.values()) if (c.link === l) count++;
     if (count >= 8 || this.calls.size >= 128) return { failed: 'pending request limit', cmds: [] };
@@ -153,8 +162,8 @@ export class ThinViews {
     const p = { ...extra, version: 1, hub, generation: l.greeting.generation, epoch: l.greeting.epoch,
       requestRevision: l.revision, target: snapshot(l.target), viewId: l.viewId };
     const call = { id, link: l, method, target: snapshot(l.target), revision: l.revision, viewId: l.viewId,
-      began: this.api.now(), input: snapshot(p) };
-    if (method === 'view.update') { l.updatePending = true; l.updateId = id; l.invalidated = false; }
+      began: this.api.now(), input: snapshot(p), explicitRead: method === 'view.update' && (l.readInvalidated || l.changedRevision === null) };
+    if (method === 'view.update') { l.updatePending = true; l.updateId = id; l.invalidated = false; l.readInvalidated = false; }
     this.calls.set(id, call);
     return { id, cmds: [this.api.send(hub, { id, m: method, p })] };
   }
@@ -162,9 +171,10 @@ export class ThinViews {
     const l = this.links.get(hub);
     if (!l || !record(e) || e.t !== 'view.changed' || e.version !== 1 || e.generation !== l.greeting.generation ||
         e.epoch !== l.greeting.epoch || e.viewId !== l.viewId || !sameTarget(e.target, l.target) ||
-        !bounded(e.viewRevision, 32) || utf8Bytes(JSON.stringify(e)) > 1024) return { ignored: true, cmds: [] };
-    if (e.viewRevision === l.viewRevision) return { ignored: true, cmds: [] };
-    if (defer) { l.invalidated = true; return { coalesced: true, cmds: [] }; }
+        !revision(e.viewRevision) || utf8Bytes(JSON.stringify(e)) > 1024) return { ignored: true, cmds: [] };
+    if (coversRevision(l.viewRevision, e.viewRevision)) return { ignored: true, cmds: [] };
+    if (!coversRevision(l.changedRevision, e.viewRevision)) l.changedRevision = e.viewRevision;
+    if (defer || l.updatePending) { l.invalidated = true; return { coalesced: true, cmds: [] }; }
     return this.request(hub, 'view.update', { session, anchor, viewRevision: l.viewRevision });
   }
   retireUpdate(call) {
@@ -173,7 +183,10 @@ export class ThinViews {
     l.updatePending = false; l.updateId = null;
     // A newer auxiliary query can retire display authority without consuming
     // the selected view's invalidation. Preserve that outstanding refresh.
-    if (l.viewId === call.viewId && sameTarget(l.target, call.target) && l.revision !== call.revision) l.invalidated = true;
+    if (l.viewId === call.viewId && sameTarget(l.target, call.target) && l.revision !== call.revision) {
+      l.invalidated = true;
+      if (call.explicitRead) l.readInvalidated = true;
+    }
     return true;
   }
   reply(hub, e) {
@@ -207,6 +220,13 @@ export class ThinViews {
     const displayed = current && presentation && record(r.shown) && r.remoteReady === true;
     if (displayed) {
       l.viewId = r.viewId; l.viewRevision = r.viewRevision; l.shown = r.shown;
+      // A full matching action picture already includes older canonical
+      // invalidations. Compact ACKs and auxiliary replies cover no picture.
+      coverChanged(l, r.viewRevision);
+    } else if (!current && c.method === 'view.update' && record(r.shown) && r.remoteReady === true &&
+        l.viewId === c.viewId && sameTarget(l.target, c.target)) {
+      if (!coversRevision(l.changedRevision, r.viewRevision)) l.changedRevision = r.viewRevision;
+      coverChanged(l, l.viewRevision);
     }
     return { id: e.id, method: c.method, current, inputOnly, remoteReady: displayed || current && inputOnly && record(l.shown),
       shown: displayed ? r.shown : null, session: current && presentation ? r.session : null,

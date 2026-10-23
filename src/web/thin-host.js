@@ -112,7 +112,11 @@ export class ThinHost {
       if (action === 'select') {
         if (this.greeted) this.select(this.api.target(this.session));
       } else {
-        this.api.draftRefresh?.(() => this.update());
+        this.api.draftRefresh?.(() => {
+          const link = this.client.links.get(this.hub);
+          if (link) link.readInvalidated = true;
+          this.update();
+        });
       }
       return true;
     }
