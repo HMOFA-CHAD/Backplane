@@ -55,9 +55,10 @@ async function verify(kind){const p=await projection(),rows=await labels(kind);a
  await page.waitForFunction(()=>JSON.stringify(JSON.parse(document.querySelector('.sidebar').dataset.shortcutProjects))==='["hint-a"]');
  await blur();await page.keyboard.down('Control');const searched=await verify('threads');assert(!searched.threads.includes('child'));assert(searched.threads.includes('settled'));await page.keyboard.up('Control');assert.equal((await projection()).mode,'');checks.push('project-name search filters exact targets, retains explicit child collapse and opened shelf; keyup clears hints');
  }
+ const native=await app.browserWindow(page);
  if(process.env.WORKSPACE_HINTS_PTY_ONLY!=='1'){
  step='focus-boundary';await page.locator('.sidebar input').first().fill('');await page.waitForFunction(()=>JSON.parse(document.querySelector('.sidebar').dataset.shortcutProjects).includes('hint-b'));await blur();await page.keyboard.down('Control');await verify('threads');
- const native=await app.browserWindow(page),mainId=await native.evaluate(win=>win.id);
+ const mainId=await native.evaluate(win=>win.id);
  const domFocus=()=>page.evaluate(()=>({focused:document.hasFocus(),visibility:document.visibilityState,hints:document.querySelector('.sidebar')?.dataset.shortcutHints||''}));
  focusBoundary.before={nativeFocused:await native.evaluate(win=>win.isFocused()),dom:await domFocus()};
  assert.equal(focusBoundary.before.nativeFocused,true,'Fixture main window must be focused before transfer');assert.equal(focusBoundary.before.dom.focused,true);
@@ -70,7 +71,9 @@ async function verify(kind){const p=await projection(),rows=await labels(kind);a
  step='focus-clear';await page.waitForFunction(()=>!document.querySelector('.sidebar').dataset.shortcutHints,null,{timeout:2500});focusBoundary.cleared=await domFocus();await page.keyboard.up('Control');
  await app.evaluate(({BrowserWindow},ids)=>{BrowserWindow.fromId(ids.sink)?.destroy();BrowserWindow.fromId(ids.main)?.focus();},{sink:sinkId,main:mainId});sinkId=null;await page.bringToFront();await page.waitForFunction(()=>document.hasFocus());checks.push('observed native and DOM focus loss clears held hints before key release');
  } else { await blur(); await page.keyboard.up('Control'); }
+ if(process.env.WORKSPACE_HINTS_GEOMETRY_ONLY!=='1'){
  step='pty-guard';await composer.focus();await page.keyboard.press('`');await page.locator('#term').waitFor();await page.locator('#term').focus();await page.keyboard.down('Control');assert.equal((await projection()).mode,'');await page.keyboard.up('Control');await page.keyboard.press('Control+j');await page.locator('#term').waitFor({state:'detached'});assert.equal(await composer.inputValue(),suffixDraft);checks.push('PTY owns control input, hints hidden, existing bare-backtick/CtrlJ and draft intact');
+ }
  step='390px-geometry';await native.evaluate(win=>win.setSize(390,760));await page.locator('.thread-head .back').first().click();await page.locator('.sidebar').waitFor({state:'visible'});await blur();
  const compactBoxes=()=>page.locator('.sidebar .project-head .name').evaluateAll(xs=>xs.map(el=>{const b=el.getBoundingClientRect();return {x:b.x,y:b.y,w:b.width,h:b.height};}));
  const compactBefore=await compactBoxes();await page.keyboard.down('Alt');await verify('projects');assert.deepEqual(await compactBoxes(),compactBefore);
