@@ -2,6 +2,7 @@ import Base
 import ../core/json.bend as J
 import ../core/model.bend as M
 import ../core/thin.bend as T
+import ../core/thin-chat.bend as TC
 import ../core/thinq.bend as Q
 import ../core/mail.bend as ML
 import ../core/mailq.bend as MQ
@@ -73,6 +74,20 @@ def Ts.page(+h: String, +th: String, +before: Nat, +limit: Nat, +base: T.Index) 
     +n : Nat <- Ts.below(Nat.is_eq(List.length(&2, List<&2, String>, xs), lim), h, th, Q.Q.last_seq(xs, 0n))
     +i : T.Index = T.Index.window(Q.Q.rows(xs), th, n, base)
     return Page{i, T.Index.page(i, th, before, limit)}
+
+# Presentation-only bot page. Keep a visible lookahead in the bounded page
+# index so the normal window/cursor helper cannot offer receipt-only pages.
+# Ordinary materialization, whole-entry reads and search remain unchanged.
+def Ts.page.chat(enabled: Bool, +h: String, +th: String, +before: Nat, +limit: Nat, +base: T.Index) -> IO(Page):
+  match enabled:
+    case False{}: Ts.page(h, th, before, limit, base)
+    case True{}:
+      +lim = Nat.add(1n, TC.Chat.limit(limit))
+      do IO<Page>:
+        +s : Nat <- Ts.seq_at(h, before)
+        +xs : List<&2, List<&2, String>> <- Ts.query(h, Q.Q.sql.page.chat(), [th, Q.Q.n(s), Q.Q.n(lim)], U32.from_nat(lim))
+        +i : T.Index = T.Index.window(Q.Q.rows(xs), th, 0n, base)
+        return Page{i, T.Index.page(i, th, before, limit)}
 
 # A message read whole: the rows the read may name (the cursor's ordinal,
 # or the entry `id` among the page's rows), whole, in the page's index

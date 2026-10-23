@@ -323,6 +323,27 @@ def BU.moving.go(rs: List<&2, BRow>) -> Bool:
 def BU.chat.summary(+st: M.State, +id: String) -> Bool:
   Bool.not(Bool.or(BT.World.is_bot_thread(M.State.bots(st), id), US.Ub.chat.is(st, id)))
 
+# Delivery receipts stay in source history and operational views. Only bot
+# conversation entries are projected, before tool folding and timestamps.
+def BU.chat.entries.keep(hide: Bool, e: M.Entry, rest: List<&2, M.Entry>) -> List<&2, M.Entry>:
+  match hide:
+    case True{}: rest
+    case False{}: e <> rest
+
+def BU.chat.entries.go(es: List<&2, M.Entry>, acc: List<&2, M.Entry>) -> List<&2, M.Entry>:
+  match es:
+    case Nil{}: List.reverse(&2, M.Entry, acc)
+    case +e <> t:
+      BU.chat.entries.go(t, BU.chat.entries.keep(U.Page.delivery.receipt(e), e, acc))
+
+def BU.chat.entries.k(hide: Bool, es: List<&2, M.Entry>) -> List<&2, M.Entry>:
+  match hide:
+    case True{}: BU.chat.entries.go(es, Nil{})
+    case False{}: es
+
+def BU.chat.entries(+st: M.State, +id: String, es: List<&2, M.Entry>) -> List<&2, M.Entry>:
+  BU.chat.entries.k(Bool.not(BU.chat.summary(st, id)), es)
+
 # The main area
 # -------------
 

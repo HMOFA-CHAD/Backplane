@@ -57,6 +57,16 @@ def Q.sql.page() -> String:
   " UNION ALL SELECT * FROM (SELECT " ++ Q.cols.prefix() ++ " FROM entry WHERE src = ?1 AND src <> '' AND seq < ?2 ORDER BY seq DESC LIMIT ?3))" ++
   " ORDER BY seq DESC LIMIT ?3"
 
+# Fixed event-field predicate, case sensitive and independent of summary
+# wording. Apply inside both branches BEFORE their limits and the union.
+def Q.sql.chat.keep() -> String:
+  " AND NOT (kind = 'act' AND role = 'info' AND akind = 'ride' AND substr(id, 1, 5) = 'ride:')"
+
+def Q.sql.page.chat() -> String:
+  "SELECT * FROM (SELECT * FROM (SELECT " ++ Q.cols.prefix() ++ " FROM entry WHERE thread = ?1 AND seq < ?2" ++ Q.sql.chat.keep() ++ " ORDER BY seq DESC LIMIT ?3)" ++
+  " UNION ALL SELECT * FROM (SELECT " ++ Q.cols.prefix() ++ " FROM entry WHERE src = ?1 AND src <> '' AND seq < ?2" ++ Q.sql.chat.keep() ++ " ORDER BY seq DESC LIMIT ?3))" ++
+  " ORDER BY seq DESC LIMIT ?3"
+
 # how many rows of a thread are older than seq ?2
 def Q.sql.below() -> String:
   "SELECT (SELECT count(*) FROM entry WHERE thread = ?1 AND seq < ?2) + (SELECT count(*) FROM entry WHERE src = ?1 AND src <> '' AND seq < ?2)"

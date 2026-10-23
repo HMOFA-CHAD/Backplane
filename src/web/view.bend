@@ -1995,8 +1995,13 @@ def View.entries.r(+lc: I.Loc, es: List<&2, M.Entry>, rs: List<&2, FO.Role>, +st
 
 # a thread's entries, its runs of tool calls folded (the last stays open
 # while its turn runs)
-def View.entries.e(+lc: I.Loc, +es: List<&2, M.Entry>, +st: M.State, +sel: String, +info: Map<&2, String>, +running: Bool, +ec: U.Ec) -> List<&2, D.Node>:
+def View.entries.shown(+lc: I.Loc, +es: List<&2, M.Entry>, +st: M.State, +sel: String, +info: Map<&2, String>, +running: Bool, +ec: U.Ec) -> List<&2, D.Node>:
   View.entries.r(lc, es, FO.Fold.roles.loc(lc, es, info, running), st, sel, ec, STP.Stamps.of(es, st, FO.Fold.now(info), running))
+
+# Project both loaded and newly received activity at render time; no empty
+# DOM row or timestamp survives an internal delivery receipt.
+def View.entries.e(+lc: I.Loc, +es: List<&2, M.Entry>, +st: M.State, +sel: String, +info: Map<&2, String>, +running: Bool, +ec: U.Ec) -> List<&2, D.Node>:
+  View.entries.shown(lc, BI.BU.chat.entries(st, sel, es), st, sel, info, running, ec)
 
 def View.entries(+lc: I.Loc, +es: List<&2, M.Entry>, +st: M.State, +sel: String, +info: Map<&2, String>, +running: Bool) -> List<&2, D.Node>:
   View.entries.e(lc, es, st, sel, info, running, U.Ec.none())
@@ -2004,10 +2009,10 @@ def View.entries(+lc: I.Loc, +es: List<&2, M.Entry>, +st: M.State, +sel: String,
 def View.paged.w(+lc: I.Loc, w: U.Win, +st: M.State, +sel: String, +info: Map<&2, String>, +running: Bool, +ec: U.Ec) -> List<&2, D.Node>:
   match w:
     case U.Win{+h, es}:
-      List.append(&2, D.Node, View.earlier(h, sel), View.entries.e(lc, es, st, sel, info, running, ec))
+      List.append(&2, D.Node, View.earlier(h, sel), View.entries.shown(lc, es, st, sel, info, running, ec))
 
 def View.paged(+lc: I.Loc, +drafts: Map<&2, String>, +es: List<&2, M.Entry>, +st: M.State, +sel: String, +info: Map<&2, String>, +running: Bool, +ec: U.Ec) -> List<&2, D.Node>:
-  View.paged.w(lc, U.Page.newest.from(es, sel, U.Page.since(st, sel), U.Hold.page(es, U.Str.get(drafts, "@away." ++ sel), U.Page.count(Maybe.default(&2, Nat, Nat.read(U.Str.get(drafts, "@more." ++ sel)), 0n)))), st, sel, info, running, ec)
+  View.paged.w(lc, U.Page.newest.visible.from(Bool.not(BI.BU.chat.summary(st, sel)), es, sel, U.Page.since(st, sel), U.Hold.page(es, U.Str.get(drafts, "@away." ++ sel), U.Page.count(Maybe.default(&2, Nat, Nat.read(U.Str.get(drafts, "@more." ++ sel)), 0n)))), st, sel, info, running, ec)
 
 # the thread's shell: its screen, and over it a transparent field that
 # takes keys (and a phone's keyboard)
