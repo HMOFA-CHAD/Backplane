@@ -119,6 +119,11 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
   await wireTap.send('Emulation.clearDeviceMetricsOverride');
   windowGeometry.afterResize=await geometry();saveGeometry();
   const content=await app.evaluate(({BrowserWindow})=>{const w=BrowserWindow.getAllWindows().find(w=>!w.isDestroyed());return{...w.getContentBounds(),zoom:w.webContents.getZoomFactor()};});
+  // The compositor may constrain native windows. Match Playwright's own
+  // viewport override to the measured native content instead of assuming
+  // our requested size or a different CDP session's override took effect.
+  await page.setViewportSize({width:Math.round(content.width/content.zoom),height:Math.round(content.height/content.zoom)});
+  windowGeometry.alignmentStrategy='renderer viewport matches measured native content / zoom';
   await page.waitForFunction(({width,height,zoom})=>Math.abs(innerWidth*zoom-width)<=2&&Math.abs(innerHeight*zoom-height)<=2,content,{timeout:4000});
   windowGeometry.aligned=await geometry();saveGeometry();
   await select(threadId);
