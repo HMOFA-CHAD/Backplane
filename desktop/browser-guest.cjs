@@ -865,7 +865,13 @@ function createBrowserGuestManager({
       if (!tab.ready || (recorderConfig && !documentReady(tab))) throw new Error('Guest not ready');
       creationReady(tab);
       const checked = bounds(rect);
-      owners.get(tab.owner).active = tab.id; display(tab, checked); changed(tab);
+      const state = owners.get(tab.owner), selectionChanged = state.active !== tab.id;
+      state.active = tab.id; display(tab, checked);
+      // Geometry, hide/show and policy refreshes do not change tab inventory.
+      // Publishing them can race a later preparation's revision while the
+      // same active guest is merely re-presented. Actual activation still
+      // publishes; explicit select() keeps its correlated event unchanged.
+      if (selectionChanged) changed(tab);
       return Object.freeze({ ...target(tab), bounds: checked, inputAllowed: currentInput(tab) });
     },
     // Local safety teardown must remain possible after service authority expires.
