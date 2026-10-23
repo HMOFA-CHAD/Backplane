@@ -5,6 +5,7 @@ import ./telemetry-ui.bend as TUI
 import ../core/telemetry.bend as TLM
 import ../core/charter.bend as CH
 import ../core/mailrun.bend as RUN
+import ../core/runlife.bend as RL
 import ../core/maildisposition.bend as MD
 import ../core/kihealth.bend as KH
 import ../core/kserve.bend as KSC
@@ -1978,6 +1979,39 @@ def Hub.agent_stop(m: Maybe<&2, Agent>) -> IO(Unit):
         Proc.kill(pid, 15)
     case None{}:
       IO.pure(Unit, Unit{})
+
+# Only actual registered agents are inspected, after durable commit and
+# all start/send/fallback outs. Drop before the reader reports its exit,
+# so expected retirement cannot become a failed-worker wake or escalation.
+def Agent.retirable(rs: List<&2, ARun>, +st: M.State, +th: String) -> Bool:
+  match rs:
+    case ARun{c, h, _, _, _, _, _, _} <> _:
+      RL.Life.retire(st, th, c, Bool.not(List.is_empty(&2, CM.Held, h)))
+    case Nil{}: False{}
+
+def Agent.retire(go: Bool, a: Agent) -> IO(List<&2, Agent>):
+  match go:
+    case True{}:
+      do IO<List<&2, Agent>>:
+        Hub.agent_stop(Some{a})
+        return Nil{}
+    case False{}: IO.pure(List<&2, Agent>, [a])
+
+def Agents.retire(as: List<&2, Agent>, +st: M.State) -> IO(List<&2, Agent>):
+  match as:
+    case Nil{}: IO.pure(List<&2, Agent>, Nil{})
+    case Agent{+th, input, pid, key, +rs} <> rest:
+      do IO<List<&2, Agent>>:
+        kept : List<&2, Agent> <- Agent.retire(Agent.retirable(rs, st, th), Agent{th, input, pid, key, rs})
+        tail : List<&2, Agent> <- Agents.retire(rest, st)
+        return List.append(&2, Agent, kept, tail)
+
+def Hub.retire_runs(h: Hub) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      do IO<Hub>:
+        kept : List<&2, Agent> <- Agents.retire(as, st)
+        return Hub{st, f, ls, cl, kept, inbox, cfg, note}
 
 def Hub.state(h: Hub) -> M.State & Hub:
   match h:
@@ -9827,7 +9861,8 @@ def Hub.step.wrote(r: Hub & Wrote, +cs: List<&2, M.Change>, os: List<&2, B.Out>,
         t3 : U32 <- PS.Perf.span("hub.step.outs", t2)
         h4 : Hub <- Hub.uber.after(h3, cs)
         h5 : Hub <- Hub.telemetry.scrub(h4)
-        return (h5, True{})
+        h6 : Hub <- Hub.retire_runs(h5)
+        return (h6, True{})
     case Wrote{_, False{}, +err}:
       do IO<Hub & Bool>:
         PS.Log.error("hub", "log write failed: " ++ err)
@@ -11351,10 +11386,16 @@ def Hub.line(h: Hub, +thread: String, +line: String, +now: Nat) -> IO(Hub):
     case Hub{st, f, ls, cl, +as, inbox, cfg, note}:
       Hub.line.m(Agents.run(as, thread), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, line, now)
 
+def Agent.gone(r: Maybe<&2, ARun>, +st: M.State, +now: Nat, +th: String, +code: U32, +why: String) -> B.Step:
+  match r:
+    case Some{ARun{c, h, _, _, _, _, _, _}}:
+      B.Hub.agent_gone.ledger(st, now, th, code, why, c, Bool.not(List.is_empty(&2, CM.Held, h)))
+    case None{}: B.Hub.agent_gone.why(st, now, th, code, why)
+
 def Hub.gone.k(current: Bool, h: Hub, +thread: String, +code: U32, +why: String, +now: Nat) -> IO(Hub):
   match current h:
     case True{} Hub{+st, f, ls, cl, +as, inbox, cfg, note}:
-      Hub.step(Hub{st, f, ls, cl, Agents.drop(as, thread), inbox, cfg, note}, B.Hub.agent_gone.why(st, now, thread, code, why))
+      Hub.step(Hub{st, f, ls, cl, Agents.drop(as, thread), inbox, cfg, note}, Agent.gone(Agents.run(as, thread), st, now, thread, code, why))
     case False{} _:
       IO.pure(Hub, h)
 
@@ -11764,7 +11805,9 @@ def Hub.adopt.all(vs: List<&2, AD.AVerdict>, h: Hub, +now: Nat) -> IO(Hub):
     case Nil{}:
       IO.pure(Hub, h)
     case v <> t:
-      IO.bind(Hub, Hub, Hub.adopt.one(v, h, now), h2 => Hub.adopt.all(t, h2, now))
+      match h:
+        case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+          IO.bind(Hub, Hub, Hub.adopt.one(RL.Life.adopt(v, st), Hub{st, f, ls, cl, as, inbox, cfg, note}, now), h2 => Hub.adopt.all(t, h2, now))
 
 def Hub.adopt.es(+es: List<&2, AD.AEntry>, h: Hub, +allow: Bool, +now: Nat) -> IO(Hub):
   do IO<Hub>:

@@ -1,5 +1,6 @@
 import Base
 import ./mailtriage.bend as TRI
+import ./runlife.bend as RL
 import ./uber.bend as UB
 import ./mailrun.bend as MR
 import ./mailcontinuity.bend as MCN
@@ -5877,9 +5878,25 @@ def Hub.agent_gone.m(+main: Step, +s: M.State, +now: Nat, +thread: String, +code
   Wake.exit(s, now, thread, code, Step.before(Nil{}, Retire.answers(M.Asks.all(s), thread),
     Step.cat(Step.after(main, Retire.asks(M.Asks.all(s), thread, now)), Bg.gone(Lost.live(Hub.thread(s, thread)), M.State.replay(Queue.changes(main), s), now, thread))))
 
-def Hub.agent_gone.why(+s: M.State, +now: Nat, +thread: String, +code: U32, +why: String) -> Step:
+def Hub.agent_gone.active(+s: M.State, +now: Nat, +thread: String, +code: U32, +why: String) -> Step:
   Hub.agent_gone.m(Launch.tell(s, now, thread, Task.finish(s, now, thread, Queue.drain(s, now, thread, Ended.out(s, now, thread, Hub.agent_gone.k(Hub.running(Hub.thread(s, thread)), thread, now, code, why))))),
     s, now, thread, code)
+
+# A completed private SDK disappearing is resource retirement, not failed
+# work. Source approvals, receipts and pending conversation FIFO stay put.
+# A killed unfinished run still takes normal failure/recovery handling.
+def Hub.agent_gone.quiet(quiet: Bool, +s: M.State, +now: Nat, +thread: String, +code: U32, +why: String) -> Step:
+  match quiet:
+    case True{}: Step.none()
+    case False{}: Hub.agent_gone.active(s, now, thread, code, why)
+
+# The server supplies the departing SDK's actual ledger before dropping
+# its actor. A terminal-state race must not hide accepted unfinished input.
+def Hub.agent_gone.ledger(+s: M.State, +now: Nat, +thread: String, +code: U32, +why: String, cmds: CM.Cmds, held: Bool) -> Step:
+  Hub.agent_gone.quiet(RL.Life.retire(s, thread, cmds, held), s, now, thread, code, why)
+
+def Hub.agent_gone.why(+s: M.State, +now: Nat, +thread: String, +code: U32, +why: String) -> Step:
+  Hub.agent_gone.quiet(RL.Life.finished(s, thread), s, now, thread, code, why)
 
 def Hub.agent_gone(+s: M.State, +now: Nat, +thread: String, +code: U32) -> Step:
   Hub.agent_gone.why(s, now, thread, code, "")
