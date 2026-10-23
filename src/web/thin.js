@@ -1,4 +1,5 @@
 import { terminalInputReply } from './terminal-input.js';
+import { modelMenuReply } from './model-menu-input.js';
 
 // Bounded view transport shared by the web and native bridge. Product actions
 // and rendering remain in Bend. No canonical replay is initiated here.
@@ -195,9 +196,10 @@ export class ThinViews {
     // Commands are not display authority: an old action's one matching reply
     // still settles that action, without replacing a newer selected view.
     if (r.cmds.length > 32 || r.cmds.some(x => !viewCommand(x, hub))) return { failed: 'invalid view command', id: e.id, method: c.method, retry: false, cmds: [] };
-    const inputOnly = Object.hasOwn(r, 'terminalInput');
-    if (inputOnly && (c.method !== 'view.action' || l.greeting.renderer !== 'web' || !terminalInputReply(r, c.input))) {
-      return { failed: 'invalid terminal input reply', id: e.id, method: c.method, retry: false, cmds: [] };
+    const inputOnly = Object.hasOwn(r, 'terminalInput') || Object.hasOwn(r, 'modelMenuInput');
+    if (inputOnly && (c.method !== 'view.action' || l.greeting.renderer !== 'web' ||
+        !(Object.hasOwn(r, 'modelMenuInput') ? modelMenuReply(r, c.input) : terminalInputReply(r, c.input)))) {
+      return { failed: 'invalid compact action reply', id: e.id, method: c.method, retry: false, cmds: [] };
     }
     if (this.api.validateResult && this.api.validateResult(r, c.input) !== true) return { failed: 'invalid view presentation', id: e.id, method: c.method, retry: false, cmds: [] };
     const cmds = c.method === 'view.action' ? r.cmds.map(x => this.api.command(snapshot(x), c.input)) : [];

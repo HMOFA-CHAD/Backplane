@@ -22,6 +22,23 @@ async function fixture(overrides={}){
  const open=()=>{host.greeting(greeting);const r=reply();host.receive(r);return r;};
  return{host,api,sent,commands,views,states,warnings,searches,messages,disk,reply,open,greeting,flushFields:()=>fieldRefresh?.(),getSession:()=>session,tick:ms=>{at+=ms;host.expire();}};
 }
+test('model menu compact: cached menu settles without replacing picture or readiness',async()=>{
+ const f=await fixture({modelMenuReady:()=>true});f.open();const count=f.views.length;f.host.request('flag','models');const req=f.sent.at(-1);assert.equal(req.p.modelMenuInput,true);
+ const reply=f.reply(req,{modelMenuInput:true,session:{...req.p.session,open:{models:true}}});delete reply.result.shown;delete reply.result.window;
+ assert.equal(f.host.receive(reply),true);assert.equal(f.host.ready,true);assert.equal(f.views.length,count);assert.equal(f.getSession().open.models,true);assert.equal(f.host.receive(reply),false);
+ f.host.request('model','server-choice');assert.equal(f.sent.at(-1).p.modelMenuInput,undefined);
+});
+test('model menu compact: invalid ACK executes no commands and cannot establish first readiness',async()=>{
+ const f=await fixture({modelMenuReady:()=>true});f.open();f.host.request('flag','models');const req=f.sent.at(-1),reply=f.reply(req,{modelMenuInput:true,session:{...req.p.session,open:{models:true}},cmds:[{type:'send',text:JSON.stringify({id:2,m:'thread.modes',p:{}})}]});delete reply.result.shown;delete reply.result.window;
+ f.host.receive(reply);assert.equal(f.commands.length,0);assert.equal(f.host.ready,false);
+ const fresh=await fixture();fresh.host.greeting(fresh.greeting);const forged=fresh.reply(undefined,{modelMenuInput:true});delete forged.result.shown;delete forged.result.window;fresh.host.receive(forged);assert.equal(fresh.host.ready,false);
+});
+test('model menu compact: deferred output refresh follows ACK and queued Settings retains priority',async()=>{
+ const f=await fixture({modelMenuReady:()=>true});f.open();f.host.request('flag','models');const req=f.sent.at(-1);f.host.update();f.host.request('flag','settings');
+ const reply=f.reply(req,{modelMenuInput:true,session:{...req.p.session,open:{models:true}}});delete reply.result.shown;delete reply.result.window;f.host.receive(reply);
+ assert.equal(f.sent.at(-1).m,'view.action');assert.equal(f.sent.at(-1).p.value,'settings');assert.equal(f.sent.filter(x=>x.m==='view.update').length,0);
+ f.host.receive(f.reply());assert.equal(f.sent.at(-1).m,'view.update');
+});
 test('greeting alone is not ready; matching current result renders without any canonical history request',async()=>{
  const f=await fixture();f.host.greeting(f.greeting);assert.equal(f.host.ready,false);assert.equal(f.sent.length,1);assert.equal(f.sent[0].m,'view.open');
  f.host.receive(f.reply());assert.equal(f.host.ready,true);assert.equal(f.views.length,1);assert(f.sent.every(x=>x.m.startsWith('view.')));

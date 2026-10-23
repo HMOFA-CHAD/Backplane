@@ -1745,6 +1745,10 @@ async function startThin(again = false, reason = "initial") {
         restoreTransition(target);
       },
       local: localPresentation,
+      modelMenuReady: () => {
+        const layer = document.querySelector('[data-local-models="1"]');
+        return !!layer && !layer.querySelector('input')?.value;
+      },
       sessionChanged: (session, detail) => {
         thinSession = session;
         if (detail?.remote) {

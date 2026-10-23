@@ -2,12 +2,14 @@ import { utf8Bytes, viewTarget } from './thin.js';
 import { validatePresentation } from './startup.js';
 import { mailDraftContext } from './mail-drafts.js';
 import { terminalInputReply } from './terminal-input.js';
+import { modelMenuReply } from './model-menu-input.js';
 const object = x => x && typeof x === 'object' && !Array.isArray(x);
 const string = (x, cap = 1024) => typeof x === 'string' && utf8Bytes(x) <= cap;
 const decimal = x => string(x, 32) && /^(0|[1-9][0-9]*)$/.test(x);
 const flag = x => typeof x === 'boolean';
 export function validateThinResult(r, input) {
   try {
+    if (Object.hasOwn(r, 'modelMenuInput')) return modelMenuReply(r, input);
     if (Object.hasOwn(r, 'terminalInput')) return terminalInputReply(r, input);
     if (Object.hasOwn(input, 'query')) {
       const s = r.search;
