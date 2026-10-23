@@ -30,7 +30,7 @@ def status() -> J.Json:
 def rows(rs: List<&2, Z.URow>) -> String:
   match rs:
     case Nil{}: ""
-    case r <> tail: Z.URow.label(r) ++ "|" ++ Z.URow.note(r) ++ "|" ++ Z.URow.act(r) ++ "\n" ++ rows(tail)
+    case +r <> tail: Z.URow.label(r) ++ "|" ++ Z.URow.note(r) ++ "|" ++ Z.URow.act(r) ++ "\n" ++ rows(tail)
 
 def state() -> M.State:
   M.State.replay([M.ThreadCreated{"t", "", "Fixture", M.Local{}, "", "", "codex", "", 1n}], M.State.empty())
@@ -61,11 +61,10 @@ def refreshed(+text: String) -> A.Actor:
 def check(name: String, yes: Bool) -> IO(Unit):
   C.Check.str(name, Bool.pick(String, yes, "yes", "no"), "yes")
 
-def main() -> IO(Unit):
+def main.source(+source: J.Json) -> IO(Unit):
+  +text = Z.Bj.info("{}", J.Json.show(source))
+  +projection = J.Json.get_obj(Z.Bj.parse(text), "status")
   do IO<Unit>:
-    +source = status()
-    +text = Z.Bj.info("{}", J.Json.show(source))
-    +projection = J.Json.get_obj(Z.Bj.parse(text), "status")
     check("fixture closed ledger exceeds rejected-frame size", Nat.is_gt(J.Json.bytes(source), 1205527n))
     check("projected usage info fits well below the unchanged frame cap", Nat.is_lt(J.Json.bytes(message(text)), 8192n))
     C.Check.str("all displayed totals, warnings, runtime, unknown amounts and capped-open count unchanged",
@@ -81,3 +80,6 @@ def main() -> IO(Unit):
     C.Check.str("info preserves queued commands without adding one", Nat.show(List.length(&2, J.Json, A.Actor.queued(received(text)))), "1")
     check("private usage cache is absent from serialized presentation session", Bool.not(String.contains(J.Json.show(V.Route.pack(A.Actor.ui(received(text)))), "boat.usage")))
     C.Check.str("refresh retains private info and rejects client spoof", U.Ui.info(A.Actor.ui(refreshed(text)), "boat.usage"), text)
+
+def main() -> IO(Unit):
+  main.source(status())

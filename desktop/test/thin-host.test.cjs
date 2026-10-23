@@ -403,3 +403,23 @@ test('composer references: late completion Keep cannot replace newer typing or a
  f.host.request('skill','@Miso');const other=f.sent.at(-1);f.host.request('select','B');f.host.request('draft','B own text');f.host.receive(f.reply());f.host.receive(f.reply(other,{cmds:[{type:'keep',thread:'A',text:'old completion'}]}));
  assert.equal(f.getSession().sel,'B');assert.equal(f.getSession().drafts.B,'B own text');
 });
+
+// A UI intention must settle before any background picture can restore its old flags.
+test('local UI intentions: active and queued model and Settings clicks outrank refresh',async()=>{
+ for(const queued of [false,true])for(const [action,value] of [['flag','models'],['flag','settings'],['settings-page','appearance'],['bfield','mq\u001fquery']]){
+  const f=await fixture({prepare:s=>s});f.open();if(queued)f.host.request('fold','row');
+  f.host.request(action,value);if(action==='bfield'&&!queued)f.flushFields();
+  const before=f.sent.length,link=f.host.client.links.get(f.api.hub);
+  f.host.update();f.host.receive({t:'view.changed',version:1,generation:'7',epoch:'actual',viewId:link.viewId,target:link.target,viewRevision:'2'});
+  assert.equal(f.sent.length,before,'background refresh may not overtake '+(queued?'queued ':'active ')+action+':'+value);
+ }
+});
+test('local UI intentions: earlier in-flight read cannot trigger a stale read over model opening',async()=>{
+ const f=await fixture({prepare:s=>s});f.open();f.host.update();const old=f.sent.at(-1);
+ let accepted;f.host.request('flag','models',yes=>accepted=yes);const action=f.sent.at(-1),before=f.sent.length;
+ f.host.receive(f.reply(old));assert.equal(f.sent.length,before,'retired read must defer its follow-up until action adoption');
+ f.host.receive(f.reply(action,{session:{...f.getSession(),open:{models:true}},shown:{type:'text',text:'server model choices'}}));
+ assert.equal(accepted,true);assert.equal(f.views.at(-1).n.text,'server model choices');
+ assert.equal(f.sent.at(-1).m,'view.update');assert.equal(f.sent.at(-1).p.session.open.models,true);
+ assert.equal(f.sent.filter(r=>r.m==='view.action').length,1,'no action retries');
+});

@@ -238,8 +238,10 @@ export class ThinHost {
     return this.pending.get(this.active)?.operation?.action === 'thread-child' || this.actions.some(op => op.action === 'thread-child');
   }
   refreshPending() {
-    const op = this.pending.get(this.active)?.operation;
-    return this.uploadPending() || op?.action === 'settings-page' || (op?.action === 'flag' && op.value === 'settings');
+    // Every queued/issued action owns its one presentation result. A read
+    // completing during an action must not send a newer picture request with
+    // the pre-click flags, even for an otherwise side-effect-free menu toggle.
+    return !!this.pending.get(this.active)?.operation || this.actions.length > 0;
   }
   update() {
     if (!this.ready) return false;

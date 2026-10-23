@@ -33,6 +33,8 @@ import { refreshCacheIdentity } from "./cache-identity.js";
 import { discoverViews } from "./thin-discovery.js";
 import { Backoff, Retry, watchWake, probeHub, bundleOf, deployed, QUIET_MS } from "./reconnect.js";
 import { ThinHost, preservePresentationRoute, presentationTarget } from "./thin-host.js";
+import { ModelFeedback } from "./model-feedback.js";
+const modelFeedback = new ModelFeedback(() => later());
 import { ThinContinuations } from "./thin-continuations.js";
 import { ThinMailDraft, mailReplyField } from "./mail-drafts.js";
 import { ThinViews, viewCapability } from "./thin.js";
@@ -515,7 +517,7 @@ function render() {
   queued = false;
   const tl = document.getElementById("timeline");
   const t0 = PERF ? pnow() : 0;
-  const page = frontendNode ? thinContinuations.project(App.presentation_overlay(frontendNode, presentationJson(currentSession())), expand)
+  const page = frontendNode ? thinContinuations.project(App.presentation_overlay(frontendNode, presentationJson(modelFeedback.project(currentSession()))), expand)
     : transitionNode ? App.presentation_overlay(transitionNode, presentationJson(currentSession())) : focusedNode || App.view(canonicalBoot ? ui : App.presentation_wait(ui));
   const t1 = PERF ? pnow() : 0;
   patch(root, { $: T.El, tag: "div", key: "", attrs: { $: "Nil" }, kids: { $: "Con", head: page, tail: { $: "Nil" } } });
@@ -776,7 +778,9 @@ function dispatch(action, value, timer) {
         if (!field || !thin.request("bfield", "mrreply\u001f" + field.value)) return true;
       }
       if (action === "hold-away" || action === "hold-end") return true;
-      return thin.request(action, value);
+      const layer = document.querySelector('[data-local-models="1"]');
+      const settled = layer ? modelFeedback.choice(action, value, layer.style.display !== "none") : undefined;
+      return thin.request(action, value, settled);
     }
     if (!timer) showViewStatus("Saved conversation is read-only until connected.");
     return true;
@@ -1734,6 +1738,7 @@ async function startThin(again = false, reason = "initial") {
         action === "send" || action === "send-alt" ? input : session,
         Wire.plain(App.presentation_prepare(presentationJson(session), presentationJson(input), action))),
       selection: (target, session) => {
+        modelFeedback.clear();
         thinMailDraft.clear();thinContinuations.clear();
         if (target.kind === "thread") { ui = App.presentation_select(ui, target.id);void restoreFocused(); }
         else { focusedRequestedKey = null;focusedView.invalidate(); }
@@ -1778,6 +1783,7 @@ async function startThin(again = false, reason = "initial") {
         if (!current()) return;
         remoteReady = state.remoteReady === true;
         if (!remoteReady) {
+          modelFeedback.clear();
           // Keep the last validated tree as a read-only picture. The local Ui
           // has no canonical bot/catalog state in view mode. Falling back to
           // it here removed the sidebar and cats after a refusal or disconnect.

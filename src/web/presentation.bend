@@ -97,3 +97,28 @@ def Node.draft.go(nodes: List<&2, D.Node>, +text: String, acc: List<&2, D.Node>)
 
 def Node.draft(node: D.Node, text: String) -> D.Node:
   Node.read.first(Node.draft.go([node], text, Nil{}))
+
+# An optimistic menu is a picture of server-supplied bounded choices only.
+# This never changes a session, sends a command or selects a model.
+def Node.models.attrs(attrs: List<&2, D.Attr>, +open: Bool) -> List<&2, D.Attr>:
+  match attrs:
+    case Nil{}: Nil{}
+    case D.At{"style", _} <> tail: D.At{"style", Bool.pick(String, open, "display:contents", "display:none")} <> Node.models.attrs(tail, open)
+    case D.At{"aria-hidden", _} <> tail: D.At{"aria-hidden", Bool.pick(String, open, "false", "true")} <> Node.models.attrs(tail, open)
+    case head <> tail: head <> Node.models.attrs(tail, open)
+
+def Node.overlay.attrs(key: String, +attrs: List<&2, D.Attr>, text: String, open: Bool) -> List<&2, D.Attr>:
+  match key:
+    case "model-layer": Node.models.attrs(attrs, open)
+    case _: Node.draft.attrs(Node.composer(attrs), attrs, text)
+
+def Node.overlay.go(nodes: List<&2, D.Node>, +text: String, +open: Bool, acc: List<&2, D.Node>) -> List<&2, D.Node>:
+  match nodes:
+    case Nil{}: acc
+    case D.Txt{value} <> tail: Node.overlay.go(tail, text, open, D.Txt{value} <> acc)
+    case D.El{tag, +key, attrs, kids} <> tail:
+      Node.overlay.go(tail, text, open, D.El{tag, key, Node.overlay.attrs(key, attrs, text, open),
+        List.reverse(&2, D.Node, Node.overlay.go(kids, text, open, Nil{}))} <> acc)
+
+def Node.overlay(node: D.Node, text: String, open: Bool) -> D.Node:
+  Node.read.first(Node.overlay.go([node], text, open, Nil{}))
