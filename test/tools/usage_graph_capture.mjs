@@ -1,0 +1,32 @@
+import { pathToFileURL } from 'node:url';
+import { resolve } from 'node:path';
+import { writeFileSync } from 'node:fs';
+const { chromium } = await import(pathToFileURL(process.env.BACKPLANE_PLAYWRIGHT_PATH || resolve('tools/browser/node_modules/playwright-core/index.mjs')).href);
+const out=resolve('build/usage-review');
+const browser=await chromium.launch({executablePath:process.env.BACKPLANE_CHROME || chromium.executablePath(),headless:true,args:['--disable-gpu']});
+try {
+ const page=await browser.newPage({viewport:{width:1280,height:1000}});
+ const errors=[];page.on('pageerror',e=>errors.push(String(e)));
+ await page.goto('http://127.0.0.1:4039');
+ await page.getByRole('heading',{name:'Daily recorded tokens',exact:true}).waitFor();
+ await page.screenshot({path:resolve(out,'usage-desktop.png'),fullPage:true});
+ await page.getByRole('tab',{name:'claude',exact:true}).focus();
+ await page.keyboard.press('ArrowRight');
+ await page.getByRole('tab',{name:'codex',exact:true}).and(page.locator('[aria-selected="true"]')).waitFor();
+ if(await page.getByRole('tab').count()!==3)throw Error('Disabled provider has a tab');
+ await page.getByText('Daily readings',{exact:true}).click();
+ await page.getByText('110 recorded tokens · 1 of 2 recorded turns supplied token readings. Missing token fields remain unknown.',{exact:true}).waitFor();
+ await page.getByText('Daily readings',{exact:true}).click();
+ await page.screenshot({path:resolve(out,'usage-codex-desktop.png'),fullPage:true});
+ await page.setViewportSize({width:390,height:844});
+ await page.screenshot({path:resolve(out,'usage-390.png'),fullPage:true});
+ const mobile=await page.evaluate(()=>({viewport:innerWidth,scroll:document.documentElement.scrollWidth,plot:document.querySelector('.usage-plot').getBoundingClientRect().height}));
+ if(mobile.scroll>mobile.viewport)throw Error('Mobile horizontal overflow: '+JSON.stringify(mobile));
+ if(mobile.plot!==180)throw Error('Plot does not reserve fixed height');
+ await page.getByRole('tab',{name:'grok',exact:true}).click();
+ await page.getByRole('tab',{name:'grok',exact:true}).and(page.locator('[aria-selected="true"]')).waitFor();
+ await page.screenshot({path:resolve(out,'usage-no-readings-390.png'),fullPage:true});
+ if(errors.length)throw Error(errors.join('\n'));
+ writeFileSync(resolve(out,'browser-checks.json'),JSON.stringify({pass:true,scope:'production Usage nodes in isolated fixture host, not installed hub',mobile,errors,checks:['keyboard ArrowRight switches provider','only enabled tabs','exact daily reading visible','390px no overflow','180px reserved graph height','missing-provider readings view']},null,2));
+ console.log('Usage desktop/390 captures and focused browser checks passed');
+} finally {await browser.close();}

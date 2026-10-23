@@ -1012,6 +1012,32 @@ private struct SetFieldView: View {
 // The hub's settings rows (src/mobile/screen.bend's Mob.settings.of), as
 // the Hub settings page draws them. Rows about this device (`local`) are
 // App settings' business and are left out.
+private struct UsageDayChart: View {
+    let days: [UsageDay]
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            GeometryReader { geometry in
+                HStack(alignment: .bottom, spacing: 2) {
+                    ForEach(days, id: \.date) { day in
+                        Rectangle()
+                            .fill(day.known ? Color.accentColor : Color.secondary.opacity(0.15))
+                            .frame(height: day.known ? max(2, geometry.size.height * CGFloat(day.fraction) / 10000) : geometry.size.height)
+                            .accessibilityLabel(day.date + ": " + day.reading)
+                    }
+                }
+                .frame(height: geometry.size.height, alignment: .bottom)
+            }
+            .frame(height: 180)
+            Text("Dim columns: no readings · baseline: recorded zero").font(.footnote).foregroundStyle(.secondary)
+            DisclosureGroup("Daily readings") {
+                ForEach(days, id: \.date) { day in
+                    Text(day.date + " · " + day.reading).font(.footnote).frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+    }
+}
+
 struct HubSettingsRows: View {
     let model: AppModel
     let rows: [SetRow]
@@ -1029,6 +1055,7 @@ struct HubSettingsRows: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(r.label)
                     if !r.note.isEmpty { Text(r.note).font(.footnote).foregroundStyle(.secondary) }
+                    if let days = r.chart, !days.isEmpty { UsageDayChart(days: days) }
                     ForEach(r.fields ?? [], id: \.self) { f in SetFieldView(model: model, field: f) }
                     if let q = r.qr, !q.isEmpty {
                         VStack(spacing: 6) {

@@ -6,6 +6,8 @@
 // is dumb).
 
 import App from "./app.bend";
+import { installUsageTabs } from "./usage-tabs.js";
+installUsageTabs();
 import { pairBrowser } from "./auth.js";
 
 // Consume the secret before the generic deeplink handler clears the fragment.

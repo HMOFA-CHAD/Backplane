@@ -10,6 +10,7 @@ import ../core/signal.bend as SG
 import ../core/client.bend as U
 import ../core/usage.bend as UZ
 import ../core/usage_page.bend as UP
+import ../core/usage_graph.bend as UG
 import ../web/dom.bend as D
 import ../web/view.bend as V
 import ./notify.bend as N
@@ -1489,6 +1490,44 @@ def Mob.usage.controls(cs: List<&2, UP.UpControl>) -> List<&2, J.Json>:
     case UP.UpControl{label, action, value, on} <> rest:
       Mob.set.btn(label, action, value, on) <> Mob.usage.controls(rest)
 
+def Mob.usage.providers(ps: List<&2, String>, +cur: String) -> List<&2, J.Json>:
+  match ps:
+    case Nil{}: Nil{}
+    case +p <> rest: Mob.set.btn(p, "usage-provider", p, String.eq(p, cur)) <> Mob.usage.providers(rest, cur)
+
+def Mob.usage.days(ds: List<&2, UG.UgDay>, +max: Nat) -> List<&2, J.Json>:
+  match ds:
+    case Nil{}: Nil{}
+    case UG.UgDay{+date, +v} <> rest:
+      J.Json.obj([J.KV{"date", J.Str{date}}, J.KV{"reading", J.Str{UG.Ug.reading(v)}}, J.KV{"known", J.Flag{UG.Ug.known(v)}},
+        J.KV{"fraction", J.Num{Nat.show(Nat.div(Nat.mul(UP.Up.tokens(v), 10000n), Bool.pick(Nat, Nat.is_eq(max, 0n), 1n, max)))}}]) <> Mob.usage.days(rest, max)
+
+def Mob.usage.ranked(ps: List<&2, UG.UgProject>, +rank: Nat) -> List<&2, J.Json>:
+  match ps:
+    case Nil{}: Nil{}
+    case UG.UgProject{+id, title, n} <> rest:
+      Mob.set.row(Nat.show(rank) ++ ". " ++ title, Nat.show(n) ++ " tokens · " ++ Bool.pick(String, String.is_empty(id), "No project identity", id), Nil{}) <> Mob.usage.ranked(rest, Nat.add(rank, 1n))
+
+def Mob.usage.graph(have: Bool, +u: U.Ui) -> List<&2, J.Json>:
+  match have:
+    case False{}: [Mob.set.row("Daily recorded tokens", Bool.pick(String, String.is_empty(U.Ui.info(u, "models")), "Provider availability is loading.", "No enabled providers on this machine."), Nil{})]
+    case True{}:
+      +days = UG.Ug.days(U.Ui.state.of(u), U.Side.now(u), U.Usage.page.period(u), U.Usage.page.provider(u))
+      [J.Json.obj([J.KV{"label", J.Str{"Daily recorded tokens · " ++ U.Usage.page.provider(u)}},
+        J.KV{"note", J.Str{M.Tok.day(UG.Ug.start(U.Side.now(u), U.Usage.page.period(u))) ++ " – " ++ M.Tok.day(U.Side.now(u)) ++ " (UTC) · " ++ UG.Ug.coverage(U.Ui.state.of(u))}},
+        J.KV{"buttons", J.Json.arr(Nil{})}, J.KV{"chart", J.Json.arr(Mob.usage.days(days, UG.Ug.max(days, 0n)))}])]
+
+def Mob.usage.dashboard(show: Bool, +u: U.Ui) -> List<&2, J.Json>:
+  match show:
+    case False{}: Nil{}
+    case True{}:
+      +st = U.Ui.state.of(u)
+      +projects = UG.Ug.projects(st, U.Ui.projects(st), U.Side.now(u), U.Usage.page.period(u))
+      List.concat(&2, J.Json, [[Mob.set.row("Provider", "", Mob.usage.providers(U.Usage.page.providers(u), U.Usage.page.provider(u)))],
+        Mob.usage.graph(Bool.not(String.is_empty(U.Usage.page.provider(u))), u),
+        [Mob.set.row("Top 5 projects", "Recorded tokens across all models and providers · same UTC period. Missing usage is unknown." ++ Bool.pick(String, String.eq(U.Usage.page.period(u), "today"), " " ++ UG.Ug.coverage(st), ""), Nil{})],
+        Bool.pick(List<&2, J.Json>, List.is_empty(&2, UG.UgProject, projects), [Mob.set.row("Projects", "No project token readings in this period.", Nil{})], Mob.usage.ranked(projects, 1n))])
+
 def Mob.usage.pagers(cs: List<&2, UP.UpControl>) -> List<&2, J.Json>:
   match cs:
     case Nil{}: Nil{}
@@ -1498,7 +1537,7 @@ def Mob.usage.page(+lc: I.Loc, +u: U.Ui) -> List<&2, J.Json>:
   +cs = U.Usage.page.controls(u)
   List.concat(&2, J.Json, [[Mob.set.row("Period", "UTC calendar boundaries", Mob.usage.controls(List.take(&2, UP.UpControl, cs, 2n))),
     Mob.set.row("View", "", Mob.usage.controls(List.take(&2, UP.UpControl, List.drop(&2, UP.UpControl, cs, 2n), 3n)))],
-    Mob.usage.rows.loc(lc, U.Usage.page.rows(u)), Mob.usage.pagers(List.drop(&2, UP.UpControl, cs, 5n))])
+    Mob.usage.dashboard(String.eq(U.Usage.page.metric(u), "tokens"), u), Mob.usage.rows.loc(lc, U.Usage.page.rows(u)), Mob.usage.pagers(List.drop(&2, UP.UpControl, cs, 5n))])
 
 def Mob.kn.acts(as: List<&2, KH.KAct>) -> List<&2, J.Json>:
   match as:

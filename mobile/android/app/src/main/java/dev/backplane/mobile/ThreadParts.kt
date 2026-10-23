@@ -1017,11 +1017,30 @@ fun FindSheet(m: AppModel, f: Find) {
 
 // the hub's settings, as the desktop has them
 @OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun UsageDayChart(days: List<UsageDay>) {
+    var expanded by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth().height(180.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.Bottom) {
+            days.forEach { day ->
+                Box(Modifier.weight(1f).height(if (day.known) maxOf(2f, 180f * day.fraction / 10000f).dp else 180.dp)
+                    .background(if (day.known) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+                    .semantics { contentDescription = day.date + ": " + day.reading })
+            }
+        }
+        Text("Dim columns: no readings · baseline: recorded zero", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+        TextButton(onClick = { expanded = !expanded }) { Text("Daily readings") }
+        if (expanded) days.forEach { Text(it.date + " · " + it.reading, style = MaterialTheme.typography.bodySmall) }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
 fun LazyListScope.hubSettingsRows(m: AppModel, rows: List<SetRow>, notify: Boolean = false) {
     items(rows.filter { if (notify) it.notify else !(it.local || it.notify) }) { r ->
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(r.label, style = MaterialTheme.typography.bodyLarge)
             if (r.note.isNotEmpty()) Text(r.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+            if (r.chart.isNotEmpty()) UsageDayChart(r.chart)
             for (f in r.fields) {
                 var t by remember(r.label, f.name) { mutableStateOf(f.value) }
                 OutlinedTextField(t, { t = it; m.field(f.name, it) }, Modifier.fillMaxWidth(), singleLine = true, label = { Text(f.hint) },

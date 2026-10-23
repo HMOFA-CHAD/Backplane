@@ -931,7 +931,7 @@ def Hubs.act.r(routed: Bool, +hs: Hubs, +action: String, +value: String) -> HAct
 # Usage controls are local to the named machine. An obsolete qualified
 # machine key must never fall through and change the focused machine.
 def Hubs.usage.action(+action: String) -> Bool:
-  Nat.is_lt(C.Codec.pos(["usage-period", "usage-metric", "usage-model-page", "usage-project-page"], action), 4n)
+  Nat.is_lt(C.Codec.pos(["usage-period", "usage-metric", "usage-model-page", "usage-project-page", "usage-provider"], action), 5n)
 
 def Hubs.usage.target(known: Bool, +hs: Hubs, +action: String, +value: String) -> HAct:
   match known:
