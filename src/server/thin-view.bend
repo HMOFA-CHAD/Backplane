@@ -117,7 +117,7 @@ def Projects.pick(+ts: List<&2, M.Thread>, +ps: Map<&2, M.Project>, +acc: Map<&2
 def State.window.empty(+st: M.State, +threads: Map<&2, M.Thread>) -> M.State:
   match st:
     case M.State{+ps, _, _, +n, +tk, +settings, +queued, +asks, _, +nav, +bw}:
-      M.State{Projects.pick(Map.values(&2, M.Thread, threads), ps, Map.new(&2, M.Project)), threads, Nil{}, n, tk, settings, queued, asks, Map.new(&2, M.Device), nav,
+      M.State{ps, threads, Nil{}, n, tk, settings, queued, asks, Map.new(&2, M.Device), nav,
         [M.Ext{M.Ext.world(M.Ext.of(bw)), Map.new(&2, List<&2, M.Entry>), M.Ext.mail(M.Ext.of(bw))}]}
 
 def State.window.add(+es: List<&2, M.Entry>, +st: M.State) -> M.State:
@@ -149,8 +149,10 @@ def State.window.rows(ids: List<&2, String>, +st: M.State, +index: T.Index, acc:
     case id <> tail: State.window.rows(tail, st, index, T.Row.preview(Message.whole(st, T.Index.row.k(Map.get(T.Row, T.Row.blank(), T.Index.rows(index), id)))) <> acc)
 
 def State.window(+st: M.State, +index: T.Index, +target: J.Json, +rows: List<&2, String>) -> M.State:
+  # The sidebar needs every project/thread's metadata, not just the recent24.
+  # Message history remains limited to the explicitly selected entry window.
   State.window.add(State.window.rows(rows, st, index, Nil{}),
-    State.window.empty(st, Threads.pick(Target.thread(st, target) <> T.Index.recent(index), st, Map.new(&2, M.Thread))))
+    State.window.empty(st, Threads.get(st)))
 
 # A route restores only transient selection. The normal bot tab policy
 # decides whether that content route is still available for this exact bot.

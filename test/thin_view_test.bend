@@ -31,6 +31,17 @@ def has.text(es: List<&2, M.Entry>, +x: String) -> Bool:
     case Nil{}: False{}
     case +e <> t: Bool.or(String.eq(T.Entry.text(e), x), has.text(t, x))
 
+def catalog(+n: Nat, s: M.State) -> M.State:
+  match n:
+    case 0n: s
+    case 1n+k:
+      catalog(k, M.State.apply(M.State.apply(s, M.ProjectCreated{"p" ++ Nat.show(1n+k), "Project " ++ Nat.show(1n+k), "/tmp/project", 1n}),
+        M.ThreadCreated{"t" ++ Nat.show(1n+k), "p" ++ Nat.show(1n+k), "Thread " ++ Nat.show(1n+k), M.Local{}, "", "", "codex", "", 1n+k}))
+
+def archived(t: M.Thread) -> Bool:
+  match t:
+    case M.Thread{_, _, _, _, _, _, _, ar, _, _, _, _, _, _, _, _, _, _, _, _, _}: ar
+
 def main() -> IO(Unit):
   do IO<Unit>:
     +st : M.State = state()
@@ -39,6 +50,13 @@ def main() -> IO(Unit):
     C.Check.str("missing target refused before rendering", yes(V.Target.exists(st, V.Target.json("thread", "foreign"))), "no")
     C.Check.str("bounded window contains only selected entries", Nat.show(List.length(&2, M.Entry, M.State.entries.all(V.State.window(st, i, target(), ["1"])))), "1")
     C.Check.str("window never mutates authoritative state", Nat.show(List.length(&2, M.Entry, M.State.entries.all(st))), "1")
+    +cat : M.State = M.State.apply(M.State.apply(M.State.apply(M.State.apply(catalog(32n, st), M.ThreadArchived{"t1", True{}, 40n}), M.ProjectRemoved{"p2", 41n}), M.ProjectCreated{"empty", "Empty project", "/tmp/empty", 42n}), M.MessagePosted{"t1", "secret", M.Assistant{}, "unselected body stays outside window", 43n})
+    +windowed : M.State = V.State.window(cat, T.Index.of(cat), target(), ["1"])
+    C.Check.str("selected window keeps projects beyond the recent24", Nat.show(List.length(&2, M.Project, U.Ui.projects(windowed))), "33")
+    C.Check.str("selected window keeps full thread metadata for sidebar", Nat.show(List.length(&2, M.Thread, U.Ui.threads(windowed))), "33")
+    C.Check.str("removed project stays removed in sidebar", Nat.show(List.length(&2, U.SRow, U.Side.rows(windowed, 50n))), "32")
+    C.Check.str("archived thread stays archived", Bool.show(archived(M.State.thread.get(windowed, "t1"))), "True")
+    C.Check.str("full catalogs never import another thread body", Bool.show(has.text(M.State.entries.all(windowed), "unselected body stays outside window")), "False")
     +u : U.Ui = V.Session.input(st, obj("{}"), obj("{}"), 5n, request())
     C.Check.str("current thin adapter has no provisional-only guard", U.Ui.scratch(u, "@presentation"), "")
     C.Check.str("current thin adapter binds exact canonical selected thread", U.Ui.sel.of(u), "a")

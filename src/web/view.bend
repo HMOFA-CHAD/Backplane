@@ -1731,7 +1731,7 @@ def View.act(step: Bool, e: M.Entry, +st: M.State, +ec: U.Ec) -> D.Node:
 def View.msg.k.loc(+lc: I.Loc, user: Bool, +id: String, +text: String, +stamp: String) -> D.Node:
   match user:
     case True{}:
-      D.El{"div", id, [D.At{"class", "msg user"}, D.At{"data-id", id}], D.Dom.cat(View.user_body(text), [D.Dom.span("stamp", stamp), D.Dom.copy.loc(lc, AT.Att.body(text))])}
+      D.El{"div", id, [D.At{"class", "msg user"}, D.At{"data-id", id}], D.Dom.cat(View.user_body(text), D.Dom.cat(View.images(AT.Att.images(text)), [D.Dom.span("stamp", stamp), D.Dom.copy.loc(lc, AT.Att.body(text))]))}
     case False{}:
       D.El{"div", id, [D.At{"class", "msg assistant"}, D.At{"data-id", id}], D.Dom.cat([D.El{"div", "", [D.At{"class", "body"}], D.Md.render.loc(lc, text)}], D.Dom.cat(View.images(IM.Img.paths(text)), [D.Dom.span("stamp", stamp), D.Dom.copy.loc(lc, text)]))}
 
