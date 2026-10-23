@@ -7132,6 +7132,21 @@ def Laws.life_woke_clears_override(at, t):
     case M.Thread{_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
       {==}
 
+def Laws.wt_again_recent_turn():
+  {==}
+
+def Laws.wt_again_inflight():
+  {==}
+
+def Laws.wt_again_expires():
+  {==}
+
+def Laws.wt_again_answered():
+  {==}
+
+def Laws.wt_first_waits():
+  {==}
+
 def Laws.life_finished_settles():
   {==}
 

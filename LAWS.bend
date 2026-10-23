@@ -5063,6 +5063,31 @@ law life_woke_clears_override:
   for t: M.Thread
   {M.Lifecycle.override(M.Thread.woke(at, t)) == M.NoOverride{} : M.Override}
 
+# Worktrees made again (model.bend's Worktree.waits): a removed worktree is
+# being made only while the hub's own ask is fresh
+
+# a turn that just ended and whose worktree was then removed is not being
+# made again: the next message asks for it
+law wt_again_recent_turn:
+  {M.Worktree.waits(H.Wt.demo(Nil{}), M.State.thread.get(H.Wt.demo(Nil{}), "t1"), 7n) == False{} : Bool}
+
+# while the hub's ask is out, a message waits for it (no second ask)
+law wt_again_inflight:
+  {M.Worktree.waits(H.Wt.demo([M.SettingSet{"wt.again.t1", "7", 7n}]), M.State.thread.get(H.Wt.demo([M.SettingSet{"wt.again.t1", "7", 7n}]), "t1"), 20n) == True{} : Bool}
+
+# an ask never answered stops holding messages after the wait
+law wt_again_expires:
+  {M.Worktree.waits(H.Wt.demo([M.SettingSet{"wt.again.t1", "7", 7n}]), M.State.thread.get(H.Wt.demo([M.SettingSet{"wt.again.t1", "7", 7n}]), "t1"), 127n) == False{} : Bool}
+
+# an answered ask (cleared) holds nothing
+law wt_again_answered:
+  {M.Worktree.waits(H.Wt.demo([M.SettingSet{"wt.again.t1", "7", 7n}, M.SettingSet{"wt.again.t1", "", 9n}]), M.State.thread.get(H.Wt.demo([M.SettingSet{"wt.again.t1", "7", 7n}, M.SettingSet{"wt.again.t1", "", 9n}]), "t1"), 20n) == False{} : Bool}
+
+# a new thread still waits for its first worktree from its creation
+law wt_first_waits:
+  {M.Worktree.waits(M.State.replay([M.ProjectCreated{"p1", "p", "/p", 1n}, M.ThreadCreated{"t1", "p1", "x", M.Worktree{}, "", "", "claude", "", 1n}], M.State.empty()),
+    M.State.thread.get(M.State.replay([M.ProjectCreated{"p1", "p", "/p", 1n}, M.ThreadCreated{"t1", "p1", "x", M.Worktree{}, "", "", "claude", "", 1n}], M.State.empty()), "t1"), 50n) == True{} : Bool}
+
 # a turn that completed with nothing else out settles its thread
 law life_finished_settles:
   {H.Shelve.step(H.Shelve.demo(Nil{}), [M.TurnChanged{"t1", M.Completed{}, 5n}]) == [M.ThreadSettled{"t1", False{}, 5n}] : List<&2, M.Change>}
