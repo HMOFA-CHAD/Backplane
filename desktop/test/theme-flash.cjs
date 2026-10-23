@@ -46,6 +46,7 @@ async function go(id,narrow){
 }
 async function round(theme,width,order){
  const narrow=width<=760;
+ if(process.env.THEME_COMPLETED_RECEIPT){const kept=JSON.parse(fs.readFileSync(process.env.THEME_COMPLETED_RECEIPT));assert.equal(kept.stage,stage);const prior=kept.rounds.filter(r=>r.theme===theme&&r.width===width);if(prior.length){assert.deepEqual(prior.map(r=>r.thread),order);assert(prior.every(r=>!r.bad.length&&r.cachedFrames>0));rounds.push(...prior);return;}}
  for(const id of order){
   await arm(theme);await go(id,narrow);const r=await collect();
   const bad=[...r.frames.map(f=>({...f,kind:'frame'})),...r.mutations.map(f=>({...f,kind:'mutation'}))]

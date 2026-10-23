@@ -64,7 +64,7 @@ async function round(n,theme,width,draft){
  await page.waitForFunction(()=>{const t=document.querySelector('main[data-thread="tb"] .msg.live')?.textContent||'';return /sample-[3-9]\(/.test(t)||/sample-\d\d+\(/.test(t);},null,{timeout:20000});
  const before=await live();assert(before.live&&before.stream,'tb is streaming before the toggle');
  // the toggle mid-stream, then tb→ta→tb; sampled from the toggle's own frame on
- step='toggle-'+name;await choose(theme,narrow);await ready('tb');
+ step='toggle-'+name;await choose(theme,narrow);if(narrow)await go('tb',true);else await ready('tb');
  await arm(theme);
  step='switch-'+name;await go('ta',narrow);
  const ask=await page.evaluate(id=>[...document.querySelectorAll('main[data-thread="ta"] [data-on-click="answer"]')].filter(b=>b.getAttribute('data-value')?.startsWith(id+'|')&&!b.disabled).length,askId);

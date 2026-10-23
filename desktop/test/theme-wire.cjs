@@ -62,7 +62,8 @@ async function chooseTheme(page,views,trail,theme,{narrow=false}={}){
  const entry={theme,narrow,states:[]};trail.push(entry);const state=async step=>entry.states.push({step,...await pageState(page)});
  try{
   if(narrow&&await page.locator('.thread-head .back').first().isVisible())await page.locator('.thread-head .back').first().click();
-  await page.locator('.sidebar [data-on-click="flag"][data-value="settings"]').click();
+  let opening=views.mark();await page.locator('.sidebar [data-on-click="flag"][data-value="settings"]').click();
+  const opened=await views.acted(opening,'flag','settings');entry.returnTarget=opened.sent.target;
   // Settings keeps its category: the overview's Appearance link is there only on a first open
   await page.waitForFunction(()=>document.querySelector('[data-on-click="settings-page"][data-value="appearance"]')||document.querySelector('[data-on-click="setting"][data-value^="ui.theme="]'));
   const appearance=page.locator('[data-on-click="settings-page"][data-value="appearance"]').first();if(await appearance.count())await appearance.click();
@@ -76,8 +77,8 @@ async function chooseTheme(page,views,trail,theme,{narrow=false}={}){
   m=views.mark();await page.locator('.settings-view [data-on-click="flag"][data-value="settings"]').click();entry.phase='close';await state('close-clicked');
   const close=await views.acted(m,'flag','settings');entry.close={sent:close.sent.n,reply:close.reply.n,nextTarget:close.reply.nextTarget||'',connected:close.connected.n};
   entry.phase='closed';
-  await page.waitForFunction(()=>!document.querySelector('.settings-view')&&!!document.querySelector('main[data-thread]')
-   &&document.documentElement.dataset.backplaneRemoteReady==='true'&&document.documentElement.dataset.backplaneCached!=='true');
+  await page.waitForFunction(kind=>!document.querySelector('.settings-view')&&(kind==='recent'?!document.querySelector('main[data-thread]'):!!document.querySelector('main[data-thread]'))
+   &&document.documentElement.dataset.backplaneRemoteReady==='true'&&document.documentElement.dataset.backplaneCached!=='true',entry.returnTarget);
   await state('back');entry.phase='done';
  }catch(e){
   entry.error=String(e.message||e).slice(0,300);entry.wire=e.wire||'';await state('failed');
