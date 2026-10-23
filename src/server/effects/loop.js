@@ -1143,15 +1143,35 @@ async function bp_idle(io) {
 // never arguments, results, addresses or application content. At most 64
 // records per process, emitted only for a turn of at least one second.
 let bp_loop_slow_count = 0;
-function bp_loop_slow(io, phase, effect, began, ended) {
+// Only compiled hub message constructors identify a queued computation.
+// Never copy a channel value, payload, identifier or arbitrary tag.
+function bp_loop_message(value) {
+  if (value?.$ === "Some") value = value.value;
+  if (value?.$ === "server.Bulk") value = value.m;
+  switch (value?.$) {
+    case "server.AgentLine": case "server.Rpc": case "server.Mcp":
+    case "server.ThinRead": case "server.Tick": case "server.Heart":
+    case "server.ThinFlush": case "server.TermOut": case "server.TermTo":
+    case "server.Push": case "server.PushBin": case "server.RunReady":
+    case "server.BoatThreads": case "server.FarLoaded":
+      return value.$.slice(7);
+    default: return undefined;
+  }
+}
+function bp_loop_slow(io, phase, effect, began, ended, input, output) {
   const ms = ended - began;
   if (ms < 1000 || bp_loop_slow_count >= 64) return;
   bp_loop_slow_count++;
   const tag = typeof effect === "string" && /^[A-Za-z0-9_./-]{1,96}$/.test(effect) ? effect : "unknown";
+  const inputMessage = bp_loop_message(input);
+  const outputMessage = output?.$ === "Chan.send" || output?.$ === "Chan.try_send"
+    ? bp_loop_message(output.args?.[1]) : undefined;
   try {
     console.error("[bp-loop] " + JSON.stringify({ phase, effect: tag,
       at: Date.now(), durationMs: Math.round(ms), process: process.pid,
-      runnable: io.runs.length, waits: io.waits.length, pending: io.pend }));
+      runnable: io.runs.length, waits: io.waits.length, pending: io.pend,
+      ...(inputMessage ? { inputMessage } : {}),
+      ...(outputMessage ? { outputMessage } : {}) }));
   } catch { /* A diagnostic sink must not terminate the scheduler. */ }
 }
 
@@ -1199,7 +1219,7 @@ async function bp_run(m) {
     const s = io.runs.shift();
     const started = performance.now();
     let op = s.fun(s.arg);
-    bp_loop_slow(io, "dispatch", op?.$, started, performance.now());
+    bp_loop_slow(io, "dispatch", op?.$, started, performance.now(), s.arg, op);
     while (op !== undefined) {
       if (op.$ === "Emit") {
         io.live -= 1;
@@ -1217,13 +1237,13 @@ async function bp_run(m) {
       const effect = op.$, began = performance.now();
       const x = run(...op.args, op.kont);
       const ran = performance.now();
-      bp_loop_slow(io, "effect", effect, began, ran);
+      bp_loop_slow(io, "effect", effect, began, ran, undefined, op);
       if (x === undefined) {
         break;
       }
       op = op.kont(x);
       const continued = performance.now();
-      bp_loop_slow(io, "continuation", effect, ran, continued);
+      bp_loop_slow(io, "continuation", effect, ran, continued, x, op);
       if (op !== undefined && continued >= slice) {
         // A ready channel/read can keep this inner chain alive indefinitely.
         // Queue its *next* operation without replaying the completed effect
