@@ -32,11 +32,31 @@ const near=(rgb,want)=>rgb.every((v,i)=>Math.abs(v-want[i])<=6);
  step='launch-2-cold';const frames=[];
  app=await launch();await app.context().addInitScript(recorder).catch(()=>{});
  app.context().on('console',m=>{const t=m.text();if(t.startsWith('THEMEFRAME '))frames.push(JSON.parse(t.slice(11)));});
+ // 1. what the window was created with, recorded before any picture is asked
+ //    for (the window as soon as it exists: getAllWindows or its creation event),
+ //    so a capture that fails cannot lose it
+ r.created=await app.evaluate(({BrowserWindow,app})=>new Promise(resolve=>{
+  const read=(w,how)=>({how,at:Date.now(),visible:w.isVisible(),windowBackground:w.getBackgroundColor(),url:w.webContents.getURL()});
+  const w=BrowserWindow.getAllWindows()[0];if(w)return resolve(read(w,'existing'));
+  app.once('browser-window-created',(_e,w)=>resolve(read(w,'created')));}));
+ fs.writeFileSync(out+'/PARTIAL.json',JSON.stringify(r,null,2)+'\n');
+ // 2. the first picture once the product itself showed the window (its show
+ //    event, which main.cjs raises from ready-to-show: the first painted frame);
+ //    a capture error is recorded, never thrown
  const first=await app.evaluate(async({BrowserWindow})=>{const w=BrowserWindow.getAllWindows()[0];
-  const shot=await w.webContents.capturePage();const {width,height}=shot.getSize(),bmp=shot.toBitmap();
-  const px=(x,y)=>{const i=(y*width+x)*4;return [bmp[i+2],bmp[i+1],bmp[i]];};
-  return{visible:w.isVisible(),windowBackground:w.getBackgroundColor(),url:w.webContents.getURL(),size:[width,height],corner:width?px(4,4):null,centre:width?px(width>>1,height>>1):null,png:shot.toPNG().toString('base64')};});
- fs.writeFileSync(out+'/cold-first.png',Buffer.from(first.png,'base64'));delete first.png;r.first=first;
+  const shownBefore=w.isVisible();
+  // a bound, not a wait: a window the product never shows is a failure, said as one
+  if(!shownBefore&&!await Promise.race([new Promise(resolve=>w.once('show',()=>resolve(true))),new Promise(resolve=>setTimeout(()=>resolve(false),20000))]))
+   return{at:Date.now(),shownBefore,url:w.webContents.getURL(),windowBackground:w.getBackgroundColor(),captureError:'window not shown within 20 s'};
+  const at=Date.now(),url=w.webContents.getURL(),windowBackground=w.getBackgroundColor();
+  try{const shot=await w.webContents.capturePage();const {width,height}=shot.getSize(),bmp=shot.toBitmap();
+   if(!width||!height)return{at,shownBefore,url,windowBackground,captureError:'empty picture'};
+   const px=(x,y)=>{const i=(y*width+x)*4;return [bmp[i+2],bmp[i+1],bmp[i]];};
+   return{at,shownBefore,url,windowBackground,size:[width,height],corner:px(4,4),centre:px(width>>1,height>>1),png:shot.toPNG().toString('base64')};
+  }catch(e){return{at,shownBefore,url,windowBackground,captureError:String(e?.message||e).slice(0,400)};}});
+ if(first.png){fs.writeFileSync(out+'/cold-first.png',Buffer.from(first.png,'base64'));delete first.png;}
+ // shownBefore true means the window was already visible when asked: the picture may be later than the first frame
+ first.earliest=!first.shownBefore&&!first.captureError;r.first=first;
  page=await app.firstWindow();await page.evaluate(()=>{}).catch(()=>{});
  // the startup page was loaded before the init script could be added: read it directly too
  r.startupNow=await page.evaluate(()=>({url:location.protocol+'//'+location.pathname.split('/').pop(),bg:getComputedStyle(document.documentElement).backgroundColor,htmlLight:document.documentElement.classList.contains('light')})).catch(e=>({error:String(e)}));
@@ -44,10 +64,11 @@ const near=(rgb,want)=>rgb.every((v,i)=>Math.abs(v-want[i])<=6);
  await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))).catch(()=>{});
  r.frames=frames;
  const dark=[...(first.corner&&!near(first.corner,LIGHT)?[{where:'first captured window picture',rgb:first.corner,url:first.url}]:[]),
-  ...(first.windowBackground&&!/^#?fafaf8/i.test(first.windowBackground)?[{where:'BrowserWindow backgroundColor',value:first.windowBackground}]:[]),
+  ...(r.created.windowBackground&&!/^#?fafaf8/i.test(r.created.windowBackground)?[{where:'BrowserWindow backgroundColor at creation',value:r.created.windowBackground,url:r.created.url}]:[]),
+  ...(first.windowBackground&&!/^#?fafaf8/i.test(first.windowBackground)?[{where:'BrowserWindow backgroundColor when shown',value:first.windowBackground,url:first.url}]:[]),
   ...(r.startupNow?.bg&&r.startupNow.bg!=='rgb(250, 250, 248)'?[{where:'startup page',bg:r.startupNow.bg}]:[]),
   ...frames.filter(f=>f.bg!=='rgb(250, 250, 248)').map(f=>({where:'document frame',...f}))];
  r.state=dark.length?'finding':'light-throughout';r.notLight=dark;
- fs.writeFileSync(out+'/RESULT.json',JSON.stringify(r,null,2)+'\n');console.log(JSON.stringify({state:r.state,kept:r.kept,first:r.first,notLight:dark.slice(0,6)}));
+ fs.writeFileSync(out+'/RESULT.json',JSON.stringify(r,null,2)+'\n');console.log(JSON.stringify({state:r.state,kept:r.kept,created:r.created,first:r.first,notLight:dark.slice(0,6)}));
 }catch(e){fs.writeFileSync(out+'/FAIL.json',JSON.stringify({...r,state:'failed',step,error:e.stack},null,2)+'\n');console.error(e.stack);process.exitCode=1;}
 finally{if(app)await app.close().catch(()=>{});await service.stop();}})();
