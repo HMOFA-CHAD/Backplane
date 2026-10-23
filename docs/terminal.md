@@ -24,7 +24,14 @@ uberbot's Chat tab. The restored project/thread bindings come from
 `src/app/nui.bend` (`9059c8681`) and the original palette/parity keymap
 (`b276a5afb`): `Alt+1…9` projects, `Ctrl+1…9` threads in the current
 project, `Ctrl+Shift+[` / `]` previous/next visible thread, without wrapping.
-They follow the sidebar's actual order and expansion state. Navigation
+They follow the sidebar's actual order and expansion state. Hold Alt to show
+project digits, or Ctrl (Command on macOS) to show thread digits. The numbers
+come from those same target lists, including the current search, expanded
+subthreads and opened shelves; they are hidden in editors, IME composition,
+PTYs, dialogs that own the keys, and whenever the app loses focus. Releasing
+the modifier removes the hints. In Active view, project digits appear beside
+visible project names, keeping their original numbers when other targets
+have no visible label. Navigation
 leaves input editors, IME composition and PTYs alone. Press Escape to leave
 the composer after closing its completions, then use the navigation chords;
 the unsent draft stays intact. The explicit palette

@@ -95,7 +95,7 @@ def WS.commands(+u: U.Ui) -> List<&2, U.PItem>:
   List.append(&2, U.PItem, Bool.pick(List<&2, U.PItem>, U.ThreadTree.can_route(U.Ui.state(u), U.Ui.sel(u)),
     [U.PItem{Bool.pick(String, U.ThreadTree.can_create(U.Ui.state(u), U.Ui.sel(u)), "New subthread of current thread", "Choose project conversation…"), "thread-child", U.Ui.sel(u)}], Nil{}),
   [U.PItem{"Uberbot chat · Ctrl+Shift+U", "uber", ""},
-   U.PItem{"Floating terminal here · Super+grave / ~ · Ctrl+J", "ws-term-here", ""},
+   U.PItem{"Floating terminal here · Backtick (`) · Ctrl+J", "ws-term-here", ""},
    U.PItem{"Hide terminal (keep shell running)", "ws-term-hide", ""},
    U.PItem{"Previous thread · Ctrl+Shift+[", "ws-prev", ""}, U.PItem{"Next thread · Ctrl+Shift+]", "ws-next", ""},
    U.PItem{"New thread · Ctrl+N", "new-thread", WS.pid(u)},
@@ -205,7 +205,7 @@ def WS.palette(on: Bool, +u: U.Ui) -> List<&2, D.Node>:
           D.El{"footer", "", Nil{}, [D.Txt{"↑↓ choose · Enter run · Esc close. Ctrl/Cmd+Shift+P (Ctrl+K also opens)."},
             D.El{"details", "", Nil{}, [D.El{"summary", "", Nil{}, [D.Txt{"Keyboard shortcuts"}]},
               D.El{"p", "", Nil{}, [D.Txt{"Alt+1…9 project · Ctrl+1…9 thread · Ctrl+Shift+[ / ] previous / next thread · Ctrl+Shift+U uberbot chat · Ctrl+N new thread · Ctrl+Shift+S settle · Ctrl+P files · Ctrl+D diff."}]},
-              D.El{"p", "", Nil{}, [D.Txt{"Super+grave / tilde toggles terminal here while Backplane has focus. Your desktop may reserve that chord; use Ctrl+J or this palette. Navigation shortcuts leave editors, IME and PTYs alone. Pin is in Commands (its former Ctrl+Shift+P opens this palette)."}]}]}]}]}]}]
+              D.El{"p", "", Nil{}, [D.Txt{"Backtick (`) toggles Terminal from the workspace or composer. In the shell and other text fields, backtick types normally; use Ctrl+J to toggle. Super+grave / tilde also works if your desktop delivers it. Navigation shortcuts leave editors, IME and PTYs alone. Pin is in Commands (its former Ctrl+Shift+P opens this palette)."}]}]}]}]}]}]
 
 def WS.terminal(on: Bool, +u: U.Ui, screen: D.Node) -> List<&2, D.Node>:
   match on:

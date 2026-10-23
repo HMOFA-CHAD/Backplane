@@ -368,7 +368,7 @@ def View.arow(+lc: I.Loc, r: U.ARow, +ix: U.SIx, +st: M.State, +sel: String) -> 
   match r:
     case U.ARow{_, _, +t, +pid, +pt, +faded}:
       D.El{"div", M.Thread.id(t), [D.At{"class", Bool.pick(String, String.eq(M.Thread.id(t), sel), "thread on", Bool.pick(String, faded, "thread faded", "thread"))},
-          D.At{"style", "--tint:" ++ BG.Badge.css_of(st, pid)}, D.At{"data-value", M.Thread.id(t)}, D.On{"click", "select"}, D.On{"contextmenu", "row-menu"}],
+          D.At{"style", "--tint:" ++ BG.Badge.css_of(st, pid)}, D.At{"data-shortcut-project", pid}, D.At{"data-value", M.Thread.id(t)}, D.On{"click", "select"}, D.On{"contextmenu", "row-menu"}],
         [View.dot(lc, SG.Signal.name(U.Side.signal.ix(ix, t))), D.Dom.span("title", U.Label.title(st, M.Thread.id(t), TTL.Title.shown(lc, U.Active.title(t)))), View.note(View.sub.badge(lc, SB.Subs.count.ix(ix, st, M.Thread.id(t))), pt)]}
 
 def View.atree.step(root: Bool, anchors: List<&2, U.ARow>, fallback: U.ARow) -> List<&2, U.ARow> & U.ARow:
@@ -571,8 +571,18 @@ def View.sidebar.w(+lc: I.Loc, bots: List<&2, D.Node>, uber: List<&2, D.Node>, m
 
 # the sidebar's index (Side.ix: every thread and ask of the state) is made
 # once a frame, for the list and the uberbot's counts both
+# Export the exact digit destinations; the host only reveals their numbers.
+# Use the same Side lists as WS.key.digit.valid, including all current folds.
+def View.sidebar.keys(n: D.Node, projects: List<&2, String>, threads: List<&2, String>) -> D.Node:
+  match n:
+    case D.El{tag, key, attrs, kids}:
+      D.El{tag, key, List.append(&2, D.Attr, attrs,
+        [D.At{"data-shortcut-projects", J.Json.show(J.Json.arr(U.Side.strs(List.take(&2, String, projects, 9n))))},
+         D.At{"data-shortcut-threads", J.Json.show(J.Json.arr(U.Side.strs(List.take(&2, String, threads, 9n))))}]), kids}
+    case D.Txt{text}: D.Txt{text}
+
 def View.sidebar.x(+lc: I.Loc, bots: List<&2, D.Node>, +u: U.Ui, +ix: U.SIx) -> D.Node:
-  View.sidebar.w(lc, bots, WB.WB.uber(lc, u, U.Side.signals.ix(ix, u)), U.Machines.rows.loc(lc, u), U.Menu.items.loc(lc, u, True{}), U.Side.signals.ix(ix, u), u)
+  View.sidebar.keys(View.sidebar.w(lc, bots, WB.WB.uber(lc, u, U.Side.signals.ix(ix, u)), U.Machines.rows.loc(lc, u), U.Menu.items.loc(lc, u, True{}), U.Side.signals.ix(ix, u), u), U.Side.projects(u), U.Side.here(u))
 
 def View.sidebar.u(+lc: I.Loc, bots: List<&2, D.Node>, +u: U.Ui) -> D.Node:
   View.sidebar.x(lc, bots, u, U.Side.ix(U.Ui.state(u)))
