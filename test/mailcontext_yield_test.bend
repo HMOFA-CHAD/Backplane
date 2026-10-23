@@ -8,12 +8,12 @@ def line(+owner: String, +id: String, +text: String) -> String:
   J.Json.show(J.Json.obj([J.KV{"$", J.Str{"MessagePosted"}}, J.KV{"thread", J.Str{owner}},
     J.KV{"msg", J.Str{id}}, J.KV{"role", J.Str{"user"}}, J.KV{"text", J.Str{text}}, J.KV{"at", J.Num{"1"}}]))
 
-def many(n: Nat) -> List<&2, String>:
+def many(+n: Nat) -> List<&2, String>:
   match n:
     case 0n: Nil{}
     case 1n+k: line("owner", Nat.show(n), "Hardware context") <> many(k)
 
-def noise(n: Nat, tail: List<&2, String>) -> List<&2, String>:
+def noise(+n: Nat, tail: List<&2, String>) -> List<&2, String>:
   match n:
     case 0n: tail
     case 1n+k: line("other", Nat.show(n), "Unrelated PRIVATE body") <> noise(k, tail)
