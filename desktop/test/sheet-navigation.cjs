@@ -14,7 +14,9 @@ const events=[ev('ProjectCreated',{id:'sheets',title:'Sheet navigation fixture',
 fs.writeFileSync(home+'/events.jsonl',events.map(JSON.stringify).join('\n')+'\n');
 const env={...process.env,BACKPLANE_HOME:home,BACKPLANE_AGENTS:agents,BACKPLANE_COPY:'1',BACKPLANE_TELEMETRY:'off',BACKPLANE_NO_UPDATE:'1',BACKPLANE_PEERS:'',BACKPLANE_LOCK_DIR:home+'/locks',BACKPLANE_DESKTOP_BROWSER:'1'};
 Object.assign(process.env,env);
-const service=new Service({home,binary:stage+'/payload/backplane-serve',web:stage+'/payload/web',expectedVersion:info.version});
+const shellQuote=s=>"'"+s.replaceAll("'", "'\"'\"'")+"'";
+const wrapper=home+'/fixture-service';fs.writeFileSync(wrapper,'#!/bin/sh\nexec '+shellQuote(stage+'/payload/backplane-serve')+' "$@" >>'+shellQuote(out+'/service-stdio.log')+' 2>&1\n',{mode:0o755});
+const service=new Service({home,binary:wrapper,web:stage+'/payload/web',expectedVersion:info.version});
 let app,page,step='bootstrap';const checks=[],observations={};
 const result=state=>({state,source:info.commit,stage,step,checks,observations,home,liveProfileTouched:false,phoneRuntime:'not run'});
 async function ready(id='sheet-a'){await page.waitForFunction(id=>document.documentElement.dataset.backplaneRemoteReady==='true'&&document.querySelector('main')?.dataset.thread===id&&document.querySelector('main')?.getAttribute('aria-busy')!=='true',id);}

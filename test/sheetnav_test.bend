@@ -55,25 +55,26 @@ def act(u: U.Ui, +a: String, +v: String) -> U.Ui:
 def sheets(+u: U.Ui) -> J.Json:
   J.Json.obj([J.KV{"t", J.Str{"sheets"}}, J.KV{"root", J.Str{U.Ui.root(u)}}, J.KV{"rows", J.Str{H.Hier.show(rows())}}, J.KV{"boxes", J.Str{boxes()}}])
 
-# the generation the plot actor gives its n-th message after starting at
-# second boot (server/plot.bend's Pv.tree.gen, the real constructor)
-def gen(+boot: U32, +n: Nat) -> String:
-  Nat.show(PV.Pv.tree.gen(boot, n))
+# a reply as the plot actor sends it for a root (gen: its message count,
+# server/plot.bend's Pv.tree.gen)
+def tree.at(+root: String, +rs: List<&2, H.Row>, +slot: String, +gen: String) -> J.Json:
+  J.Json.obj([J.KV{"t", J.Str{"sheets"}}, J.KV{"root", J.Str{root}}, J.KV{"slot", J.Str{slot}}, J.KV{"gen", J.Str{gen}},
+    J.KV{"rows", J.Str{H.Hier.show(rs)}}, J.KV{"boxes", J.Str{boxes()}}, J.KV{"ids", J.Str{ids()}}, J.KV{"top", J.Str{top()}}])
+
+# thread a with uuids known (generation 5)
+
+def tree.json(+u: U.Ui, +rs: List<&2, H.Row>, +slot: String, +gen: String) -> J.Json:
+  tree.at(U.Ui.root(u), rs, slot, gen)
+
+# the generation the plot actor gives its n-th message (server/plot.bend's
+# Pv.tree.gen, the real constructor)
+def gen(+n: Nat) -> String:
+  PV.Pv.tree.gen(n)
 
 # a hub's join (full from 0, or a resume from since) from origin
 def join(+origin: String, +since: String) -> J.Json:
   json("{\"t\":\"log\",\"since\":" ++ since ++ ",\"origin\":\"" ++ origin ++ "\",\"info\":{},\"items\":[]}")
 
-# a reply as the plot actor sends it for a root (gen: its start second times
-# 2^32 plus its message count, server/plot.bend's Pv.tree.gen)
-def tree.at(+root: String, +rs: List<&2, H.Row>, +slot: String, +gen: String) -> J.Json:
-  J.Json.obj([J.KV{"t", J.Str{"sheets"}}, J.KV{"root", J.Str{root}}, J.KV{"slot", J.Str{slot}}, J.KV{"gen", J.Str{gen}},
-    J.KV{"rows", J.Str{H.Hier.show(rs)}}, J.KV{"boxes", J.Str{boxes()}}, J.KV{"ids", J.Str{ids()}}, J.KV{"top", J.Str{top()}}])
-
-def tree.json(+u: U.Ui, +rs: List<&2, H.Row>, +slot: String, +gen: String) -> J.Json:
-  tree.at(U.Ui.root(u), rs, slot, gen)
-
-# thread a with uuids known (generation 5)
 def keyed() -> U.Ui:
   U.Sch.got(on(U.Ui.init(0n), "a"), tree.json(on(U.Ui.init(0n), "a"), rows(), "", "5"))
 
@@ -185,19 +186,19 @@ def main() -> IO(Unit):
   +kren = U.Sch.got(kch2, tree.json(kch2, renamed(), "", "6"))
   +kstale = U.Sch.got(kren, tree.json(kren, rows(), "", "4"))
   +kver = U.Sch.got(kren, tree.json(kren, rows(), "/g\tc1", "9"))
-  # two watches in one second (actor started at second 1000: messages 7
+  # two watches in one second (the actor's messages 7
   # and 8), their replies delivered in reverse order, then in order
-  +s1 = U.Sch.got(on(U.Ui.init(0n), "a"), tree.json(on(U.Ui.init(0n), "a"), renamed(), "", gen(1000, 8n)))
-  +s2 = U.Sch.got(s1, tree.json(s1, rows(), "", gen(1000, 7n)))
-  +s3 = U.Sch.got(U.Sch.got(on(U.Ui.init(0n), "a"), tree.json(on(U.Ui.init(0n), "a"), rows(), "", gen(1000, 7n))), tree.json(on(U.Ui.init(0n), "a"), renamed(), "", gen(1000, 8n)))
-  # a restarted actor (second 1001, message 0) after the first one's message 8
-  +s4 = U.Sch.got(s1, tree.json(s1, rows(), "", gen(1001, 0n)))
+  +s1 = U.Sch.got(on(U.Ui.init(0n), "a"), tree.json(on(U.Ui.init(0n), "a"), renamed(), "", gen(8n)))
+  +s2 = U.Sch.got(s1, tree.json(s1, rows(), "", gen(7n)))
+  +s3 = U.Sch.got(U.Sch.got(on(U.Ui.init(0n), "a"), tree.json(on(U.Ui.init(0n), "a"), rows(), "", gen(7n))), tree.json(on(U.Ui.init(0n), "a"), renamed(), "", gen(8n)))
+  # a restarted hub counts from 0 again; its socket's join comes first
+  +s4 = U.Sch.got(U.Ui.recv(s1, join("O", "4")), tree.json(s1, rows(), "", gen(0n)))
   # another project's tree on the same client
-  +s5 = U.Sch.got(act(s1, "sch-go", "4\t/Chan2/\t/U3/"), tree.at("/elsewhere", rows(), "", gen(1000, 9n)))
+  +s5 = U.Sch.got(act(s1, "sch-go", "4\t/Chan2/\t/U3/"), tree.at("/elsewhere", rows(), "", gen(9n)))
   # the cache belongs to the connection: a join drops it, so a new hub's
-  # replies (whatever its clock: here an earlier start second) are taken
+  # replies are taken, its count starting again
   +j1 = U.Ui.recv(act(s1, "sch-go", "4\t/Chan2/\t/U3/"), join("O", "4"))
-  +j2 = U.Sch.got(j1, tree.json(j1, rows(), "", gen(999, 0n)))
+  +j2 = U.Sch.got(j1, tree.json(j1, rows(), "", gen(3n)))
   +other = U.Ui.recv(amp2, json("{\"t\":\"view\",\"thread\":\"a\",\"path\":\"/q/other.kicad_sch\",\"kind\":\"schematic\"}"))
   do IO<Unit>:
     C.Check.str("places", Show.strs(H.Hier.paths(rs)), "/ /Power/ /Ch1/ /Ch1/Amp/ /Ch2/ /Ch2/Amp/")
@@ -255,19 +256,21 @@ def main() -> IO(Unit):
     C.Check.str("a version's tree is kept apart", rowtext(kver), H.Hier.show(renamed()))
     C.Check.str("its generation is its own", U.Ui.info(kver, "sheetgen:" ++ U.Ui.root(kver)) ++ "|" ++ U.Ui.info(kver, "sheetgen:" ++ U.Ui.root(kver) ++ "\t/g\tc1"), "6|9")
     C.Check.str("same second, reversed: the later request's reply stays", rowtext(s2), H.Hier.show(renamed()))
-    C.Check.str("same second, reversed: its generation stays", U.Ui.info(s2, "sheetgen:" ++ U.Ui.root(s2)), gen(1000, 8n))
+    C.Check.str("same second, reversed: its generation stays", U.Ui.info(s2, "sheetgen:" ++ U.Ui.root(s2)), gen(8n))
     C.Check.str("same second, in order: the later is taken", rowtext(s3), H.Hier.show(renamed()))
-    C.Check.str("a restarted actor's reply is newer", rowtext(s4), H.Hier.show(rows()))
-    C.Check.str("a same reply again changes nothing", rowtext(U.Sch.got(s1, tree.json(s1, rows(), "", gen(1000, 8n)))), H.Hier.show(renamed()))
+    C.Check.str("a restarted hub's first reply (count 0) is taken after its join", rowtext(s4), H.Hier.show(rows()))
+    C.Check.str("a same reply again changes nothing", rowtext(U.Sch.got(s1, tree.json(s1, rows(), "", gen(8n)))), H.Hier.show(renamed()))
     C.Check.str("another root's tree leaves this one", rowtext(s5) ++ "|" ++ at(s5), H.Hier.show(renamed()) ++ "|4")
-    C.Check.str("and is kept under its own root", U.Ui.info(s5, "sheetgen:/elsewhere"), gen(1000, 9n))
+    C.Check.str("and is kept under its own root", U.Ui.info(s5, "sheetgen:/elsewhere"), gen(9n))
     C.Check.str("a thread switch reads its own instance of the same tree", at(on(s5, "b")) ++ "|" ++ at(on(on(s5, "b"), "a")), "0|4")
-    C.Check.str("generation: start second and message count", gen(1000, 7n), "4294967296007")
-    C.Check.str("generation: the next message is newer in the same second", Bool.show(U.Sch.newer(gen(1000, 8n), gen(1000, 7n))), "True")
-    C.Check.str("generation: an earlier message is not newer", Bool.show(U.Sch.newer(gen(1000, 7n), gen(1000, 8n))), "False")
-    C.Check.str("generation: the same is not newer", Bool.show(U.Sch.newer(gen(1000, 8n), gen(1000, 8n))), "False")
-    C.Check.str("generation: a later start beats any count before it", Bool.show(U.Sch.newer(gen(1001, 0n), gen(1000, 4294967295n))), "True")
-    C.Check.str("generation: anything is newer than none held", Bool.show(U.Sch.newer(gen(1000, 0n), "")), "True")
+    C.Check.str("generation: the actor's message count, no clock", gen(7n), "7")
+    C.Check.str("generation: at a real epoch's magnitude it stays a plain number", gen(1792779015n), "1792779015")
+    C.Check.str("generation: and orders there", Bool.show(U.Sch.newer(gen(1792779016n), gen(1792779015n))), "True")
+    C.Check.str("generation: a count past 9 orders as a number, not text", Bool.show(U.Sch.newer(gen(10n), gen(9n))), "True")
+    C.Check.str("generation: the next message is newer in the same second", Bool.show(U.Sch.newer(gen(8n), gen(7n))), "True")
+    C.Check.str("generation: an earlier message is not newer", Bool.show(U.Sch.newer(gen(7n), gen(8n))), "False")
+    C.Check.str("generation: the same is not newer", Bool.show(U.Sch.newer(gen(8n), gen(8n))), "False")
+    C.Check.str("generation: anything is newer than none held", Bool.show(U.Sch.newer(gen(0n), "")), "True")
     C.Check.str("a join drops the sheets and their generation", U.Ui.info(j1, "sheets:" ++ U.Ui.root(j1)) ++ "|" ++ U.Ui.info(j1, "sheetgen:" ++ U.Ui.root(j1)), "|")
     C.Check.str("a join from another hub drops them too", U.Ui.info(U.Ui.recv(s1, join("P", "0")), "sheetgen:" ++ U.Ui.root(s1)), "")
     C.Check.str("after a join any reply is taken, whatever its clock", rowtext(j2), H.Hier.show(rows()))
