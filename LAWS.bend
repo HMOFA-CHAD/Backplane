@@ -11631,3 +11631,18 @@ law oc_notice_info:
   for th: String
   for now: Nat
   {H.Codex.line.k(7n, s, th, now, J.Json.obj([J.KV{"message", J.Str{"m"}}])) == H.Step{[M.ActivityLogged{th, H.Hub.id("n", now, H.Hub.seq(s)), "info", "session", "m", now}], Nil{}} : H.Step}
+
+# opencode's models (Ocm): its usage text is no model list, and a listing
+# that failed or found nothing says why in Settings' CLI line, never as an
+# empty list that worked; opencode not installed says nothing here
+law oc_models_usage_none:
+  {OC.Ocm.models("USAGE\n  opencode models [flags]\n") == Nil{} : List<&2, String>}
+
+law oc_models_failed_says:
+  {OC.Ocm.cli("v", "!exit 1\tx\n") == "v · could not list models (`opencode models` exited 1: x)" : String}
+
+law oc_models_empty_says:
+  {OC.Ocm.cli("v", "") == "v · lists no models: sign in with `opencode auth login`" : String}
+
+law oc_models_missing_quiet:
+  {OC.Ocm.cli("", "") == "" : String}

@@ -385,7 +385,7 @@ type Proto is Data:
   PAcp{t: AC.AcpTurn}
   PMsp{t: MspTurn}
   PAgy{t: AG.AgyTurn}
-  POc{t: AC.AcpTurn}
+  POc{t: OC.OcpTurn}
 
 def Proto.line(a: AC.Acp, +p: Proto, line: String) -> AC.AcpOut:
   match p:

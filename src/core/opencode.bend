@@ -17,8 +17,35 @@ import ./acp.bend as AC
 #   tool_call_update, named by what it does (the command, the file, the
 #   pattern, the URL);
 # - a failure says how to fix opencode (not Grok's sign-in).
+# - the thread's model is the session's own pick (session/set_config_option
+#   "model", 5 in a fresh session, 15 in a resumed one), sent before the
+#   prompt: opencode takes a session's pick over its agent's model and that
+#   over the config's "model" (OPENCODE_CONFIG_CONTENT), so an agent with a
+#   model of its own (a default agent's) never quietly runs instead; a
+#   model it refuses fails the turn. No model picked: opencode's own
+#   default (its default agent's model, else its config's).
 # Request ids: 1 initialize, 2 session/new or session/resume, 7
-# session/new after a lost session, 3 the prompt.
+# session/new after a lost session, 5/15 the model, 3 the prompt.
+
+type OcpTurn is Data:
+  OcpTurn{acp: AC.AcpTurn, model: String}
+
+def Ocp.acp(t: OcpTurn) -> AC.AcpTurn:
+  match t:
+    case OcpTurn{a, _}:
+      a
+
+def Ocp.model(t: OcpTurn) -> String:
+  match t:
+    case OcpTurn{_, m}:
+      m
+
+# whether the thread picked a model ("" and "default" are opencode's own)
+def Ocp.picked(+m: String) -> Bool:
+  Bool.not(Bool.or(String.is_empty(m), String.eq(m, "default")))
+
+def Ocp.set_model(+id: Nat, +sid: String, +model: String) -> String:
+  AC.Acp.rpc(id, "session/set_config_option", J.Json.obj([J.KV{"sessionId", J.Str{sid}}, J.KV{"configId", J.Str{"model"}}, J.KV{"value", J.Str{model}}]))
 
 def Ocp.new.rpc(+id: Nat, +cwd: String, +mcp: String) -> String:
   AC.Acp.rpc(id, "session/new", J.Json.obj([J.KV{"cwd", J.Str{cwd}}, J.KV{"mcpServers", AC.Acp.mcp(mcp)}]))
@@ -74,9 +101,14 @@ def Ocp.saw(a: AC.Acp, +id: String) -> AC.Acp:
 def Ocp.signin(+low: String) -> Bool:
   Bool.or(Bool.or(String.contains(low, "auth"), String.contains(low, "login")), Bool.or(String.contains(low, "no models are available"), String.contains(low, "api key")))
 
+# (a provider that refused the model's sign-in is not opencode's own: an
+# expired OAuth sign-in does it, and with no model picked opencode's
+# configured default agent chose the model)
 def Ocp.hint.k(+low: String, +msg: String) -> String:
   Bool.pick(String, String.contains(low, "model not found"), msg ++ " (pick another opencode model in the composer)",
-    Bool.pick(String, Ocp.signin(low), msg ++ " (sign in once with `opencode auth login`)", msg))
+    Bool.pick(String, String.contains(low, "provider authentication required"),
+      msg ++ " (the model's provider refused opencode's sign-in, as an expired OAuth sign-in does: run `opencode auth login` for that provider; with no model picked, opencode's configured default agent chose it)",
+      Bool.pick(String, Ocp.signin(low), msg ++ " (sign in once with `opencode auth login`)", msg)))
 
 # the reason, and how to fix it when that is known
 def Ocp.hint(+msg: String) -> String:
@@ -97,8 +129,24 @@ def Ocp.fail(a: AC.Acp, +msg: String) -> AC.AcpOut:
 
 # the session is open: note it, then the prompt (Backplane's instructions
 # first in a fresh one)
-def Ocp.opened(fresh: Bool, a: AC.Acp, +t: AC.AcpTurn, +sid: String) -> AC.AcpOut:
-  AC.AcpOut{Ocp.with_sid(a, sid), [AC.Acp.say.k(fresh, t, sid)], [AC.Acp.event("thread.started", [J.KV{"thread_id", J.Str{sid}}])], Nil{}}
+# the model first when the thread picked one, else the prompt
+def Ocp.next(+fresh: Bool, +t: OcpTurn, +sid: String) -> String:
+  Bool.pick(String, Ocp.picked(Ocp.model(t)), Ocp.set_model(Bool.pick(Nat, fresh, 5n, 15n), sid, Ocp.model(t)), AC.Acp.say.k(fresh, Ocp.acp(t), sid))
+
+def Ocp.opened(+fresh: Bool, a: AC.Acp, +t: OcpTurn, +sid: String) -> AC.AcpOut:
+  AC.AcpOut{Ocp.with_sid(a, sid), [Ocp.next(fresh, t, sid)], [AC.Acp.event("thread.started", [J.KV{"thread_id", J.Str{sid}}])], Nil{}}
+
+def Ocp.sid(a: AC.Acp) -> String:
+  match a:
+    case AC.Acp{s, _, _, _}:
+      s
+
+# the model taken: the prompt (Backplane's instructions first when fresh)
+def Ocp.say(fresh: Bool, +a: AC.Acp, +t: OcpTurn) -> AC.AcpOut:
+  AC.AcpOut{a, [AC.Acp.say.k(fresh, Ocp.acp(t), Ocp.sid(a))], Nil{}, Nil{}}
+
+def Ocp.unmodel(+t: OcpTurn, +msg: String) -> String:
+  "opencode refused the model " ++ Ocp.model(t) ++ ": " ++ msg
 
 # what the person is told once a lost session was replaced: the agent
 # starts without the earlier conversation (Backplane's history is kept)
@@ -114,30 +162,38 @@ def Ocp.renewed.k(o: AC.AcpOut, +old: String) -> AC.AcpOut:
     case AC.AcpOut{a, send, emit, asks}:
       AC.AcpOut{a, send, List.append(&2, String, emit, [Ocp.notice(Ocp.renewed.msg(old))]), asks}
 
-def Ocp.renewed(a: AC.Acp, +t: AC.AcpTurn, +o: J.Json) -> AC.AcpOut:
-  Ocp.renewed.k(Ocp.opened(True{}, a, t, J.Json.get_str(J.Json.get_obj(o, "result"), "sessionId", "")), AC.Acp.session(t))
+def Ocp.renewed(a: AC.Acp, +t: OcpTurn, +o: J.Json) -> AC.AcpOut:
+  Ocp.renewed.k(Ocp.opened(True{}, a, t, J.Json.get_str(J.Json.get_obj(o, "result"), "sessionId", "")), AC.Acp.session(Ocp.acp(t)))
 
 # session/new answers its id; session/resume none (the thread's own)
-def Ocp.answered(a: AC.Acp, +t: AC.AcpTurn, +o: J.Json) -> AC.AcpOut:
-  Ocp.opened(String.is_empty(AC.Acp.session(t)), a, t, J.Json.get_str(J.Json.get_obj(o, "result"), "sessionId", AC.Acp.session(t)))
+def Ocp.answered(a: AC.Acp, +t: OcpTurn, +o: J.Json) -> AC.AcpOut:
+  Ocp.opened(String.is_empty(AC.Acp.session(Ocp.acp(t))), a, t, J.Json.get_str(J.Json.get_obj(o, "result"), "sessionId", AC.Acp.session(Ocp.acp(t))))
 
 # a resume that failed because the session is gone opens a fresh one; any
 # other failure ends the turn
-def Ocp.reopen(renew: Bool, a: AC.Acp, +t: AC.AcpTurn, +o: J.Json) -> AC.AcpOut:
+def Ocp.reopen(renew: Bool, a: AC.Acp, +t: OcpTurn, +o: J.Json) -> AC.AcpOut:
   match renew:
     case True{}:
-      AC.AcpOut{a, [Ocp.renew(t)], Nil{}, Nil{}}
+      AC.AcpOut{a, [Ocp.renew(Ocp.acp(t))], Nil{}, Nil{}}
     case False{}:
       Ocp.fail(a, Ocp.error(o))
 
-def Ocp.reply.k(i: Nat, ok: Bool, a: AC.Acp, +t: AC.AcpTurn, +o: J.Json) -> AC.AcpOut:
+def Ocp.reply.k(i: Nat, ok: Bool, a: AC.Acp, +t: OcpTurn, +o: J.Json) -> AC.AcpOut:
   match i ok:
     case 1n True{}:
-      AC.AcpOut{a, [Ocp.open(t)], Nil{}, Nil{}}
+      AC.AcpOut{a, [Ocp.open(Ocp.acp(t))], Nil{}, Nil{}}
     case 2n True{}:
       Ocp.answered(a, t, o)
     case 2n False{}:
-      Ocp.reopen(Bool.and(Bool.not(String.is_empty(AC.Acp.session(t))), Ocp.lost(Ocp.error(o))), a, t, o)
+      Ocp.reopen(Bool.and(Bool.not(String.is_empty(AC.Acp.session(Ocp.acp(t)))), Ocp.lost(Ocp.error(o))), a, t, o)
+    case 5n True{}:
+      Ocp.say(True{}, a, t)
+    case 15n True{}:
+      Ocp.say(False{}, a, t)
+    case 5n False{}:
+      Ocp.fail(a, Ocp.unmodel(t, Ocp.error(o)))
+    case 15n False{}:
+      Ocp.fail(a, Ocp.unmodel(t, Ocp.error(o)))
     case 7n True{}:
       Ocp.renewed(a, t, o)
     case 3n True{}:
@@ -232,14 +288,14 @@ def Ocp.req.k(upd: Bool, +a: AC.Acp, +t: AC.AcpTurn, +o: J.Json) -> AC.AcpOut:
     case False{}:
       AC.Acp.line.k(True{}, a, t, o)
 
-def Ocp.line.k(req: Bool, +a: AC.Acp, +t: AC.AcpTurn, +o: J.Json) -> AC.AcpOut:
+def Ocp.line.k(req: Bool, +a: AC.Acp, +t: OcpTurn, +o: J.Json) -> AC.AcpOut:
   match req:
     case True{}:
-      Ocp.req.k(String.eq(J.Json.get_str(o, "method", ""), "session/update"), a, t, o)
+      Ocp.req.k(String.eq(J.Json.get_str(o, "method", ""), "session/update"), a, Ocp.acp(t), o)
     case False{}:
       Ocp.reply.k(Ocp.id(o), String.eq(J.Json.show(J.Json.get_obj(o, "error")), "null"), a, t, o)
 
-def Ocp.line.parsed(m: Maybe<&2, J.Json>, +a: AC.Acp, +t: AC.AcpTurn) -> AC.AcpOut:
+def Ocp.line.parsed(m: Maybe<&2, J.Json>, +a: AC.Acp, +t: OcpTurn) -> AC.AcpOut:
   match m:
     case Some{+o}:
       Ocp.line.k(Bool.not(String.is_empty(J.Json.get_str(o, "method", ""))), a, t, o)
@@ -247,5 +303,140 @@ def Ocp.line.parsed(m: Maybe<&2, J.Json>, +a: AC.Acp, +t: AC.AcpTurn) -> AC.AcpO
       AC.AcpOut{a, Nil{}, Nil{}, Nil{}}
 
 # one line from opencode
-def Ocp.line(+a: AC.Acp, +t: AC.AcpTurn, line: String) -> AC.AcpOut:
+def Ocp.line(+a: AC.Acp, +t: OcpTurn, line: String) -> AC.AcpOut:
   Ocp.line.parsed(J.Json.parse(line), a, t)
+
+# Models (Settings and the picker)
+# --------------------------------
+# The hub's Oc.models.sh writes, one per line: each model opencode lists
+# (`opencode models`, "provider/model"; opencode 2 has no --verbose, the
+# flag that once gave names, and fails with its usage when given it), then
+# "!exit <code>\t<its last error line>" when listing failed, then
+# "!auth\t<provider>\t<method>" for each sign-in `opencode auth list`
+# shows (names and methods only: a token never leaves opencode). What it
+# says is the CLI line Settings shows for opencode on every client: a list
+# that failed or is empty says why, never as an empty list that worked.
+
+def Ocm.cols(+l: String) -> List<&2, String>:
+  String.split(l, '\t')
+
+def Ocm.id(+l: String) -> String:
+  Maybe.default(&2, String, List.head(&2, String, Ocm.cols(l)), "")
+
+def Ocm.rest(+l: String) -> String:
+  String.join(List.drop(&2, String, Ocm.cols(l), 1n), " ")
+
+# a model line: "provider/model", a name after a tab allowed
+def Ocm.model(+l: String) -> Bool:
+  Bool.and(Bool.not(String.starts_with(l, "!")), Bool.and(String.contains(Ocm.id(l), "/"), Bool.not(String.contains(Ocm.id(l), " "))))
+
+def Ocm.models.k(ok: Bool, +l: String, rest: List<&2, String>) -> List<&2, String>:
+  match ok:
+    case True{}:
+      Ocm.id(l) <> rest
+    case False{}:
+      rest
+
+def Ocm.models.go(ls: List<&2, String>) -> List<&2, String>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      Ocm.models.k(Ocm.model(l), l, Ocm.models.go(t))
+
+def Ocm.models(+out: String) -> List<&2, String>:
+  Ocm.models.go(String.lines(out))
+
+def Ocm.labels.k(ok: Bool, +l: String, rest: List<&2, J.KV>) -> List<&2, J.KV>:
+  match ok:
+    case True{}:
+      J.KV{Ocm.id(l), J.Str{Ocm.rest(l)}} <> rest
+    case False{}:
+      rest
+
+def Ocm.labels.go(ls: List<&2, String>) -> List<&2, J.KV>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      Ocm.labels.k(Bool.and(Ocm.model(l), Bool.not(String.is_empty(Ocm.rest(l)))), l, Ocm.labels.go(t))
+
+# a label per model that has a name ("default" is opencode's own choice)
+def Ocm.labels(+out: String) -> List<&2, J.KV>:
+  J.KV{"default", J.Str{"opencode's configured default"}} <> Ocm.labels.go(String.lines(out))
+
+# the "!exit" line, "" when listing worked
+def Ocm.failed(ls: List<&2, String>) -> String:
+  match ls:
+    case Nil{}:
+      ""
+    case +l <> t:
+      Bool.pick(String, String.starts_with(l, "!exit "), l, Ocm.failed(t))
+
+def Ocm.timed(+c: String) -> Bool:
+  Bool.or(String.eq(c, "124"), Bool.or(String.eq(c, "137"), String.eq(c, "143")))
+
+def Ocm.why.k(timed: Bool, +c: String, +said: String) -> String:
+  match timed:
+    case True{}:
+      "timed out listing models"
+    case False{}:
+      "could not list models (`opencode models` exited " ++ c ++ Bool.pick(String, String.is_empty(said), "", ": " ++ said) ++ ")"
+
+# why listing failed, from "!exit <code>\t<said>"
+def Ocm.why(+f: String) -> String:
+  Ocm.why.k(Ocm.timed(Ocm.id(String.drop(f, 6n))), Ocm.id(String.drop(f, 6n)), String.trim(Ocm.rest(String.drop(f, 6n))))
+
+def Ocm.auth.k(ok: Bool, +l: String, rest: List<&2, String>) -> List<&2, String>:
+  match ok:
+    case True{}:
+      (Ocm.id(String.drop(l, 6n)) ++ Bool.pick(String, String.is_empty(Ocm.rest(String.drop(l, 6n))), "", " (" ++ Ocm.rest(String.drop(l, 6n)) ++ ")")) <> rest
+    case False{}:
+      rest
+
+def Ocm.auth.go(ls: List<&2, String>) -> List<&2, String>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      Ocm.auth.k(String.starts_with(l, "!auth\t"), l, Ocm.auth.go(t))
+
+# the sign-ins opencode keeps, "OpenAI (OAuth)" each (kept is not valid:
+# an expired one shows here and fails its turns)
+def Ocm.auth(+out: String) -> List<&2, String>:
+  Ocm.auth.go(String.lines(out))
+
+def Ocm.count(+n: Nat) -> String:
+  Nat.show(n) ++ Bool.pick(String, String.eq(Nat.show(n), "1"), " model", " models")
+
+def Ocm.signed(+xs: List<&2, String>) -> String:
+  Bool.pick(String, List.is_empty(&2, String, xs), "no sign-ins", "sign-ins: " ++ String.join(xs, ", "))
+
+def Ocm.listed.k(none: Bool, +n: Nat, +xs: List<&2, String>) -> String:
+  match none:
+    case True{}:
+      "lists no models: sign in with `opencode auth login`"
+    case False{}:
+      Ocm.count(n) ++ " · " ++ Ocm.signed(xs)
+
+def Ocm.state.k(+f: String, +n: Nat, +xs: List<&2, String>) -> String:
+  Bool.pick(String, String.is_empty(f), Ocm.listed.k(Bool.not(Nat.is_gt(n, 0n)), n, xs), Ocm.why(f))
+
+# what Settings says after the version: the models and sign-ins, or why
+# there are none
+def Ocm.state(+out: String) -> String:
+  Ocm.state.k(Ocm.failed(String.lines(out)), List.length(&2, String, Ocm.models(out)), Ocm.auth(out))
+
+# the problem alone ("" when models were listed)
+def Ocm.problem(+out: String) -> String:
+  Bool.pick(String, Nat.is_gt(List.length(&2, String, Ocm.models(out)), 0n), "", Ocm.state(out))
+
+# about.opencode: "cli" is the line Settings shows ("" when opencode is not
+# installed: Settings says so), "version" the CLI's own (a refresh starts
+# from it), "error" why no model can be picked
+def Ocm.cli(+version: String, +out: String) -> String:
+  Bool.pick(String, String.is_empty(version), "", version ++ " · " ++ Ocm.state(out))
+
+def Ocm.about(+version: String, +out: String) -> J.Json:
+  J.Json.obj([J.KV{"cli", J.Str{Ocm.cli(version, out)}}, J.KV{"version", J.Str{version}}, J.KV{"labels", J.Json.obj(Ocm.labels(out))},
+    J.KV{"error", J.Str{Bool.pick(String, String.is_empty(version), "", Ocm.problem(out))}}])
