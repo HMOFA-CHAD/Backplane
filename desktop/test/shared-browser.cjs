@@ -186,7 +186,7 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
   // acknowledgement that Chromium's renderer has processed that input.
   await app.evaluate(({webContents},id)=>{
    const wc=webContents.fromId(id),probe={events:[]};wc.__sharedBrowserHuman=probe;
-   for(const name of ['before-input-event','before-mouse-event'])wc.on(name,(event,input)=>{if(probe.events.length<64)probe.events.push({event:name,type:input?.type,button:input?.button,prevented:event.defaultPrevented===true});});
+   for(const name of ['before-input-event','before-mouse-event'])wc.on(name,(event,input)=>{if(probe.events.length<64)probe.events.push({event:name,type:input?.type,key:input?.key,control:input?.control,meta:input?.meta,shift:input?.shift,button:input?.button,prevented:event.defaultPrevented===true});});
   },id);
   saveHuman();
   await humanClick(id,'#entry');
@@ -194,7 +194,15 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
   await app.evaluate(({webContents},id)=>{
    const wc=webContents.fromId(id);wc.focus();
    wc.sendInputEvent({type:'keyDown',keyCode:'A',modifiers:[process.platform==='darwin'?'meta':'control']});wc.sendInputEvent({type:'keyUp',keyCode:'A',modifiers:[process.platform==='darwin'?'meta':'control']});
-   for(const keyCode of 'human typed')wc.sendInputEvent({type:'char',keyCode});
+   // A handled shortcut makes Chromium suppress Char/KeyUp until the
+   // next RawKeyDown. Model complete physical keystrokes after Select All,
+   // rather than sending orphan Char events that belong to the shortcut.
+   for(const character of 'human typed'){
+    const keyCode=character===' '?'Space':character;
+    wc.sendInputEvent({type:'keyDown',keyCode,modifiers:[]});
+    wc.sendInputEvent({type:'char',keyCode:character,modifiers:[]});
+    wc.sendInputEvent({type:'keyUp',keyCode,modifiers:[]});
+   }
   },id);
   humanInput.afterTyping=await inspect(id);saveHuman();
   await humanClick(id,'#count');
@@ -214,6 +222,9 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
   const human=await inspect(id);
   humanInput.human=human;humanInput.settledPredicate=matchesHuman(human);
   humanInput.native=await app.evaluate(({webContents},id)=>webContents.fromId(id).__sharedBrowserHuman,id);saveHuman();
+  const keyDowns=humanInput.native.events.filter(e=>e.event==='before-input-event'&&e.type==='keyDown');
+  const plainKeyDowns=keyDowns.filter(e=>!e.control&&!e.meta);
+  check('native human character keydowns pass ownership guard after Select All',plainKeyDowns.length==='human typed'.length&&plainKeyDowns.every(e=>!e.prevented));
   check('trusted native human input changes SAME document',human.document===initial.document&&human.entry==='human typed'&&human.count===beforeHuman.count+1&&human.trustedClicks===beforeHuman.trustedClicks+1&&human.trustedInputs>beforeHuman.trustedInputs);
   phase='handback';
   await page.locator(`[data-on-click="tk-handback"][data-value="${threadId}"]`).click();
