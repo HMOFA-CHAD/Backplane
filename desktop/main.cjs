@@ -12,6 +12,7 @@ const { createBrowserActions } = require('./browser-actions.cjs');
 const { exactObject } = require('./browser-wire.cjs');
 const { createHash } = require('node:crypto');
 const fs = require('node:fs');
+const { createConnectionLog } = require('./connection-log.cjs');
 
 // Checkout launches always name an isolated home. Packaging supplies its
 // explicit product configuration after root's integration review.
@@ -19,6 +20,7 @@ const home = process.env.BACKPLANE_HOME || (app.isPackaged ? path.join(os.homedi
 if (!home || !path.isAbsolute(home)) throw new Error('Set an absolute, isolated BACKPLANE_HOME');
 if (!app.isPackaged && path.resolve(home) === path.join(os.homedir(), '.backplane-bend')) throw new Error('Development Electron must use an isolated BACKPLANE_HOME');
 app.setPath('userData', path.join(home, 'electron-profile'));
+const connectionLog = createConnectionLog(home);
 app.setName('Backplane');
 if (process.platform === 'linux') app.setDesktopName?.('backplane.desktop');
 const resourceRoot = path.join(process.resourcesPath, 'backplane-service');
@@ -138,6 +140,10 @@ function start() {
 function createWindow(ses) {
   window = new BrowserWindow({ width: 1400, height: 940, minWidth: 360, minHeight: 480, title: 'Backplane', icon: iconPath(), backgroundColor: '#111410', show: false,
     webPreferences: { session: ses, preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, webviewTag: false, spellcheck: true,additionalArguments:directBrowser?['--backplane-direct-browser=1']:[] } });
+  window.webContents.on('console-message', (details, _level, legacyMessage) => {
+    // Only our main frame, fixed-prefix and schema-sanitized records reach disk.
+    if (!details.frame || details.frame === window.webContents.mainFrame) connectionLog.capture(details.message ?? legacyMessage);
+  });
   window.setMenuBarVisibility(false);
   installShortcuts(window, electron, () => directBrowser ? desktopBrowser : null);
   const shown = new Promise(resolve => window.once('ready-to-show', () => { firstVisibleAtMs ??= Date.now(); window.show(); resolve(); }));
@@ -145,13 +151,13 @@ function createWindow(ses) {
   window.webContents.on('will-navigate', (event, url) => { if (url !== startupURL && new URL(url).origin !== origin) { event.preventDefault(); external(url); } });
   window.webContents.on('will-attach-webview', event => event.preventDefault());
   let closingWindow = false;
-  window.on('close', () => { closingWindow = true;desktopBrowser?.close();desktopBrowser=null; });
-  window.webContents.on('render-process-gone', (_event, details) => {desktopBrowser?.hide();if (!quitting && !closingWindow && details.reason !== 'clean-exit' && !window.isDestroyed()) { void window.loadFile(startupPath).then(() => connect(ses)); } });
+  window.on('close', () => { connectionLog.record({event:'window-close',cause:quitting?'app-quit':'window-close'});closingWindow = true;desktopBrowser?.close();desktopBrowser=null; });
+  window.webContents.on('render-process-gone', (_event, details) => {connectionLog.record({event:'renderer-gone',cause:'renderer',rendererReason:details.reason,exitCode:details.exitCode});desktopBrowser?.hide();if (!quitting && !closingWindow && details.reason !== 'clean-exit' && !window.isDestroyed()) { void window.loadFile(startupPath).then(() => connect(ses)); } });
   void window.loadFile(startupPath);
   return shown;
 }
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
-app.on('before-quit', () => { quitting = true; });
+app.on('before-quit', () => { connectionLog.record({event:'app-quit',cause:'app-quit'});quitting = true; });
 // The Bend service belongs to the product, independently of UI windows. Closing,
 // reloading, or crashing the renderer must not terminate agents, mail or jobs.
 // Explicit service shutdown is a separate service-owned authenticated contract.

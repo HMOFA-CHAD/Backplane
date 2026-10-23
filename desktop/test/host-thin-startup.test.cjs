@@ -1,13 +1,15 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
-async function fixture(supported=false){
+async function fixture(supported=false, legacyProbe=false){
+ const {ConnectionLog}=await import('../../src/web/connection-log.js');
  const {ThinHost,presentationTarget,preservePresentationRoute}=await import('../../src/web/thin-host.js'),{Backoff,Retry,probeHub,QUIET_MS}=await import('../../src/web/reconnect.js'),{ThinViews,viewCapability,VIEW_LIMITS}=await import('../../src/web/thin.js'),{discoverViews}=await import('../../src/web/thin-discovery.js');
- const source=fs.readFileSync(path.resolve(__dirname,'../../src/web/host.js'),'utf8');
+ let source=fs.readFileSync(path.resolve(__dirname,'../../src/web/host.js'),'utf8');
+ if(legacyProbe)source=source.replaceAll(' || attempt !== thinAttempt','');
  const a=source.indexOf('function showViewStatus('),b=source.indexOf('// when a frame (a heartbeat included)',a);assert(a>0&&b>a);
- const boot=source.slice(source.indexOf('pairingReady.then('),source.indexOf('window.addEventListener("pagehide", checkpointFocused)'));
+ const boot=source.slice(source.indexOf('pairingReady.then('),source.indexOf('window.addEventListener("pagehide",'));
  let clock=0,next=0;const timers=new Map(),sockets=[],requests=[],calls=[],status=[],encoder=new TextEncoder(),decoder=new TextDecoder(),store=new Map();
  class Socket{constructor(url){this.url=url;this.readyState=0;sockets.push(this);}open(){this.readyState=1;this.onopen?.();}send(b){requests.push(JSON.parse(decoder.decode(b)));}frame(v){this.onmessage?.({data:encoder.encode(JSON.stringify(v)).buffer});}close(){this.readyState=3;this.onclose?.();}}
- const ctx={ThinHost,ThinViews,viewCapability,discoverViews,WebSocket:Socket,location:{origin:'https://fixture',host:'fixture',protocol:'https:'},
+ const ctx={ConnectionLog,CONNECTION_BUNDLE:'chunk-fixture.js',ThinHost,ThinViews,viewCapability,discoverViews,WebSocket:Socket,location:{origin:'https://fixture',host:'fixture',protocol:'https:'},
   thin:null,thinSocket:null,thinAttempt:0,thinExpiry:0,thinGreetingTimer:0,thinDraftTimer:0,thinFieldTimer:0,socket:null,viewMode:'discovering',remoteReady:false,remoteEpoch:'',canonicalBoot:false,pairingAccepted:false,
   thinSession:null,frontendNode:null,frontend:null,cid:'fixture',ui:{},heard:0n,thinMailDraft:{clear(){},bind(){},matches:()=>false,edit(){},scope:()=>'',needsSubmit:()=>false},mailReplyField:()=>undefined,focusedView:{invalidate(){},remote(){calls.push('cache-retired');}},desktopBrowser:{hide(){calls.push('hide');}},Solid:{reset(){},isPlot:()=>false},Plot2d:{reset(){}},
   localStorage:{getItem:k=>store.get(k)??null,setItem:(k,v)=>store.set(k,v)},performance:{now:()=>clock},Date,Number,JSON,String,Math,Uint8Array,Error,BigInt,
@@ -71,4 +73,17 @@ test('actual current Mailroom callback binds displayed text and preserves a newe
  const shown={type:'element',tag:'textarea',key:'mail-reply',attrs:[{name:'data-bfield',value:'mrreply'},{name:'value',value:'captured older reply'}],kids:[]},context={kind:'mail-draft',owner:'bot-A',origin:'actual',conv:'conv-A',recipient:'Room'};
  const response={t:'reply',id:request.id,ok:true,result:{version:1,hub:'https://fixture',generation:'7',epoch:'actual',requestRevision:request.p.requestRevision,target:request.p.target,viewId:'real-view',viewRevision:'1',remoteReady:true,renderer:'web',shown,session:request.p.session,cmds:[],mailDraftContext:context,window:{ids:[],older:'',hasMore:false,anchor:{id:'',offset:0},partial:[]}}};
  s.frame(response);assert.equal(bound.length,1);assert.equal(bound[0][2],'captured older reply');f.ctx.thin.request('bfield','mrreply\x1f');f.ctx.thin.update();const update=f.requests.at(-1);s.frame({...response,id:update.id,result:{...response.result,requestRevision:update.p.requestRevision}});assert.equal(bound.at(-1)[2],'');
+});
+
+// A late probe was able to close a socket opened by an intervening explicit Retry.
+test('late retry probe cannot replace a newer connection; previous host path reproduces the extra close',async()=>{
+ for(const legacy of [true,false]){
+  const f=await fixture(true,legacy);await f.runBoot();f.sockets[0].open();
+  const original=f.ctx.window.fetch;let release;
+  f.ctx.window.fetch=url=>url==='/hello'?new Promise(resolve=>{release=resolve;}):original(url);
+  f.sockets[0].close();vm.runInContext('thinRetry.wake()',f.ctx);assert.equal(typeof release,'function');
+  await f.ctx.startThin(false,'retry');const newer=f.sockets[1];newer.open();
+  release({status:200});await new Promise(setImmediate);
+  assert.equal(f.sockets.length,legacy?3:2);assert.equal(newer.readyState,legacy?3:1);
+ }
 });
