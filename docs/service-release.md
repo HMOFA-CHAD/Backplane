@@ -74,7 +74,7 @@ the actual emitted assets. No license is inferred from a binary or silently down
 Protected configuration is passed only through the build environment:
 
 * `BACKPLANE_GOOGLE_CLIENT_ID` and `BACKPLANE_GOOGLE_CLIENT_SECRET`;
-* `BACKPLANE_TELEMETRY_URL=https://backplane.works/api/v1/events`;
+* `BACKPLANE_TELEMETRY_URL=https://backplaneworks.com/api/v1/events`;
 * `BACKPLANE_TELEMETRY_KID` matching `rel-[a-z0-9-]{1,28}`;
 * `BACKPLANE_TELEMETRY_KEY`, 64 lowercase hex characters.
 
@@ -110,7 +110,7 @@ the `bend`/`bun`/`bunRuntime` identities and sanitized log references. Its
   "version": "0.12.0", "versionStamp": "0.12.0", "telemetryChannel": "release",
   "google": {"requested": true, "requiredInputsPresent": true},
   "telemetry": {"requested": true, "requiredInputsPresent": true,
-    "endpoint": "https://backplane.works/api/v1/events"}
+    "endpoint": "https://backplaneworks.com/api/v1/events"}
 }
 ```
 

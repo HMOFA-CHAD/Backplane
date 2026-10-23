@@ -42,7 +42,7 @@ def service_build():
             "versionStamp": VERSION, "telemetryChannel": "release",
             "compileInputs": {"version": VERSION, "versionStamp": VERSION, "telemetryChannel": "release",
                               "google": {"requested": True, "requiredInputsPresent": True},
-                              "telemetry": {"requested": True, "requiredInputsPresent": True, "endpoint":"https://backplane.works/api/v1/events"}}}
+                              "telemetry": {"requested": True, "requiredInputsPresent": True, "endpoint":"https://backplaneworks.com/api/v1/events"}}}
 
 
 def archive(path, files):
@@ -428,9 +428,11 @@ class CandidateTests(unittest.TestCase):
 
     def test_bake_presence_does_not_log_values(self):
         e={'BACKPLANE_GOOGLE_BAKE':'1','BACKPLANE_GOOGLE_CLIENT_ID':'fixture-id','BACKPLANE_GOOGLE_CLIENT_SECRET':'fixture-secret',
-           'BACKPLANE_TELEMETRY_BAKE':'1','BACKPLANE_TELEMETRY_URL':'https://backplane.works/api/v1/events',
+           'BACKPLANE_TELEMETRY_BAKE':'1','BACKPLANE_TELEMETRY_URL':'https://backplaneworks.com/api/v1/events',
            'BACKPLANE_TELEMETRY_KID':'rel-1','BACKPLANE_TELEMETRY_KEY':'a'*64}
         assets.check_bake(e,'release')
+        with self.assertRaises(ValueError):
+            assets.check_bake({**e, 'BACKPLANE_TELEMETRY_URL': 'https://backplane.works/api/v1/events'}, 'release')
         for name in ('BACKPLANE_GOOGLE_CLIENT_SECRET','BACKPLANE_TELEMETRY_KEY','BACKPLANE_TELEMETRY_URL'):
             bad=dict(e);bad[name]=''
             with self.assertRaises(ValueError)as r:assets.check_bake(bad,'release')

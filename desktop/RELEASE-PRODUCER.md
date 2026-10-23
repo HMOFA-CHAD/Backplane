@@ -113,7 +113,7 @@ public tuple, identical to `freeze.compileInputs`:
   "version": "0.12.0", "versionStamp": "0.12.0", "telemetryChannel": "release",
   "google": {"requested": true, "requiredInputsPresent": true},
   "telemetry": {"requested": true, "requiredInputsPresent": true,
-    "endpoint": "https://backplane.works/api/v1/events"}
+    "endpoint": "https://backplaneworks.com/api/v1/events"}
 }
 ```
 

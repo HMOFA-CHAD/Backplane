@@ -124,7 +124,7 @@ function configuredService(build,freeze){
  check(config&&config.version===VERSION&&config.versionStamp===VERSION&&config.telemetryChannel==='release','Missing configured compile identity');
  for(const name of ['google','telemetry'])check(config[name]?.requested===true&&config[name]?.requiredInputsPresent===true,'Missing configured Google/telemetry bake witness');
  check(Object.keys(config).sort().join(',')==='google,telemetry,telemetryChannel,version,versionStamp'&&Object.keys(config.google).sort().join(',')==='requested,requiredInputsPresent'&&Object.keys(config.telemetry).sort().join(',')==='endpoint,requested,requiredInputsPresent','Compile witness must contain only the public configuration tuple');
- check(config.telemetry.endpoint==='https://backplane.works/api/v1/events','Wrong/missing public telemetry endpoint');
+ check(config.telemetry.endpoint==='https://backplaneworks.com/api/v1/events','Wrong/missing public telemetry endpoint');
  check(canonical(config)===canonical(freeze.compileInputs),'Compile inputs differ from frozen public configuration');
 }
 function generatedWeb(root,manifest,release){

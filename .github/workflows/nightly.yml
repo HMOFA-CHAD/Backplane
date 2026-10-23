@@ -48,5 +48,5 @@ jobs:
     with:
       ref: ${{ needs.plan.outputs.commit }}
       version: ${{ needs.plan.outputs.version }}
-      telemetry_url: https://backplane.works/api/v1/events
+      telemetry_url: https://backplaneworks.com/api/v1/events
     secrets: inherit

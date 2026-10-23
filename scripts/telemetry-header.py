@@ -26,7 +26,7 @@ def write_header(path: Path) -> None:
         values["CHANNEL"] = channel
         # Missing configuration is an intentional build kill switch.
         if all(values[name] for name in ("URL", "KID", "KEY")):
-            if values["URL"] != "https://backplane.works/api/v1/events":
+            if values["URL"] != "https://backplaneworks.com/api/v1/events":
                 raise ValueError("release telemetry endpoint must be the agreed HTTPS ingest endpoint")
             if not re.fullmatch(r"rel-[a-z0-9-]{1,28}", values["KID"]):
                 raise ValueError("release telemetry needs a release key id")

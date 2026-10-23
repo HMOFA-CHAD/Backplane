@@ -37,7 +37,7 @@ class Fixture:
         self.put(self.service+'/WEB.json', old_web)
         self.put(self.service+'/backplane-serve'+('.exe' if target == 'windows-x64' else ''), b'not executable fixture')
         self.put(self.service+'/LICENSE.Backplane', b'fixture license')
-        build = {'commit':self.source, 'tree':self.tree, 'entrypoint':'src/server/main.bend', 'serviceVersion':'0.12.0', 'versionStamp':'0.12.0', 'telemetryChannel':'release', 'compileInputs':{'version':'0.12.0','versionStamp':'0.12.0','telemetryChannel':'release','google':{'requested':True,'requiredInputsPresent':True},'telemetry':{'requested':True,'requiredInputsPresent':True,'endpoint':'https://backplane.works/api/v1/events'}}}
+        build = {'commit':self.source, 'tree':self.tree, 'entrypoint':'src/server/main.bend', 'serviceVersion':'0.12.0', 'versionStamp':'0.12.0', 'telemetryChannel':'release', 'compileInputs':{'version':'0.12.0','versionStamp':'0.12.0','telemetryChannel':'release','google':{'requested':True,'requiredInputsPresent':True},'telemetry':{'requested':True,'requiredInputsPresent':True,'endpoint':'https://backplaneworks.com/api/v1/events'}}}
         self.service_name = 'backplane-serve' + ('.exe' if target == 'windows-x64' else '')
         if target == 'windows-x64':
             build.update(serviceRuntime='bun', service=self.service_name)

@@ -30,7 +30,7 @@ function fixture(t,target='linux-x64',resident=false,releaseSource={}){
  const runtimeNotice=notice(service,'runtime');const runtimeMember=serviceExe;
  const runtime={schema:1,target,inventory:[{path:runtimeMember,package:'fixture',version:'fixture',architecture:target,sha256:hash(path.join(service,runtimeMember)),bytes:fs.statSync(path.join(service,runtimeMember)).size}],packages:[runtimeNotice]};write(path.join(service,'RUNTIME.json'),runtime);
  const closure={schema:1,target,measured:true,status:'PASS',edges:[{from:serviceExe,system:true,kind:'normal',classification:'approved-system',name:'synthetic-system'}],unresolvedMandatory:[]};write(path.join(service,'CLOSURE.json'),closure);
- const compileInputs={version:'0.12.1',versionStamp:'0.12.1',telemetryChannel:'release',google:{requested:true,requiredInputsPresent:true},telemetry:{requested:true,requiredInputsPresent:true,endpoint:'https://backplane.works/api/v1/events'}};
+ const compileInputs={version:'0.12.1',versionStamp:'0.12.1',telemetryChannel:'release',google:{requested:true,requiredInputsPresent:true},telemetry:{requested:true,requiredInputsPresent:true,endpoint:'https://backplaneworks.com/api/v1/events'}};
  const buildReceipt={versionStamp:'0.12.1',telemetryChannel:'release',compileInputs,status:'VERIFIED_GENUINE_SYNTHETIC_FIXTURE_ONLY',target,entry:'src/server/main.bend',version:'0.12.1',source_commit:release.commit,source_tree:release.tree,serviceRuntime:'bun',service:serviceExe,binary_sha256:hash(path.join(service,serviceExe))};const buildPath=write(path.join(root,'genuine.json'),buildReceipt);fs.copyFileSync(buildPath,path.join(service,'BUILD.json'));
  let serviceSpec,serviceReceipt;
  {

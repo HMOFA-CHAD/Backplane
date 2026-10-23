@@ -51,6 +51,10 @@ stamped/package version and rejects an explicit disagreement. If both
 versions must agree after removing the leading `v`. Changing the user's
 update preference never relabels telemetry from an installed package.
 
+Release and nightly builds use the canonical receiver
+`https://backplaneworks.com/api/v1/events` directly, with the same HMAC API
+and key configuration. Builds do not rely on the legacy domain redirect.
+
 Normal runtime environment variables cannot replace baked credentials or
 redirect traffic. Explicit integration tests set `BACKPLANE_TELEMETRY_TEST=1`
 and supply `BACKPLANE_TELEMETRY_URL`, `_KID`, `_KEY` and `_CHANNEL`; only a

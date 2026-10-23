@@ -29,14 +29,14 @@ class TelemetryBuild(unittest.TestCase):
 
     def release(self, **changes):
         env = dict(BACKPLANE_TELEMETRY_BAKE="1", BACKPLANE_VERSION="v0.12.0",
-                   BACKPLANE_TELEMETRY_URL="https://backplane.works/api/v1/events",
+                   BACKPLANE_TELEMETRY_URL="https://backplaneworks.com/api/v1/events",
                    BACKPLANE_TELEMETRY_KID="rel-test", BACKPLANE_TELEMETRY_KEY=KEY)
         env.update(changes)
         return self.run_header(**env)
 
     def test_dev_environment_stays_quiet(self):
         rc, text = self.run_header(BACKPLANE_TELEMETRY_KEY=KEY,
-                                   BACKPLANE_TELEMETRY_URL="https://backplane.works/api/v1/events")
+                                   BACKPLANE_TELEMETRY_URL="https://backplaneworks.com/api/v1/events")
         self.assertEqual(rc, 0)
         self.assertNotIn(KEY, text)
         self.assertIn('BP_TELEMETRY_CHANNEL ""', text)
@@ -61,10 +61,11 @@ class TelemetryBuild(unittest.TestCase):
             rc, text = self.release(**{"BACKPLANE_TELEMETRY_" + field: ""})
             self.assertEqual(rc, 0)
             self.assertNotIn(KEY, text)
-            self.assertNotIn("backplane.works", text)
+            self.assertNotIn("backplaneworks.com", text)
 
     def test_invalid_configuration_never_reaches_header(self):
-        for field, value in [("URL", "https://elsewhere.invalid/api/v1/events"),
+        for field, value in [("URL", "https://backplane.works/api/v1/events"),
+                             ("URL", "https://elsewhere.invalid/api/v1/events"),
                              ("KID", 'rel-test"\n#error injected'), ("KEY", "ab" * 31)]:
             rc, text = self.release(**{"BACKPLANE_TELEMETRY_" + field: value})
             self.assertNotEqual(rc, 0)

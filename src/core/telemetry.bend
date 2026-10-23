@@ -171,7 +171,7 @@ def Tm.loopback(+url: String) -> Bool:
 
 def Tm.config.ok(test: String, +url: String, +kid: String, +key: String, +channel: String) -> Bool:
   Bool.and(Tm.hex.n(key, 64n), Bool.and(Bool.or(String.starts_with(kid, "dev-"), String.starts_with(kid, "rel-")),
-    Bool.pick(Bool, String.eq(test, "1"), Tm.loopback(url), Bool.and(String.eq(url, "https://backplane.works/api/v1/events"), Bool.and(String.starts_with(kid, "rel-"), Tm.has(["release", "nightly"], channel))))))
+    Bool.pick(Bool, String.eq(test, "1"), Tm.loopback(url), Bool.and(String.eq(url, "https://backplaneworks.com/api/v1/events"), Bool.and(String.starts_with(kid, "rel-"), Tm.has(["release", "nightly"], channel))))))
 
 def Tm.clean(+ev: TmEv) -> Bool:
   match ev:
