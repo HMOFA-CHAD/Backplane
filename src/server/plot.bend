@@ -646,27 +646,78 @@ def Tree.root(f: K.Files, +path: String) -> String:
     case K.Files{_, _, +sch, _}:
       Bool.pick(String, String.is_empty(sch), path, HS.Hist.rebase(path, sch))
 
-# `backplane --plot-tree ROOT`: the rows, as Hier.show writes them
+# each file the tree read, a line of its sheets' boxes (hier.bend's
+# Hier.boxes.line, keyed by the live file)
+def Tree.boxes(tab: List<&2, HI.Kids>, +acc: String) -> IO(String):
+  match tab:
+    case Nil{}:
+      IO.pure(String, acc)
+    case HI.Kids{+f, _} <> t:
+      do IO<String>:
+        bs : List<&2, U32> <- GT.Git.version(f)
+        Tree.boxes(t, acc ++ HI.Hier.boxes.line(HS.Hist.family(f), bs) ++ "\n")
+
+# each file the tree read, a line of its sheets' uuids and pages
+# (Hier.uids.line, keyed the same way)
+def Tree.ids(tab: List<&2, HI.Kids>, +acc: String) -> IO(String):
+  match tab:
+    case Nil{}:
+      IO.pure(String, acc)
+    case HI.Kids{+f, _} <> t:
+      do IO<String>:
+        bs : List<&2, U32> <- GT.Git.version(f)
+        Tree.ids(t, acc ++ HI.Hier.uids.line(HS.Hist.family(f), bs) ++ "\n")
+
+# `backplane --plot-tree ROOT`: {"rows": the rows as Hier.show writes them,
+# "boxes": where each file's child sheets sit, "ids": their uuids and
+# pages, "top": the root's uuid and pages}
 def Pv.child.tree(+root: String) -> IO(Unit):
   do IO<Unit>:
-    tab : List<&2, HI.Kids> <- Tree.load(64n, [root], Nil{})
-    IO.print(HI.Hier.show(HI.Hier.rows(tab, root)))
+    +tab : List<&2, HI.Kids> <- Tree.load(64n, [root], Nil{})
+    bx : String <- Tree.boxes(tab, "")
+    ix : String <- Tree.ids(tab, "")
+    rb : List<&2, U32> <- GT.Git.version(root)
+    IO.print(J.Json.show(J.Json.obj([J.KV{"rows", J.Str{HI.Hier.show(HI.Hier.rows(tab, root))}}, J.KV{"boxes", J.Str{String.trim_end(bx)}},
+      J.KV{"ids", J.Str{String.trim_end(ix)}}, J.KV{"top", J.Str{HI.Hier.top(rb)}}])))
 
-# a phone watching a project's schematic hears its sheets ("" rows for a
-# schematic of one sheet, or one the child could not read)
-def Pv.tree.say(r: PR.Ran, +client: U32, +root: String, +out: Chan(POut)) -> IO(Unit):
+# a phone or page watching a project's schematic hears its sheets ("" rows
+# for a schematic of one sheet, or one the child could not read) and the
+# boxes a click on a sheet symbol opens (an older child's plain rows still
+# read as rows)
+# (slot: which tree it is, "" the live design's, else "<gitdir>\t<commit>"
+# of the version watched; gen: the request's place in order, a decimal
+# string (beyond a JavaScript number's exact range): the second the actor
+# started times 2^32 plus the count of messages it took before the watch,
+# fixed in the actor's own order before the child is spawned, so each
+# request's is greater than every earlier one's whatever the clock does
+# (within a second too, and a later start's above an earlier start's), and
+# a client keeps a slot's newest reply only)
+def Pv.tree.json(+root: String, +slot: String, +gen: Nat, +o: J.Json, +text: String) -> String:
+  J.Json.show(J.Json.obj([J.KV{"t", J.Str{"sheets"}}, J.KV{"root", J.Str{root}}, J.KV{"slot", J.Str{slot}}, J.KV{"gen", J.Str{Nat.show(gen)}},
+    J.KV{"rows", J.Str{J.Json.get_str(o, "rows", String.trim_end(text))}}, J.KV{"boxes", J.Str{J.Json.get_str(o, "boxes", "")}},
+    J.KV{"ids", J.Str{J.Json.get_str(o, "ids", "")}}, J.KV{"top", J.Str{J.Json.get_str(o, "top", "")}}]))
+
+def Pv.tree.say(r: PR.Ran, +client: U32, +root: String, +slot: String, +gen: Nat, +out: Chan(POut)) -> IO(Unit):
   match r:
     case PR.Ran{0, +text}:
-      Pv.say(out, client, J.Json.show(J.Json.obj([J.KV{"t", J.Str{"sheets"}}, J.KV{"root", J.Str{root}}, J.KV{"rows", J.Str{String.trim_end(text)}}])))
+      Pv.say(out, client, Pv.tree.json(root, slot, gen, Maybe.default(&2, J.Json, J.Json.parse(String.trim(text)), J.Null{}), text))
     case _:
       IO.pure(Unit, Unit{})
 
-def Pv.tree.k(+file: String, +client: U32, +root: String, +out: Chan(POut)) -> IO(Unit):
+def Pv.tree.k(+file: String, +client: U32, +root: String, +slot: String, +gen: Nat, +out: Chan(POut)) -> IO(Unit):
   Bool.pick(IO(Unit), String.is_empty(file), IO.pure(Unit, Unit{}),
-    IO.bind(String, Unit, H.Sys.exe_path(), exe => IO.bind(PR.Ran, Unit, PR.Proc.run(EX.Exe.child(exe), ["--plot-tree", file], "/"), r => Pv.tree.say(r, client, root, out))))
+    IO.bind(String, Unit, H.Sys.exe_path(), exe => IO.bind(PR.Ran, Unit, PR.Proc.run(EX.Exe.child(exe), ["--plot-tree", file], "/"), r => Pv.tree.say(r, client, root, slot, gen, out))))
 
-def Pv.tree(+client: U32, +root: String, +path: String, +out: Chan(POut)) -> IO(Unit):
-  IO.bind(K.Files, Unit, K.Files.read(root), f => Pv.tree.k(Tree.root(f, Bool.pick(String, Nat.is_eq(HS.Hist.kind(path), 1n), path, "")), client, root, out))
+def Pv.tree.slot(+path: String) -> String:
+  Bool.pick(String, Nat.is_eq(HS.Hist.kind(path), 1n), HS.Hist.git.dir(path) ++ "\t" ++ HS.Hist.git.commit(path), "")
+
+def Pv.tree.gen(+boot: U32, +n: Nat) -> Nat:
+  Nat.add(Nat.mul(Nat.mul(U32.to_nat(boot), 65536n), 65536n), n)
+
+def Pv.tree(+client: U32, +root: String, +path: String, +gen: Nat, +out: Chan(POut)) -> IO(Unit):
+  do IO<Unit>:
+    f : K.Files <- K.Files.read(root)
+    Pv.tree.k(Tree.root(f, Bool.pick(String, Nat.is_eq(HS.Hist.kind(path), 1n), path, "")), client, root, Pv.tree.slot(path), gen, out)
 
 def Pv.args.copy(xs: List<String>) -> List<&2, String>:
   match xs:
@@ -976,13 +1027,15 @@ def Pv.info(+client: U32, +id: String, +file: String, +sig: U32, +idx: Nat, +out
     r : PR.Ran <- PR.Proc.run(EX.Exe.child(exe), ["--plot-info", file, U32.show(sig), Nat.show(idx)], "/")
     Pv.info.done(r, client, id, out)
 
-def Pv.handle(st: PSt, m: PMsg, +q: Chan(PMsg), +out: Chan(POut), +dir: String) -> IO(PSt):
+# (n: the generation of this message: the actor's start second times 2^32
+# plus how many messages it took before this one, Pv.tree.gen)
+def Pv.handle(st: PSt, m: PMsg, +q: Chan(PMsg), +out: Chan(POut), +dir: String, +n: Nat) -> IO(PSt):
   match st m:
     case _ PWatch{+client, +kind, +root, +path}:
       do IO<PSt>:
         +file : String <- Pv.file(kind, root, path)
         st2 : PSt <- Pv.watch.k(String.is_empty(file), False{}, st, client, kind, Src.key(kind, root, path), file, q, out)
-        Bool.pick(IO(Unit), U32.is_eq(kind, 1), IO.spawn(Unit, Pv.tree(client, root, path, out)), IO.pure(Unit, Unit{}))
+        Bool.pick(IO(Unit), U32.is_eq(kind, 1), IO.spawn(Unit, Pv.tree(client, root, path, n, out)), IO.pure(Unit, Unit{}))
         Pv.watch.board(Bool.and(Pv.solid.kind(kind), String.ends_with(file, ".kicad_pcb")), st2, client, root, path, file, q, out)
     case PSt{ss, +subs, polling} PStop{+client}:
       do IO<PSt>:
@@ -1004,20 +1057,24 @@ def Pv.handle(st: PSt, m: PMsg, +q: Chan(PMsg), +out: Chan(POut), +dir: String) 
         Pv.note(Bool.and(String.is_empty(err), Bool.or(String.starts_with(key, "2|"), String.starts_with(key, "3|"))), subs2, key, dir, out)
         return PSt{Pv.got.srcs(ss, key, sz, mt, pl), subs2, polling}
 
-def Pv.got(m: Maybe<&1, PMsg>, st: PSt, +q: Chan(PMsg), +out: Chan(POut), +dir: String, k: PSt -> IO(Unit)) -> IO(Unit):
+def Pv.got(m: Maybe<&1, PMsg>, st: PSt, +q: Chan(PMsg), +out: Chan(POut), +dir: String, +n: Nat, k: PSt -> IO(Unit)) -> IO(Unit):
   match m:
     case Some{msg}:
-      IO.bind(PSt, Unit, Pv.handle(st, msg, q, out, dir), k)
+      IO.bind(PSt, Unit, Pv.handle(st, msg, q, out, dir, n), k)
     case None{}:
       IO.pure(Unit, Unit{})
 
-# the actor; dir keeps the info tables (the hub's home/plot)
-def Pv.loop(fuel: Nat, +q: Chan(PMsg), st: PSt, +out: Chan(POut), +dir: String) -> IO(Unit):
+# the actor counting the messages it took (n), from its start second (boot)
+def Pv.loop.n(fuel: Nat, +q: Chan(PMsg), st: PSt, +out: Chan(POut), +dir: String, +boot: U32, +n: Nat) -> IO(Unit):
   match fuel:
     case 0n:
       IO.pure(Unit, Unit{})
     case 1n+f:
-      IO.bind(Maybe<&1, PMsg>, Unit, Chan.recv(PMsg, q), m => Pv.got(m, st, q, out, dir, st2 => Pv.loop(f, q, st2, out, dir)))
+      IO.bind(Maybe<&1, PMsg>, Unit, Chan.recv(PMsg, q), m => Pv.got(m, st, q, out, dir, Pv.tree.gen(boot, n), st2 => Pv.loop.n(f, q, st2, out, dir, boot, 1n+n)))
+
+# the actor; dir keeps the info tables (the hub's home/plot)
+def Pv.loop(fuel: Nat, +q: Chan(PMsg), st: PSt, +out: Chan(POut), +dir: String) -> IO(Unit):
+  IO.bind(U32, Unit, H.Clock.epoch(), boot => Pv.loop.n(fuel, q, st, out, dir, boot, 0n))
 
 def Pv.empty() -> PSt:
   PSt{Nil{}, Nil{}, False{}}
