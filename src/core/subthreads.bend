@@ -114,10 +114,14 @@ def Tree.children.go(ts: List<&2, M.Thread>, +s: M.State, +id: String) -> List<&
     case +t <> rest:
       Tree.roots.add(Bool.not(String.eq(Tree.display_parent(s, M.Thread.id(t)), id)), t, Tree.children.go(rest, s, id))
 
+def Tree.cmp.le(r: (String & String) & Cmp) -> Bool:
+  (_, c) = r
+  Cmp.is_le(c)
+
 def Tree.before(a: M.Thread, b: M.Thread) -> Bool:
   match a b:
     case M.Thread{ia, _, _, +ca, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _} M.Thread{ib, _, _, +cb, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
-      Bool.or(Nat.is_lt(ca, cb), Bool.and(Nat.is_eq(ca, cb), Cmp.is_le(String.cmp(ia, ib))))
+      Bool.or(Nat.is_lt(ca, cb), Bool.and(Nat.is_eq(ca, cb), Tree.cmp.le(String.cmp(ia, ib))))
 
 def Tree.children(+s: M.State, +id: String) -> List<&2, M.Thread>:
   List.sort(~M.Thread, ~Tree.before, Tree.children.go(Tree.all(s), s, id))

@@ -23,6 +23,7 @@ const events=[ev('ProjectCreated',{id:'fixture',title:'Sensor rev C',root:projec
 for(const [call,title,end]of [['layout','Layout and connector review','done'],['failed','Thermal review','failed']]){
  for(const [kind,summary]of [['start:subagent',title],['Read','boards/sensor/sensor.kicad_pcb'],['say','Checked the antenna keepout and connector orientation. A long report/path/without/breaks/'.repeat(3)],['end',end]])events.push(ev('ActivityLogged',{thread:'@sub:'+tid,act:call,tone:call,kind,summary}));
 }
+events.push(...require('./thread-hierarchy.cjs').hierarchyEvents({at,home,project,threadId:tid}));
 fs.writeFileSync(path.join(home,'events.jsonl'),events.map(JSON.stringify).join('\n')+'\n');
 Object.assign(process.env,{BACKPLANE_AGENTS:agents,BACKPLANE_COPY:'1',BACKPLANE_NO_UPDATE:'1',BACKPLANE_TELEMETRY:'off',BACKPLANE_PEERS:'',BACKPLANE_LOCK_DIR:path.join(home,'locks'),BACKPLANE_DESKTOP_BROWSER:'1'});
 const binary=path.join(stage,'payload/backplane-serve'),web=path.join(stage,'payload/web'),service=new Service({home,binary,web,expectedVersion:info.version});
@@ -57,6 +58,7 @@ let app,page;const errors=[],timings=[],checks=[];
  await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(out,'mobile390.png')});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'no390px document overflow');
  assert(await page.locator('.composer').evaluate(el=>{const r=el.getBoundingClientRect();return r.bottom<=innerHeight&&r.top>=0;}),'composer remains reachable');checks.push('390px no overflow/composer visible');
  if(!baseline){await page.locator('.workspace-bar [data-on-click="view-kind"][data-value="board"]').click();await page.locator('#viewer').waitFor();await page.screenshot({path:path.join(out,'viewer-mobile390.png')});await page.locator('#viewer [data-on-click="panel"]').click();await page.locator('#viewer').waitFor({state:'hidden'});checks.push('mobile viewer full-page and back');}
+ if(process.env.BATCH_HIERARCHY==='1')await require('./thread-hierarchy.cjs').runHierarchyAcceptance({app,page,service,home,project,threadId:tid,child,out:path.join(out,'hierarchy')});
  if(process.env.BATCH_BROWSER==='1'){await page.setViewportSize({width:1440,height:960});await require('./shared-browser.cjs').runSharedBrowserAcceptance({app,page,origin:connection.origin,token:await service.token(),threadId:tid,otherThreadId:'empty',out:path.join(out,'shared-browser')});}
  assert.equal(errors.length,0,errors.join('\n'));fs.writeFileSync(path.join(out,'RESULT.json'),JSON.stringify({state:'passed',baseline,source:info.commit,version:info.version,stage,out,home,checks,timings,errors},null,2));console.log(JSON.stringify({out,checks,timings}));
  }catch(error){process.exitCode=1;console.error(error);if(page){await page.screenshot({path:path.join(out,'failure.png')}).catch(()=>{});fs.writeFileSync(path.join(out,'failure.html'),await page.content().catch(()=>''));}fs.writeFileSync(path.join(out,'FAIL.json'),JSON.stringify({error:error.stack,errors},null,2));}

@@ -1907,7 +1907,7 @@ type SRow is Data:
 def SRow.before(a: SRow, b: SRow) -> Bool:
   match a b:
     case SRow{_, M.Project{ia, _, _, +ca, _}, _} SRow{_, M.Project{ib, _, _, +cb, _}, _}:
-      Bool.or(Nat.is_gt(ca, cb), Bool.and(Nat.is_eq(ca, cb), Cmp.is_le(String.cmp(ia, ib))))
+      Bool.or(Nat.is_gt(ca, cb), Bool.and(Nat.is_eq(ca, cb), ST.Tree.cmp.le(String.cmp(ia, ib))))
 
 # a row with its project's order key (Nil: none)
 type PSlot is Data:
