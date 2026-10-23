@@ -43,7 +43,7 @@ async function choose(theme,narrow){await chooseTheme(page,views,trail,theme,{na
 const arm=expect=>page.evaluate(expect=>{
  const r={expect,frames:[],mutations:[],stop:false};window.__themeStream=r;
  const now=kind=>{const a=document.querySelector('.app'),m=document.querySelector('main[data-thread]'),thread=m?.dataset.thread||'';
-  const msgs=m?[...m.querySelectorAll('.msg.assistant')]:[],live=m?.querySelector('.msg.live')||null,row=live||msgs.at(-1)||null,text=row?.textContent||'';
+  const msgs=m?[...m.querySelectorAll('.msg.assistant')]:[],live=m?.querySelector('[data-id="@live:tb"]')||null,row=live||msgs.at(-1)||null,text=row?.textContent||'';
   const idx=[...text.matchAll(/sample-(\d+)\((\d+)\)/g)],stopEl=m?[...m.querySelectorAll('[data-on-click="interrupt"]')]:[];
   return{kind,t:performance.now(),thread,app:a?a.classList.contains('light')?'light':'dark':'',html:document.documentElement.classList.contains('light')?'light':'dark',
    body:getComputedStyle(document.body).backgroundColor,cached:document.documentElement.dataset.backplaneCached||'',ready:document.documentElement.dataset.backplaneRemoteReady||'',
@@ -54,14 +54,14 @@ const arm=expect=>page.evaluate(expect=>{
  const tick=()=>{if(r.stop)return;r.frames.push(now('frame'));requestAnimationFrame(tick);};requestAnimationFrame(tick);
 },expect);
 const collect=()=>page.evaluate(()=>{const r=window.__themeStream;r.stop=true;r.mo.disconnect();delete window.__themeStream;return{frames:r.frames,mutations:r.mutations};});
-const live=()=>page.evaluate(()=>{const m=document.querySelector('main[data-thread]'),row=m?.querySelector('.msg.live'),idx=[...(row?.textContent||'').matchAll(/sample-(\d+)\((\d+)\)/g)];
+const live=()=>page.evaluate(()=>{const m=document.querySelector('main[data-thread]'),row=m?.querySelector('[data-id="@live:tb"]'),idx=[...(row?.textContent||'').matchAll(/sample-(\d+)\((\d+)\)/g)];
  return{thread:m?.dataset.thread,live:!!row,stream:idx.length?idx[0][2]:'',newest:idx.length?Math.max(...idx.map(x=>+x[1])):-1};});
 async function round(n,theme,width,draft){
  const narrow=width<=760,name=`${theme}-${width}`;step='stream-'+name;
  // a new reply in tb, seen growing before anything else happens
- await go('tb',narrow);await page.waitForFunction(()=>!document.querySelector('main[data-thread="tb"] .msg.live'));
+ await go('tb',narrow);await page.waitForFunction(()=>!document.querySelector('main[data-thread="tb"] [data-id="@live:tb"]'));
  await page.locator('#composer').fill('stream '+n);await page.locator('#composer').press('Enter');
- await page.waitForFunction(()=>{const t=document.querySelector('main[data-thread="tb"] .msg.live')?.textContent||'';return /sample-[3-9]\(/.test(t)||/sample-\d\d+\(/.test(t);},null,{timeout:20000});
+ await page.waitForFunction(()=>{const t=document.querySelector('main[data-thread="tb"] [data-id="@live:tb"]')?.textContent||'';return /sample-[3-9]\(/.test(t)||/sample-\d\d+\(/.test(t);},null,{timeout:20000});
  const before=await live();assert(before.live&&before.stream,'tb is streaming before the toggle');
  // the toggle mid-stream, then tb→ta→tb; sampled from the toggle's own frame on
  step='toggle-'+name;await choose(theme,narrow);if(narrow)await go('tb',true);else await ready('tb');
