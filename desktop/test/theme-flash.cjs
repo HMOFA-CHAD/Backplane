@@ -56,6 +56,8 @@ async function round(theme,width,order){
 async function size(w,h){await app.evaluate(({BrowserWindow},[w,h])=>{const win=BrowserWindow.getAllWindows()[0];win.setMinimumSize(320,480);win.setSize(w,h);},[w,h]);await page.waitForFunction(w=>innerWidth<=w+1,w);}
 (async()=>{try{
  await service.start();app=await _electron.launch({executablePath:stage+'/desktop/runtime/backplane-desktop',env:{...env,BACKPLANE_SERVICE:binary,BACKPLANE_WEB:web,BACKPLANE_SERVICE_VERSION:info.version}});
+ const nativeLog=fs.createWriteStream(out+'/native-process.log');app.process().stderr?.pipe(nativeLog);app.process().once('exit',(code,signal)=>fs.writeFileSync(out+'/native-exit.json',JSON.stringify({at:Date.now(),code,signal,step})+'\n'));
+ await app.evaluate(({app})=>{process.on('uncaughtExceptionMonitor',e=>console.error('THEME_UNCAUGHT',e?.stack||String(e)));app.on('render-process-gone',(_e,_wc,d)=>console.error('THEME_RENDER_GONE',JSON.stringify(d)));});
  page=await app.firstWindow();page.setDefaultTimeout(15000);await page.waitForFunction(()=>document.documentElement.dataset.backplaneRemoteReady==='true');
  views=await watchViews(page);
  const skip=page.locator('[data-on-click="ob-skip"]');if(await skip.count())await skip.click();
