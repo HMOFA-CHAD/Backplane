@@ -8,6 +8,7 @@
 import App from "./app.bend";
 import { installUsageTabs } from "./usage-tabs.js";
 installUsageTabs();
+import { ConnectionLog } from "./connection-log.js";
 import { pairBrowser } from "./auth.js";
 
 // Consume the secret before the generic deeplink handler clears the fragment.
@@ -28,6 +29,8 @@ import * as Wire from "./wire.js";
 import { openDraw } from "./draw.js";
 import { ViewTransition, loadingShell } from "./view-transition.js";
 import { T, is, learnJson, learnDom } from "./wire.js";
+
+const CONNECTION_BUNDLE = bundleOf(import.meta.url);
 
 // the constructors' tags as this bundle names them (wire.js)
 learnJson(App.json_tags());
@@ -361,7 +364,7 @@ async function refreshFocusedIdentity() {
     writeCookie: value => { document.cookie = value; }, protocol: location.protocol });
   trace("cache-identity", { state: result.state });
   if (result.state === "denied") {
-    stopThin();viewMode = "read-only";focusedView.invalidate();
+    stopThin(false, "auth-denied");viewMode = "read-only";focusedView.invalidate();
     showViewStatus("Pairing is required to reconnect.");later();return;
   }
   if (before !== cacheIdentity(document.cookie) || result.state === "denied" || result.state === "invalid") {
@@ -1520,6 +1523,8 @@ function showViewStatus(message) {
 // looked at again; a hub that is starting says how long with Retry-After.
 // While it is down the last view stays on screen (actions wait, the draft is
 // kept) and the bar says so only if the gap lasts past QUIET_MS.
+const connectionLog = new ConnectionLog({ storage: localStorage, bundle: CONNECTION_BUNDLE,
+  visibility: () => document.visibilityState || "unknown", online: () => navigator.onLine !== false });
 const thinBackoff = new Backoff(), thinRetry = new Retry();
 let downSince = 0, downNote = "", downTimer = 0;
 function downStatus(note) {
@@ -1537,11 +1542,14 @@ function upStatus() {
 function thinReconnect() {
   if (!pairingAccepted || viewMode === "compatibility" || thinRetry.pending) return;
   downStatus(downNote || "Reconnecting… Your draft is kept.");
+  const attempt = thinAttempt;
   thinRetry.schedule(thinBackoff.next(), async () => {
-    if (viewMode === "compatibility") return;
+    if (viewMode === "compatibility" || attempt !== thinAttempt) return;
     const hub = await probeHub(window.fetch.bind(window));
-    if (viewMode === "compatibility") return;
-    if (hub.state === "up") { void startThin(true);return; }
+    // A Retry/wake/new connection can win while the old HTTP probe waits.
+    // Its late answer must never replace that newer healthy socket.
+    if (viewMode === "compatibility" || attempt !== thinAttempt) { connectionLog.record("retry-discarded", { cause: "stale-retry" });return; }
+    if (hub.state === "up") { void startThin(true, "reconnect");return; }
     if (hub.state === "starting") { thinBackoff.retryAfter(hub.retryAfterMs);downStatus("Hub restarting… Your draft is kept."); }
     else downStatus(navigator.onLine === false ? "Offline. Reconnects when the network is back; your draft is kept." : "Hub unreachable. Reconnecting… Your draft is kept.");
     thinReconnect();
@@ -1593,7 +1601,7 @@ function retryNow() {
   if (viewMode === "compatibility") return;
   thinBackoff.reset();
   if (thinRetry.pending) thinRetry.wake();
-  else void startThin();
+  else void startThin(false, "retry");
 }
 
 function resultPanel(title) {
@@ -1654,7 +1662,7 @@ function showThinMessage(message) {
     more.addEventListener("click", () => thin?.message(message.id, message.cursor));panel.append(more);
   }
 }
-function stopThin(keepView = false) {
+function stopThin(keepView = false, reason = "replaced") {
   checkpointFocused();
   thinRetry.cancel();
   thinContinuations.clear();
@@ -1662,15 +1670,15 @@ function stopThin(keepView = false) {
   const previous = thin;thin = null;
   const s = thinSocket;thinSocket = null;
   if (socket === s) socket = null;
-  if (s) { s.onclose = null;s.onmessage = null;try { s.close(); } catch {} }
+  if (s) { s.connectionDiagnostic?.initiate(reason);s.onmessage = null;try { s.close(); } catch {} }
   if (previous) previous.disconnect();
   remoteReady = false;desktopBrowser.hide();Plot2d.reset();Solid.reset();
   if (!keepView) frontendNode = null;
 }
-async function startThin(again = false) {
+async function startThin(again = false, reason = "initial") {
   if (!pairingAccepted) return;
   if (viewMode === "compatibility") return;
-  stopThin(again || downSince > 0);const attempt = thinAttempt;
+  stopThin(again || downSince > 0, reason);const attempt = thinAttempt;
   viewMode = "discovering";
   if (downSince) downStatus(downNote);
   else showViewStatus("Connecting…");
@@ -1687,6 +1695,8 @@ async function startThin(again = false) {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   const s = new WebSocket(`${proto}//${location.host}/ws?view=1&frontend=1&enc=cbor&since=0&origin=`);
   thinSocket = s;s.binaryType = "arraybuffer";
+  const diagnostic = s.connectionDiagnostic = connectionLog.connection();
+  diagnostic.note("created", { cause: reason });
   let ended = false;
   const current = () => !ended && attempt === thinAttempt && viewMode === "view-v1";
   const fail = message => {
@@ -1696,6 +1706,7 @@ async function startThin(again = false) {
   };
   const disconnect = event => {
     if (!current()) return;
+    if (typeof event === "string") diagnostic.initiate(event);
     trace("thin-disconnect", { reason: typeof event === "string" ? event : event?.type || "connection-ended", code: event?.code });
     ended = true;
     checkpointFocused();remoteReady = false;desktopBrowser.hide();Plot2d.reset();Solid.reset();
@@ -1772,24 +1783,26 @@ async function startThin(again = false) {
           frontendNode = null;desktopBrowser.hide();
         }
         if (state.phase === "error") {
+          diagnostic.note("view-error", { cause: state.reason === "LIMIT" ? "view-limit" : "view-refused" });
           trace("thin-error", { reason: state.reason });
           fail(state.reason === "LIMIT" ? "This view exceeds the hub's size limit. Your draft is kept; retry explicitly."
             : "Conversation unavailable. Your draft is kept; retry explicitly.");
         }
-        else if (remoteReady && !s.up) { s.up = true;upStatus();outboxFlush();void checkDeploy(); }
+        else if (remoteReady && !s.up) { diagnostic.note("ready");s.up = true;upStatus();outboxFlush();void checkDeploy(); }
         else if (remoteReady) showViewStatus("");
         later();
       },
     }, ThinViews, next);
-  } catch { disconnect();try { s.close(); } catch {}return; }
+  } catch { disconnect("client-setup");try { s.close(); } catch {}return; }
   s.onopen = () => {
     if (!current()) return;
-    socket = s;heard = BigInt(Date.now());s.hb = false;
+    socket = s;heard = BigInt(Date.now());s.hb = false;diagnostic.note("open");
   };
   s.onmessage = event => {
     if (!current() || typeof event.data === "string") return;
     heard = BigInt(Date.now());
     const bytes = new Uint8Array(event.data);
+    diagnostic.frame(bytes.byteLength);
     if (Solid.isPlot(bytes)) {
       const o = Solid.cbor(bytes), at = { bytes: bytes.length, t: performance.now() };
       const key = typeof o?.key === "string" ? o.key : "";
@@ -1800,14 +1813,16 @@ async function startThin(again = false) {
     if (bytes.byteLength > 262144) { disconnect("frame-limit");try { s.close(); } catch {}return; }
     try {
       const j = Wire.cbor(bytes, KEYS, WORDS), envelope = Wire.plain(j);
-      if (envelope.t === "hb") { s.hb = true;return; }
+      if (envelope.t === "hb") { s.hb = true;diagnostic.heartbeat();return; }
       if (envelope.t === "reply") outboxReply(envelope);
-      if (envelope.t === "view") { clearTimeout(thinGreetingTimer);thin.greeting(envelope); }
+      if (envelope.t === "view") { diagnostic.greeting(envelope);clearTimeout(thinGreetingTimer);thin.greeting(envelope); }
       else if (!thin.receive(envelope) && envelope.t === "reply" && Number.isSafeInteger(envelope.id) && envelope.id < 2 ** 47) thin.ack(envelope);
       // A thin socket never folds log/changes/info into canonical Ui.
-    } catch { disconnect("decode-error");try { s.close(); } catch {} }
+    } catch (error) { diagnostic.note("error", { cause: "decode-error", errorKind: error?.name });disconnect("decode-error");try { s.close(); } catch {} }
   };
-  s.onclose = disconnect;s.onerror = disconnect;
+  // Capture the actual CloseEvent even after a local replacement retired it.
+  s.onclose = event => { diagnostic.closed(event);disconnect(event); };
+  s.onerror = event => { diagnostic.note("error", { cause: "transport-error" });disconnect(event); };
   s.thin = true;
   s.dead = reason => { disconnect(reason || "heartbeat-expired");try { s.close(); } catch {} };
   // Include the HTTP Upgrade/connect phase in the greeting deadline.
@@ -1852,7 +1867,7 @@ pairingReady.then(paired => {
   void refreshFocusedIdentity();
   startThin();
 });
-window.addEventListener("pagehide", checkpointFocused);
+window.addEventListener("pagehide", () => { thinSocket?.connectionDiagnostic?.note("pagehide", { cause: updating ? "deploy" : "pagehide" });checkpointFocused(); });
 
 // A deploy: the hub serves a new web client. An open page reloads into it at
 // a quiet moment (drafts live in localStorage), so it never runs stale.
@@ -1869,6 +1884,8 @@ async function checkDeploy() {
     const busy = document.getElementById("thin-result") || document.querySelector(".shade, .picker, [aria-modal=true]");
     if (document.visibilityState === "hidden" || (Date.now() - lastKey > 3000 && !busy)) {
       try { checkpointFocused(); } catch {}
+      thinSocket?.connectionDiagnostic?.initiate("deploy");
+      connectionLog.record("deploy-reload", { cause: "deploy" });
       location.reload();
     } else setTimeout(quiet, 1000);
   };
