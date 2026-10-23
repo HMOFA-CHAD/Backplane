@@ -82,5 +82,7 @@ def main() -> IO(Unit):
     C.Check.str("ocm refresh replaces list", strs.of(after(v2()), "opencode"), "[\"openai/gpt-5.6-fast\",\"xai/grok-4.5\",\"cerebras/gpt-oss-120b\"]")
     C.Check.str("ocm refresh replaces about", J.Json.get_str(J.Json.get_obj(J.Json.get_obj(after(v2()), "about"), "opencode"), "cli", ""), "opencode v2.1.4 · 3 models · sign-ins: Cerebras (API key), OpenAI (OAuth)")
     C.Check.str("ocm refresh failed says", J.Json.get_str(J.Json.get_obj(J.Json.get_obj(after(fail), "about"), "opencode"), "cli", ""), "opencode v2.1.4 · could not list models (`opencode models` exited 1: Unrecognized flag: --verbose in command opencode models)")
+    C.Check.str("ocp quota hint", O.Ocp.hint("Internal error: Upstream request failed: Insufficient account funds"),
+      "Internal error: Upstream request failed: Insufficient account funds (the model's provider refused for its account's balance or quota: top it up, or pick another opencode model in the composer)")
     C.Check.str("ocp provider auth hint", O.Ocp.hint("Authentication required: provider authentication required"),
       "Authentication required: provider authentication required (the model's provider refused opencode's sign-in, as an expired OAuth sign-in does: run `opencode auth login` for that provider; with no model picked, opencode's configured default agent chose it)")

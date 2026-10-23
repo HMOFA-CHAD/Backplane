@@ -106,9 +106,10 @@ def Ocp.signin(+low: String) -> Bool:
 # configured default agent chose the model)
 def Ocp.hint.k(+low: String, +msg: String) -> String:
   Bool.pick(String, String.contains(low, "model not found"), msg ++ " (pick another opencode model in the composer)",
+    Bool.pick(String, String.contains(low, "insufficient account funds"), msg ++ " (the model's provider refused for its account's balance or quota: top it up, or pick another opencode model in the composer)",
     Bool.pick(String, String.contains(low, "provider authentication required"),
       msg ++ " (the model's provider refused opencode's sign-in, as an expired OAuth sign-in does: run `opencode auth login` for that provider; with no model picked, opencode's configured default agent chose it)",
-      Bool.pick(String, Ocp.signin(low), msg ++ " (sign in once with `opencode auth login`)", msg)))
+      Bool.pick(String, Ocp.signin(low), msg ++ " (sign in once with `opencode auth login`)", msg))))
 
 # the reason, and how to fix it when that is known
 def Ocp.hint(+msg: String) -> String:
