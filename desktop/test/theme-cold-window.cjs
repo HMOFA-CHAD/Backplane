@@ -1,3 +1,4 @@
+if(process.env.BP_AGENT_UI_ISOLATED!=='1')throw Error('Run agent UI fixtures through bp-coord/ui-isolation/run.py; never on the user display');
 // Sole-integrator isolated finding: what a cold desktop window first shows when
 // the chosen theme is light. Never connect to the live user home.
 // BACKPLANE_LOCAL_STAGE=<stage> node desktop/test/theme-cold-window.cjs

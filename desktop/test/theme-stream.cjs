@@ -1,3 +1,4 @@
+if(process.env.BP_AGENT_UI_ISOLATED!=='1')throw Error('Run agent UI fixtures through bp-coord/ui-isolation/run.py; never on the user display');
 // Sole-integrator isolated acceptance: a reply streaming in tb while the theme
 // is toggled and the person goes tb→ta→tb, in both directions, at 1400 and
 // 390 px. Never connect to the live user home.

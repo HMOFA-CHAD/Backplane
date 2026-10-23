@@ -1,3 +1,4 @@
+if(process.env.BP_AGENT_UI_ISOLATED!=='1')throw Error('Run agent UI fixtures through bp-coord/ui-isolation/run.py; never on the user display');
 // Sole-integrator isolated acceptance: no thread ever paints the other theme.
 // Never connect to the live user home. BACKPLANE_LOCAL_STAGE=<stage> node desktop/test/theme-flash.cjs
 // Every animation frame from the click that switches threads until the hub's
