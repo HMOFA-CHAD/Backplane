@@ -90,6 +90,21 @@ test('current normal-action nextTarget settles commands then opens a fresh bot v
  const count=f.views.length;f.host.receive(response);assert.equal(f.views.length,count);assert.equal(f.host.ready,false);assert.equal(f.sent.at(-1).m,'view.open');assert.deepEqual(f.sent.at(-1).p.target,{kind:'bot',id:'bot-B'});
  f.host.receive(f.reply());assert.equal(f.host.ready,true);assert.equal(f.views.length,count+1);
 });
+test('creation ACK update opens the child without repeating creation or fabricating readiness',async()=>{
+ const f=await fixture();f.open();f.host.request('thread-child','A');
+ f.host.receive(f.reply(undefined,{session:{sel:'A',drafts:{A:'original 日本語'},rid:34},cmds:[{type:'send',text:JSON.stringify({id:33,m:'thread.create',p:{project:'p',parent:'A'}})}]}));
+ f.host.ack({t:'reply',id:33,ok:true,thread:'child'});f.host.update();const update=f.sent.at(-1);assert.equal(update.m,'view.update');
+ const response=f.reply(update,{nextTarget:{kind:'thread',id:'child'},remoteReady:false,session:{sel:'child',drafts:{A:'original 日本語'},rid:34}});delete response.result.shown;
+ const count=f.views.length;f.host.receive(response);assert.equal(f.commands.filter(c=>c.type==='send').length,1);assert.equal(f.views.length,count);assert.equal(f.host.ready,false);
+ assert.equal(f.sent.at(-1).m,'view.open');assert.deepEqual(f.sent.at(-1).p.target,{kind:'thread',id:'child'});
+ f.host.receive(f.reply());assert.equal(f.host.ready,true);assert.equal(f.getSession().sel,'child');
+});
+test('creation ACK update cannot redirect a newer explicit selection',async()=>{
+ const f=await fixture();f.open();f.host.update();const update=f.sent.at(-1);
+ f.host.request('select','B');f.host.receive(f.reply());
+ const response=f.reply(update,{nextTarget:{kind:'thread',id:'child'},remoteReady:false,session:{sel:'child',drafts:{},rid:34}});delete response.result.shown;
+ const sent=f.sent.length,shown=f.views.length;f.host.receive(response);assert.equal(f.sent.length,sent);assert.equal(f.views.length,shown);assert.equal(f.getSession().sel,'B');assert.equal(f.host.ready,true);
+});
 test('an obsolete action nextTarget cannot navigate away from the newer selected thread',async()=>{
  const f=await fixture();f.open();f.host.request('bot-open','bot-C');const action=f.sent.at(-1);f.host.request('select','B');f.host.receive(f.reply());
  const response=f.reply(action,{nextTarget:{kind:'bot',id:'bot-C'},remoteReady:false});delete response.result.shown;const count=f.sent.length;f.host.receive(response);assert.equal(f.sent.length,count);assert.equal(f.getSession().sel,'B');assert.equal(f.host.ready,true);

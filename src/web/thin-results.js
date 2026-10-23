@@ -22,7 +22,9 @@ export function validateThinResult(r, input) {
     }
     if (Object.hasOwn(input, 'requestId')) return flag(r.cancelled);
     if (r.mailDraftContext != null && !mailDraftContext(r.mailDraftContext, r.epoch)) return false;
-    if (r.nextTarget !== undefined && (!viewTarget(r.nextTarget) || typeof input.action !== 'string' || r.remoteReady !== false || Object.hasOwn(r, 'shown'))) return false;
+    // A creation ACK can resolve in the actor's next canonical refresh.
+    // Transport identity/currentness still fences that update's navigation.
+    if (r.nextTarget !== undefined && (!viewTarget(r.nextTarget) || r.remoteReady !== false || Object.hasOwn(r, 'shown'))) return false;
     if (r.nextTarget && r.nextTarget.kind === input.target?.kind && r.nextTarget.id === input.target?.id) return false;
     validatePresentation({ session: r.session, view: r.nextTarget ? { type: 'text', text: '' } : r.shown, cmds: r.cmds });
     if (r.session.rid >= 2 ** 47) return false;
