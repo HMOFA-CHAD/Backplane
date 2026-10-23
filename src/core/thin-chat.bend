@@ -14,6 +14,26 @@ def Chat.receipt(e: M.Entry) -> Bool:
       Bool.and(String.starts_with(id, "ride:"), Bool.and(String.eq(tone, "info"), String.eq(kind, "ride")))
     case M.Msg{_, _, _, _, _}: False{}
 
+# A provider can commit an empty assistant reply after a private/internal
+# turn. It has no body to attach a clock to. Stop at the first non-space;
+# this is the same ASCII whitespace set as Base String.trim / Markdown.
+def Chat.blank.go(s: String, blank: Bool) -> Bool:
+  match s blank:
+    case _ False{}: False{}
+    case SNil{} True{}: True{}
+    case SCon{h, t} True{}: Chat.blank.go(t, Char.is_space(h))
+
+def Chat.empty.assistant(e: M.Entry) -> Bool:
+  match e:
+    case M.Msg{+id, _, M.Assistant{}, text, _}:
+      Bool.and(String.is_empty(M.Link.from(id)), Chat.blank.go(text, True{}))
+    case _: False{}
+
+# Project whole entries before page selection, folds, stamps and wrappers.
+# Link IDs retain their navigation controls even when their text is empty.
+def Chat.hidden(+e: M.Entry) -> Bool:
+  Bool.or(Chat.receipt(e), Chat.empty.assistant(e))
+
 def Chat.enabled(+st: M.State, +th: String) -> Bool:
   Bool.or(B.World.is_bot_thread(M.State.bots(st), th), US.Ub.chat.is(st, th))
 
@@ -32,7 +52,7 @@ def Chat.step(c: Cmp, a: Nat, +id: String, +l: ML.Order, +r: ML.Order, +rest: Li
     case LT{}: ChatScan{l <> ML.Order.node(a, id, ML.OEmpty{}, r) <> rest, skip, left, acc}
     case EQ{}:
       +row = T.Index.row.k(Map.get(T.Row, T.Row.blank(), T.Index.rows(i), id))
-      Chat.keep(Chat.receipt(T.Row.entry(row)), r <> rest, left, row, acc)
+      Chat.keep(Chat.hidden(T.Row.entry(row)), r <> rest, left, row, acc)
     case GT{}: ChatScan{r <> rest, Nat.sub(skip, 1n+ML.Order.count(l)), left, acc}
 
 def Chat.walk(fuel: Nat, cur: ChatScan, +i: T.Index) -> List<&2, T.Row>:
