@@ -970,7 +970,7 @@ def View.subthreads.if(show: Bool, id: String) -> List<&2, D.Node>:
 
 # The workspace's per-thread creation control, separate from Subagents.
 def View.subthreads(+lc: I.Loc, +st: M.State, +id: String) -> List<&2, D.Node>:
-  View.subthreads.if(U.ThreadTree.can_create(st, id), id)
+  View.subthreads.if(U.ThreadTree.can_route(st, id), id)
 
 def View.parent(+st: M.State, +thread: String, +p: String) -> List<&2, D.Node>:
   Bool.pick(List<&2, D.Node>, String.is_empty(p), Nil{},
@@ -1568,7 +1568,8 @@ def View.picker(+lc: I.Loc, open: Bool, +u: U.Ui) -> List<&2, D.Node>:
       [D.El{"div", "", [D.At{"class", "modal-back"}, D.On{"click", "proj-close"}], Nil{}},
         D.El{"div", "picker", [D.At{"class", "picker"}], D.Dom.cat([
           View.phead.loc(lc, U.Proj.browsing(u), u),
-          D.Dom.div("desktop-folder", D.Dom.when(String.eq(U.Ui.scratch(u, "@desktop"), "1"), D.Dom.button("", "desktop-folder", "", "Choose a local folder", "Choose folder…"))),
+          D.Dom.div("subthread-route-note", D.Dom.when(U.ThreadTree.routing(u), D.Dom.span("", U.ThreadTree.route.note()))),
+          D.Dom.div("desktop-folder", D.Dom.when(Bool.and(String.eq(U.Ui.scratch(u, "@desktop"), "1"), Bool.not(U.ThreadTree.routing(u))), D.Dom.button("", "desktop-folder", "", "Choose a local folder", "Choose folder…"))),
           D.El{"input", "proj", [D.At{"id", "proj"}, D.At{"placeholder", Bool.pick(String, U.Proj.browsing(u), MSG.T.picker.folder.placeholder(lc), MSG.T.picker.project.placeholder(lc))},
             D.At{"autocomplete", "off"}, D.At{"value", U.Proj.query(u)}, D.On{"input", "proj-q"}, D.At{"data-enter", "proj-enter"}], Nil{}}],
           D.Dom.cat(Bool.pick(List<&2, D.Node>, String.is_empty(U.Ui.info(u, "proj.err")), Nil{}, [D.El{"div", "", [D.At{"class", "perr"}], [D.Txt{U.Ui.info(u, "proj.err")}]}]),

@@ -4234,7 +4234,7 @@ def Proj.ps.go(ps: List<&2, M.Project>, +on: String) -> List<&2, M.Project>:
     case Nil{}:
       Nil{}
     case M.Project{+id, ti, r, c, rm} <> t:
-      Proj.ps.k(Proj.of(on, id), M.Project{id, ti, r, c, rm}, Proj.ps.go(t, on))
+      Proj.ps.k(Bool.and(Proj.of(on, id), Bool.not(M.Scratch.is(FR.Fr.local(id)))), M.Project{id, ti, r, c, rm}, Proj.ps.go(t, on))
 
 # the projects of the machine the picker works on
 def Proj.ps(+u: Ui) -> List<&2, M.Project>:
@@ -4382,7 +4382,7 @@ def Proj.open.k(here: Bool, +u: Ui) -> Act:
 
 # the picker as it opens: on the hub this client is connected to
 def Proj.open.fresh(+u: Ui) -> Act:
-  Proj.open.k(String.is_empty(Proj.on(u)), u)
+  Proj.open.k(String.is_empty(Proj.on(u)), Ui.scratch_set(u, "@thread.route", ""))
 
 def Proj.names(xs: List<&2, J.Json>) -> List<&2, String>:
   match xs:
@@ -4687,8 +4687,22 @@ def Proj.items.m(+l: I.Loc, dir: Bool, +u: Ui) -> List<&2, PItem>:
 # every project (with a filter: those matching, best first, then adding
 # from a folder). A typed path goes there, adds it, or creates it. The
 # folders: Proj.folders
+def ThreadTree.routing(+u: Ui) -> Bool:
+  Bool.and(Ui.flag(u, "proj"), Bool.not(String.is_empty(Ui.scratch(u, "@thread.route"))))
+
+def ThreadTree.route.note() -> String:
+  "Choose an existing project. Open the conversation that should manage the new subthread, then choose New subthread there. This conversation and its history stay here."
+
+def ThreadTree.route.items(+l: I.Loc, +u: Ui, q: String) -> List<&2, PItem>:
+  Proj.list.rows(l, List.sort(~PCand, ~PCand.before, Proj.rank(Proj.cands.ps(Proj.ps(u), True{}), q)))
+
+def Proj.items.route(route: Bool, +l: I.Loc, +u: Ui) -> List<&2, PItem>:
+  match route:
+    case True{}: ThreadTree.route.items(l, u, Proj.query(u))
+    case False{}: List.append(&2, PItem, Proj.items.m(l, Proj.browsing(u), u), Proj.machine.row.loc(l, u))
+
 def Proj.items.loc(+l: I.Loc, +u: Ui) -> List<&2, PItem>:
-  List.append(&2, PItem, Proj.items.m(l, Proj.browsing(u), u), Proj.machine.row.loc(l, u))
+  Proj.items.route(ThreadTree.routing(u), l, u)
 
 def Proj.items(+u: Ui) -> List<&2, PItem>:
   Proj.items.loc(Lang.loc(u), u)
@@ -12139,8 +12153,20 @@ def Proj.go.p(none: Bool, +u: Ui, +pid: String) -> Act:
       Proj.go.t(Ui.flag_off(u, "proj"), pid, Proj.latest(Ui.threads(Ui.state(u)), pid, PBest{"", 0n}))
 
 # going to a project opens its latest thread, or starts one
+def ThreadTree.route.pick(none: Bool, +u: Ui, thread: String) -> Act:
+  match none:
+    case True{}: Act{Ui.info_set(u, "proj.err", "This project has no conversation to manage a subthread. Choose another project, or cancel and create a project conversation first."), Nil{}}
+    case False{}: Ui.select(Ui.scratch_set(Ui.flag_off(u, "proj"), "@thread.route", ""), thread)
+
+def Proj.go.route(route: Bool, +u: Ui, +root: String) -> Act:
+  match route:
+    case True{}:
+      +thread = RefNav.latest(Ui.threads(Ui.state(u)), Proj.id_of(Proj.ps(u), root), M.Thread.blank(""))
+      ThreadTree.route.pick(String.is_empty(thread), u, thread)
+    case False{}: Proj.go.p(String.is_empty(Proj.id_of(Proj.ps(u), root)), u, Proj.id_of(Proj.ps(u), root))
+
 def Proj.go(+u: Ui, +root: String) -> Act:
-  Proj.go.p(String.is_empty(Proj.id_of(Proj.ps(u), root)), u, Proj.id_of(Proj.ps(u), root))
+  Proj.go.route(ThreadTree.routing(u), u, root)
 
 # add (closes the picker), browse, create, go to a project, add one found,
 # browse folders, back to the projects
@@ -12720,11 +12746,23 @@ def Settings.dispatch(nav: Bool, +u: Ui, +action: String, +value: String) -> Act
 def ThreadTree.can_create(+st: M.State, +id: String) -> Bool:
   Bool.and(ST.Tree.alive(Ui.thread(st, id)), Bool.and(Bool.not(String.is_empty(ST.Tree.project(Ui.thread(st, id)))), Bool.not(M.Scratch.is(FR.Fr.local(ST.Tree.project(Ui.thread(st, id)))))))
 
+def ThreadTree.can_route(+st: M.State, +id: String) -> Bool:
+  ST.Tree.alive(Ui.thread(st, id))
+
+def ThreadTree.route.mark(a: Act, id: String) -> Act:
+  match a:
+    case Act{u, cs}: Act{Ui.scratch_set(u, "@thread.route", id), cs}
+
+def ThreadTree.route.open(alive: Bool, +u: Ui, id: String) -> Act:
+  match alive:
+    case True{}: ThreadTree.route.mark(Proj.open.fresh(Ui.scratch_set(u, "@menu", "")), id)
+    case False{}: Act{Ui.error_set(u, "This conversation is no longer available."), Nil{}}
+
 def ThreadTree.create.k(allowed: Bool, +u: Ui, +id: String) -> Act:
   match allowed:
     case True{}:
       Ui.rpc(Made.want(Ui.scratch_set(u, "@menu", "")), "thread.create", [J.KV{"project", J.Str{ST.Tree.project(Ui.thread(Ui.state(u), id))}}, J.KV{"parent", J.Str{id}}, J.KV{"title", J.Str{"New subthread"}}])
-    case False{}: Act{Ui.error_set(u, "Choose a project conversation to create a subthread."), Nil{}}
+    case False{}: ThreadTree.route.open(ThreadTree.can_route(Ui.state(u), id), u, id)
 
 def ThreadTree.create(+u: Ui, +id: String) -> Act:
   ThreadTree.create.k(ThreadTree.can_create(Ui.state(u), id), u, id)
@@ -12735,7 +12773,7 @@ def ThreadTree.menu.child(allowed: Bool, +id: String) -> List<&2, MItem>:
     case False{}: Nil{}
 
 def ThreadTree.menu(+st: M.State, +id: String) -> List<&2, MItem>:
-  List.append(&2, MItem, ThreadTree.menu.child(ThreadTree.can_create(st, id), id),
+  List.append(&2, MItem, ThreadTree.menu.child(ThreadTree.can_route(st, id), id),
     Bool.pick(List<&2, MItem>, String.is_empty(ST.Tree.parent(st, id)), Nil{}, [MItem{"Move to top level", "thread-detach", id, ""}]))
 
 # a thread's menu (armed: its Delete was picked once)

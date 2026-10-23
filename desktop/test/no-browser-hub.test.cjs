@@ -13,7 +13,7 @@ function harness(hang=false){
     constructor(){Object.assign(this,events());const w=this;
       this.webContents={...events(),send:(ch,v)=>calls.sent.push([ch,v]),setWindowOpenHandler(){},getZoomFactor:()=>1,isDestroyed:()=>false,focus(){}};
       BrowserWindow.all.push(this);setImmediate(()=>w.emit('ready-to-show'));}
-    show(){}isDestroyed(){return false;}isMinimized(){return false;}getContentBounds(){return{width:800,height:600};}
+    show(){}setMenuBarVisibility(){}isDestroyed(){return false;}isMinimized(){return false;}getContentBounds(){return{width:800,height:600};}
     loadFile(){return Promise.resolve();}
     loadURL(url){calls.loadURL.push(url);return Promise.resolve();}
     static getAllWindows(){return BrowserWindow.all;}
@@ -39,7 +39,8 @@ async function boot(h,check){
   Module._load=function(request,parent,...rest){if(Object.hasOwn(h.stubs,request))return h.stubs[request];return load.call(this,request,parent,...rest);};
   try{
     const main=require.resolve('../main.cjs');delete require.cache[main];require(main);
-    h.ready();for(let i=0;i<50&&!h.calls.loadURL.length;i++)await new Promise(r=>setTimeout(r,10));
+    h.ready();for(let i=0;i<50&&!h.calls.loadURL.length&&!h.calls.errors.length;i++)await new Promise(r=>setTimeout(r,10));
+    assert.deepEqual(h.calls.errors,[],'Electron fixture must reach service connection without a shell startup error');
     await check();
   }finally{
     Module._load=load;process.resourcesPath=resources;
@@ -60,7 +61,8 @@ test('the app loads its UI from a hub without the in-app browser, and Reconnect 
   Module._load=function(request,parent,...rest){if(Object.hasOwn(h.stubs,request))return h.stubs[request];return load.call(this,request,parent,...rest);};
   try{
     const main=require.resolve('../main.cjs');delete require.cache[main];require(main);
-    h.ready();for(let i=0;i<50&&!h.calls.loadURL.length;i++)await new Promise(r=>setTimeout(r,10));
+    h.ready();for(let i=0;i<50&&!h.calls.loadURL.length&&!h.calls.errors.length;i++)await new Promise(r=>setTimeout(r,10));
+    assert.deepEqual(h.calls.errors,[],'Electron fixture must reach service connection without a shell startup error');
     assert.deepEqual(h.calls.loadURL,['http://127.0.0.1:1'],'the UI loads although the browser is unavailable');
     assert(!h.calls.sent.some(([ch,v])=>ch==='desktop:connection'&&v.phase==='error'),'no startup error screen');
     assert.deepEqual(h.calls.errors,[]);

@@ -189,14 +189,19 @@ def MPick.machine(+l: I.Loc, +u: U.Ui) -> List<&2, J.Json>:
   Bool.pick(List<&2, J.Json>, List.is_empty(&2, String, U.Proj.machines(u)), Nil{},
     [MPick.row(MSG.T.proj.on(l, U.Proj.on.name(u)), "proj-on", U.Proj.next(u), "machine")])
 
+def MPick.items.route(route: Bool, +l: I.Loc, +u: U.Ui) -> List<&2, J.Json>:
+  match route:
+    case True{}: MPick.proj.rows(U.ThreadTree.route.items(l, u, U.Ui.scratch(u, "@mpick")))
+    case False{}: List.append(&2, J.Json, MPick.items.m(MPick.is_path(U.Ui.scratch(u, "@mpick")), l, u, U.Ui.scratch(u, "@mpick")), MPick.machine(l, u))
+
 def MPick.items(+l: I.Loc, +u: U.Ui) -> List<&2, J.Json>:
-  List.append(&2, J.Json, MPick.items.m(MPick.is_path(U.Ui.scratch(u, "@mpick")), l, u, U.Ui.scratch(u, "@mpick")), MPick.machine(l, u))
+  MPick.items.route(U.ThreadTree.routing(u), l, u)
 
 def MPick.json.l(open: Bool, +l: I.Loc, +u: U.Ui) -> J.Json:
   match open:
     case True{}:
       J.Json.obj([J.KV{"text", J.Json.str(U.Ui.scratch(u, "@mpick"))}, J.KV{"hint", J.Json.str(Bool.pick(String, MPick.is_path(U.Ui.scratch(u, "@mpick")), MSG.T.picker.hint.path(l), MSG.T.picker.hint.find(l)))},
-        J.KV{"error", J.Json.str(U.Ui.info(u, "proj.err"))}, J.KV{"items", J.Json.arr(MPick.items(l, u))}])
+        J.KV{"error", J.Json.str(Bool.pick(String, U.ThreadTree.routing(u), U.ThreadTree.route.note() ++ " " ++ U.Ui.info(u, "proj.err"), U.Ui.info(u, "proj.err")))}, J.KV{"items", J.Json.arr(MPick.items(l, u))}])
     case False{}:
       J.Null{}
 

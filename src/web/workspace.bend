@@ -92,8 +92,8 @@ def WS.term.key(+u: U.Ui, value: String) -> U.Act:
   WS.term.key.parts(String.split(value, '\t'), u)
 
 def WS.commands(+u: U.Ui) -> List<&2, U.PItem>:
-  List.append(&2, U.PItem, Bool.pick(List<&2, U.PItem>, U.ThreadTree.can_create(U.Ui.state(u), U.Ui.sel(u)),
-    [U.PItem{"New subthread of current thread", "thread-child", U.Ui.sel(u)}], Nil{}),
+  List.append(&2, U.PItem, Bool.pick(List<&2, U.PItem>, U.ThreadTree.can_route(U.Ui.state(u), U.Ui.sel(u)),
+    [U.PItem{Bool.pick(String, U.ThreadTree.can_create(U.Ui.state(u), U.Ui.sel(u)), "New subthread of current thread", "Choose project conversation…"), "thread-child", U.Ui.sel(u)}], Nil{}),
   [U.PItem{"Uberbot chat · Ctrl+Shift+U", "uber", ""},
    U.PItem{"Floating terminal here · Super+grave / ~ · Ctrl+J", "ws-term-here", ""},
    U.PItem{"Hide terminal (keep shell running)", "ws-term-hide", ""},

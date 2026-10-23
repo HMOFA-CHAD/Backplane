@@ -118,7 +118,7 @@ def Mob.row(+lc: I.Loc, t: M.Thread, +status: String, +ix: U.SIx, +st: M.State, 
     case M.Thread{+id, _, title, _, +a, turn, _, _, _, _, _, pinned, _, _, _, _, _, _, _, _, _}:
       J.Json.obj([J.KV{"id", J.Json.str(id)}, J.KV{"title", J.Json.str(U.Label.title(st, id, TTL.Title.shown(lc, title)))}, J.KV{"state", J.Json.str(Mob.state(turn))},
         J.KV{"ago", J.Json.str(Mob.when.loc(lc, shelf, st, id, a, now))}, J.KV{"agents", J.Json.str(V.View.sub.badge(lc, SB.Subs.count.ix(ix, st, id)))}, J.KV{"pinned", J.Json.bool(pinned)},
-        J.KV{"status", J.Json.str(status)}, J.KV{"canChild", J.Json.bool(U.ThreadTree.can_create(st, id))}, J.KV{"lead", J.Json.arr(Mob.lead.loc(lc, shelf, id))}, J.KV{"trail", J.Json.arr(Mob.trail.loc(lc, id))}])
+        J.KV{"status", J.Json.str(status)}, J.KV{"canChild", J.Json.bool(U.ThreadTree.can_route(st, id))}, J.KV{"lead", J.Json.arr(Mob.lead.loc(lc, shelf, id))}, J.KV{"trail", J.Json.arr(Mob.trail.loc(lc, id))}])
 
 # Keep each thread's own swipe/age semantics even when its subtree is
 # anchored on a different shelf.
@@ -1222,7 +1222,7 @@ def Mob.thread(+lc: I.Loc, render: Bool, u: U.Ui, t: M.Thread, pend: List<&2, St
         J.KV{"boat", J.Json.str(UZ.Chip.of(st, id, now))},
         J.KV{"permissions", PM.Permissions.json(lc, rt)},
         J.KV{"readingSeen", J.Json.str(U.Hold.newest(M.State.mine(st, id)))},
-        J.KV{"canChild", J.Json.bool(U.ThreadTree.can_create(st, id))},
+        J.KV{"canChild", J.Json.bool(U.ThreadTree.can_route(st, id))},
         J.KV{"state", J.Json.str(Mob.state(turn))},
         J.KV{"tools", J.Json.arr(Mob.head.loc(lc, V.View.running(turn), pinned, TO.Tools.settled(o, Nat.is_gt(sa, ua)), archived, Bool.not(String.is_empty(M.Fork.source(st, id)))))},
         J.KV{"menu", J.Json.arr(Mob.menu.loc(lc, id, M.Snooze.on(now, U.Side.until(st, id)), U.Fab.mini.tools.of(st, nf, id, V.View.running(turn))))},
