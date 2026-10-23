@@ -34,21 +34,59 @@ Object.assign(process.env, env);
 const binary = path.join(stage, 'payload/backplane-serve'), web = path.join(stage, 'payload/web');
 const service = new Service({ home, binary, web, expectedVersion: info.version });
 const quote = s => "'" + s.replaceAll("'", "'\\''") + "'";
-let app, page; const errors = [];
+const prefix = { mode: missing ? 'missing-shell' : baseline ? 'baseline-output-dropped' : workspace ? 'workspace-keyboard-floating-terminal' : 'terminal-button',
+  stage, source: info.commit, version: info.version, cwd, project, home, shell: env.SHELL, automation: 'off', telemetry: 'off' };
+fs.writeFileSync(path.join(out, 'START.json'), JSON.stringify(prefix, null, 2));
+console.log(JSON.stringify({ state: 'started', ...prefix }));
+let app, page, step = 'service-start'; const errors = [], wire = [];
+// Decode synthetic-fixture frames using the product codec; retain only state
+// metadata. No command text, terminal bytes, transcript, headers or auth.
+async function captureWorkspaceState(page) {
+  const { cbor, plain } = await import('../../src/web/wire.js');
+  const source = fs.readFileSync(path.join(__dirname, '../../src/core/cbor.bend'), 'utf8');
+  const dict = name => JSON.parse(new RegExp('def Cbor\\.' + name + '\\(\\) -> List<&2, String>:\\s*(\\[[\\s\\S]*?\\])\\n').exec(source)[1]);
+  const keys = dict('keys'), words = dict('words'), cdp = await page.context().newCDPSession(page);
+  const record = (direction, event) => {
+    if (wire.length >= 160) return;
+    try {
+      const frame = event.response;
+      const o = frame.opcode === 2 ? plain(cbor(Buffer.from(frame.payloadData, 'base64'), keys, words)) : JSON.parse(frame.payloadData);
+      if (!o || !['view.open','view.action','view.update','term.open','term.resize','term.input'].includes(o.m) && !['reply','view.changed'].includes(o.t)) return;
+      const p = o.p || {}, r = o.result || {}, session = p.session || r.session;
+      let panels = 0, inputs = 0;
+      const visit = n => { if (!n || typeof n !== 'object') return; if(n.key === 'floating-terminal')panels++;if(n.key === 'term')inputs++;for(const kid of n.kids || [])visit(kid); };
+      visit(r.shown);
+      wire.push({ direction, id:o.id, type:o.t, method:o.m, action:p.action,
+        requestRevision:p.requestRevision ?? r.requestRevision, viewRevision:o.viewRevision ?? r.viewRevision,
+        term:session?.open?.term, palette:session?.open?.palette, ownerPresent:!!session?.drafts?.['@terminal.owner'],
+        panels, inputs, nextTarget:!!r.nextTarget, ok:o.ok,
+        methods:(r.cmds || []).filter(c => c.type === 'send').map(c => { try { return JSON.parse(c.text).m; } catch { return 'invalid'; } }) });
+    } catch { wire.push({direction,decodeFailed:true}); }
+  };
+  cdp.on('Network.webSocketFrameSent', e => record('sent', e));
+  cdp.on('Network.webSocketFrameReceived', e => record('received', e));
+  await cdp.send('Network.enable');
+}
 (async () => { try {
   await service.start();
+  step = 'desktop-start';
   app = await _electron.launch({ executablePath: path.join(stage, 'desktop/runtime/backplane-desktop'), args: [],
     env: { ...env, BACKPLANE_HOME: home, BACKPLANE_SERVICE: binary, BACKPLANE_WEB: web, BACKPLANE_SERVICE_VERSION: info.version, DISPLAY: env.DISPLAY || ':0' } });
   page = await app.firstWindow();
   page.setDefaultTimeout(12000);
+  await captureWorkspaceState(page);
   page.on('pageerror', e => errors.push(e.message));
+  step = 'initial-ready';
   await page.waitForFunction(() => document.documentElement.dataset.backplaneRemoteReady === 'true');
   const skip = page.locator('[data-on-click="ob-skip"]');
   if (await skip.count()) await skip.click();
+  step = 'select-fixture';
   await page.locator(`[data-on-click="select"][data-value="${thread}"]`).first().click();
   await page.locator('[data-id="hello"]').waitFor();
+  step = 'open-terminal-button';
   await page.locator('[data-on-click="term-toggle"]').first().click();
   await page.locator('#term').waitFor();
+  step = missing ? 'missing-shell-message' : 'shell-command';
   if (missing) {
     await page.waitForFunction(() => document.querySelector('.term-pane')?.textContent.includes('Check SHELL'));
     const text = await page.locator('.term-pane').innerText();
@@ -70,6 +108,7 @@ let app, page; const errors = [];
     else {
       await page.waitForFunction(marker => document.querySelector('.term-pane')?.textContent.includes(marker), marker);
       assert((await page.locator('.term-pane').innerText()).includes(cwd));
+      step = 'hide-reopen-terminal';
       const hide = page.locator('.floating-terminal [data-on-click="ws-term-hide"]');
       if (await hide.count()) await hide.click();
       else await page.locator('.term-pane [data-on-click="term-toggle"]').click();
@@ -77,6 +116,7 @@ let app, page; const errors = [];
       await page.locator('[data-on-click="term-toggle"]').first().click();
       await page.waitForFunction(marker => document.querySelector('.term-pane')?.textContent.includes(marker), marker);
       if (workspace) {
+        step = 'workspace-session-navigation';
         // The new panel stays attached to the same real shell across navigation.
         const shell = page.locator('#term');
         await shell.focus(); await page.keyboard.insertText("BP_TERMINAL_SESSION='same shell'; printf '\\123\\105\\124\\137\\117\\113\\n'"); await page.keyboard.press('Enter');
@@ -90,6 +130,7 @@ let app, page; const errors = [];
         const retained = 'SESSION_RETAINED_OK', encoded = [...retained].map(c => '\\' + c.charCodeAt(0).toString(8)).join('');
         await page.keyboard.insertText(`test "$BP_TERMINAL_SESSION" = 'same shell' && printf '${encoded}\\n'`); await page.keyboard.press('Enter');
         await page.waitForFunction(text => document.querySelector('.term-pane')?.textContent.includes(text), retained);
+        step = 'workspace-pty-resize';
         const oldRows = await page.locator('.term-pane .tl').count();
         await page.locator('.floating-terminal').evaluate(el => { el.style.width = '620px';el.style.height = '320px'; });
         await page.waitForFunction(rows => document.querySelectorAll('.term-pane .tl').length < rows, oldRows);
@@ -102,6 +143,7 @@ let app, page; const errors = [];
         const [rows, cols] = await resized;assert.equal(rows, await page.locator('.term-pane .tl').count());assert(cols >= 20);
         await page.screenshot({ path: path.join(out, 'floating-terminal.png') });
         // Ordinary nav is ignored in editors; command entry is explicit.
+        step = 'workspace-keyboard-palette';
         const composer = page.locator('.composer textarea').first();await composer.fill('Fixture draft kept');await page.keyboard.press('Control+1');
         assert.equal(await page.locator('main[data-thread]').getAttribute('data-thread'), 'fixture-next');
         assert.equal(await composer.inputValue(), 'Fixture draft kept');
@@ -135,6 +177,7 @@ let app, page; const errors = [];
       }
     }
   }
+  fs.writeFileSync(path.join(out, 'WIRE-STATE.json'), JSON.stringify(wire, null, 2));
   await page.screenshot({ path: path.join(out, 'terminal.png') });
   assert.deepEqual(errors, []);
   const result = { state: 'passed', mode: missing ? 'missing-shell' : baseline ? 'baseline-output-dropped' : workspace ? 'workspace-keyboard-floating-terminal' : 'terminal-button', stage, source: info.commit,
@@ -142,5 +185,22 @@ let app, page; const errors = [];
   fs.writeFileSync(path.join(out, 'RESULT.json'), JSON.stringify(result, null, 2)); console.log(JSON.stringify(result));
 } catch (error) {
   console.error(error); process.exitCode = 1;
+  fs.writeFileSync(path.join(out, 'WIRE-STATE.json'), JSON.stringify(wire, null, 2));
+  // Structural evidence only: never copy terminal text, commands, tokens or full DOM.
+  const display = page ? await page.evaluate(() => ({
+    mode: document.documentElement.dataset.backplaneMode,
+    ready: document.documentElement.dataset.backplaneRemoteReady,
+    selected: document.querySelector('main[data-thread]')?.dataset.thread,
+    workspaceRoots: document.querySelectorAll('.workspace-root').length,
+    panels: [...document.querySelectorAll('.floating-terminal')].map(el => ({
+      owner: el.dataset.terminalOwner, connected: el.isConnected,
+      rect: (() => { const r = el.getBoundingClientRect();return { x:r.x,y:r.y,width:r.width,height:r.height }; })(),
+      visibility: getComputedStyle(el).visibility, display: getComputedStyle(el).display
+    })),
+    terminalInputs: document.querySelectorAll('#term').length,
+    terminalButton: [...document.querySelectorAll('[data-on-click="term-toggle"]')].map(el => ({ tag:el.tagName, classes:el.className })),
+    palette: !!document.querySelector('#workspace-query')
+  })).catch(() => null) : null;
+  fs.writeFileSync(path.join(out, 'FAIL.json'), JSON.stringify({ state:'failed', ...prefix, step, error: { name:error.name, message:error.message }, errors, display }, null, 2));
   if (page) await page.screenshot({ path: path.join(out, 'failure.png'), timeout: 3000 }).catch(() => {});
 } finally { if (app) await app.close(); service.stop(); } })();
