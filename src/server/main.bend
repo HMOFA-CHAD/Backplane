@@ -6,6 +6,7 @@ import ../core/cli.bend as CL
 import ./plot.bend as PV
 import ./review.bend as RVC
 import ./jsloop.bend as LP
+import ../app/render.bend as RN
 
 # `backplane-serve`: the hub and the web server, no window.
 
@@ -33,13 +34,28 @@ def start(args: List<String>) -> IO(Unit):
     +held : String <- S.Lock.take(S.Cfg.home(c0), S.Cfg.port(c0))
     start.k(held, user, exe, S.Cfg.home(c0), xs)
 
+def start.or.k(render: Bool, +xs: List<&2, String>) -> IO(Unit):
+  match render:
+    case True{}:
+      RN.Render.main(xs)
+    case False{}:
+      start(Args.back(xs))
+
+# `--render MODEL...` draws a part's views (render.bend); anything else is
+# the hub
+def start.or(args: List<String>) -> IO(Unit):
+  do IO<Unit>:
+    +xs : List<&2, String> = S.Names.copy(args)
+    start.or.k(RN.Render.wants(xs), xs)
+
 def main.go(u: Unit) -> IO(Unit):
   do IO<Unit>:
     args : List<String> <- IO.args()
-    RVC.Rvc.main(args, a2 => TI.Tio.main(a2, a0 => PV.Pv.main(a0, a => start(a))))
+    RVC.Rvc.main(args, a2 => TI.Tio.main(a2, a0 => PV.Pv.main(a0, a => start.or(a))))
 
 # (`--plot KIND FILE` is the hub's own board reader, src/server/plot.bend;
-# `--review bom OLD NEW` design review's, src/server/review.bend)
+# `--review bom OLD NEW` design review's, src/server/review.bend;
+# `--render MODEL...` a part's views as PNG files, src/app/render.bend)
 # The command line is read strictly before anything else (core/cli.bend):
 # --help, --version or a bad flag never reach a hub.
 def main() -> IO(Unit):

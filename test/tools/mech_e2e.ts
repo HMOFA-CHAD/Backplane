@@ -2,7 +2,8 @@
 // temporary home and a free port, adds a project holding FreeCAD parts
 // (STEP files under mech/), and checks: `backplane --render` writes each
 // part's four views; the hub lists the parts and renders (mech.list) and
-// serves a render (/img); an agent's viewer_show with kind mech reaches
+// serves a render (/img); mech.render (the Mech page's Create renders)
+// draws a part as the hub's own --render child; an agent's viewer_show with kind mech reaches
 // the thread; and a part's 3D model for the phones and the web
 // (kicad.watch 3d with its path) stands Z up. Prints "ok ..." / "FAIL ...".
 //
@@ -126,6 +127,14 @@ try {
   check("mech.list lists every part", steps.every((s) => paths.includes(`mech/${s}`)), paths);
   check("mech.list lists the renders", paths.filter((p) => p.startsWith("mech/renders/")).length === steps.length * 4, paths);
   check("mech.list lists nothing else", paths.every((p) => /\.(step|stp|glb|png)$/i.test(p)), paths);
+
+  // the Mech page's Create renders: the hub draws a part as its own --render child
+  const again = join(root, "mech", "renders", steps[0].replace(/\.[^.]+$/, "") + ".iso.png");
+  rmSync(again, { force: true });
+  const rid = send("mech.render", { thread: th, path: `mech/${steps[0]}` });
+  const rr = await until(() => msgs.find((o) => o.t === "reply" && o.id === rid), 600000);
+  check("mech.render draws the part's views", rr?.ok !== false && rr?.result?.error === "" && existsSync(again), rr);
+  check("mech.render answers the parts with its renders", (rr?.result?.mech ?? "").includes("mech/renders/"), rr);
 
   const token = readFileSync(join(home, "token"), "utf8").trim();
   const shot = join(root, "mech", "renders", steps[0].replace(/\.[^.]+$/, "") + ".iso.png");

@@ -6,7 +6,7 @@
 #                                         a display, its page in the browser)
 #   backplane --headless [--foreground]   the hub, in the background unless
 #                                         --foreground (log: HOME/headless.log)
-#   backplane --render MODEL...           not in this build: says so
+#   backplane --render MODEL...           a part's views as PNG (backplane-serve)
 # BACKPLANE_DESKTOP names the desktop app's launcher; otherwise it is
 # desktop/backplane-open (Linux) or desktop/Backplane.app (macOS) beside this.
 set -eu
@@ -17,8 +17,7 @@ while [ -L "$self" ]; do
 done
 here=$(CDPATH= cd -- "$(dirname -- "$self")" && pwd)
 case ${1:-} in
-  --render) echo "backplane: part renders are not available in this build" >&2; exit 2 ;;
-  --help|-h|--version) exec "$here/backplane-serve" "$@" ;;
+  --render|--help|-h|--version) exec "$here/backplane-serve" "$@" ;;
 esac
 headless=0 fg=0 home= prev=
 for a in "$@"; do

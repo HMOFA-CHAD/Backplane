@@ -52,8 +52,9 @@ def launcher(t):
         return log.read_text().splitlines() if log.exists() else []
 
     r = run([str(bin_ / 'backplane'), '--render', 'a.step'])
-    check('launcher: --render says renders are not in this build (through a link)',
-          r.returncode == 2 and 'not available in this build' in r.stderr and calls() == [])
+    check('launcher: --render runs backplane-serve --render (through a link)',
+          calls() == ['serve --render a.step'])
+    log.unlink()
     run([str(d / 'backplane'), '--home', str(home), '--port', '9'], {'DISPLAY': ':9'})
     check('launcher: no desktop app runs the hub in the foreground', calls() == [f'serve --home {home} --port 9'])
     for _ in range(50):
