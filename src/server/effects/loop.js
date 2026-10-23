@@ -976,10 +976,20 @@ function bp_wake() {
 // k resumes with more()'s value; more runs inside the loop, so a throw ends
 // the run as any effect's does
 function bp_resume(k, more) {
-  io_push((_) => {
+  const resume = (_) => {
+    const began = performance.now();
     const x = more();
-    return x === undefined ? undefined : k(x);
-  }, null, false);
+    const read = performance.now();
+    bp_loop_slow(globalThis.BEND_IO, "effect", "runtime.resume.more", began, read, undefined, undefined, more);
+    if (x === undefined) return undefined;
+    const op = k(x);
+    bp_loop_slow(globalThis.BEND_IO, "continuation", "runtime.resume.continuation", read, performance.now(), x, op, k);
+    return op;
+  };
+  // The wrapper otherwise hides the compiled continuation from a slow
+  // dispatch record. This is the same k already captured by its closure.
+  resume.bpOrigin = k;
+  io_push(resume, null, false);
   bp_wake();
 }
 
@@ -1146,6 +1156,7 @@ let bp_loop_slow_count = 0;
 // Only compiled hub message constructors identify a queued computation.
 // Never copy a channel value, payload, identifier or arbitrary tag.
 function bp_loop_message(value) {
+  if (value?.$ === "Ready") value = value.value;
   if (value?.$ === "Some") value = value.value;
   if (value?.$ === "server.Bulk") value = value.m;
   switch (value?.$) {
@@ -1158,7 +1169,33 @@ function bp_loop_message(value) {
     default: return undefined;
   }
 }
-function bp_loop_slow(io, phase, effect, began, ended, input, output) {
+function bp_loop_site(fn) {
+  if (typeof fn !== "function") return {};
+  fn = fn.bpOrigin || fn;
+  fn = fn.j || fn;
+  if (typeof fn !== "function") return {};
+  try {
+    // Function source is compiled code, never captured argument values.
+    // Persist only its digest and fixed labels, never the source itself.
+    const code = Function.prototype.toString.call(fn);
+    const siteHash = require("crypto").createHash("sha256").update(code).digest("hex");
+    const known = [
+      ["hub.mcp.after", "$server$058Hub$mcp$after$"],
+      ["hub.mcp.reply", "$server$058Hub$mcp$k$"],
+      ["hub.mcp.handle", "$server$058Hub$mcp$"],
+      ["hub.rpc", "$server$058Hub$rpc"],
+      ["hub.thin", "$server$058Hub$thin$"],
+      ["hub.step", "$server$058Hub$step"],
+      ["agent.codex", "$server$058Codex$"],
+      ["agent.claude", "$server$058Agent$"],
+      ["agent.grok", "$server$058Grok$"],
+      ["http", "$server$058Http$"],
+    ];
+    const sites = known.filter(([, symbol]) => code.includes(symbol)).map(([label]) => label);
+    return { siteHash, ...(sites.length ? { sites } : {}) };
+  } catch { return {}; }
+}
+function bp_loop_slow(io, phase, effect, began, ended, input, output, fn) {
   const ms = ended - began;
   if (ms < 1000 || bp_loop_slow_count >= 64) return;
   bp_loop_slow_count++;
@@ -1166,12 +1203,16 @@ function bp_loop_slow(io, phase, effect, began, ended, input, output) {
   const inputMessage = bp_loop_message(input);
   const outputMessage = output?.$ === "Chan.send" || output?.$ === "Chan.try_send"
     ? bp_loop_message(output.args?.[1]) : undefined;
+  const outputStringChars = (output?.$ === "Chan.send" || output?.$ === "Chan.try_send") && typeof output.args?.[1] === "string"
+    ? output.args[1].length : undefined;
   try {
     console.error("[bp-loop] " + JSON.stringify({ phase, effect: tag,
       at: Date.now(), durationMs: Math.round(ms), process: process.pid,
       runnable: io.runs.length, waits: io.waits.length, pending: io.pend,
       ...(inputMessage ? { inputMessage } : {}),
-      ...(outputMessage ? { outputMessage } : {}) }));
+      ...(outputMessage ? { outputMessage } : {}),
+      ...(outputStringChars !== undefined ? { outputStringChars } : {}),
+      ...bp_loop_site(fn) }));
   } catch { /* A diagnostic sink must not terminate the scheduler. */ }
 }
 
@@ -1219,7 +1260,7 @@ async function bp_run(m) {
     const s = io.runs.shift();
     const started = performance.now();
     let op = s.fun(s.arg);
-    bp_loop_slow(io, "dispatch", op?.$, started, performance.now(), s.arg, op);
+    bp_loop_slow(io, "dispatch", op?.$, started, performance.now(), s.arg, op, s.fun);
     while (op !== undefined) {
       if (op.$ === "Emit") {
         io.live -= 1;
@@ -1237,13 +1278,14 @@ async function bp_run(m) {
       const effect = op.$, began = performance.now();
       const x = run(...op.args, op.kont);
       const ran = performance.now();
-      bp_loop_slow(io, "effect", effect, began, ran, undefined, op);
+      bp_loop_slow(io, "effect", effect, began, ran, undefined, op, run);
       if (x === undefined) {
         break;
       }
+      const kont = op.kont;
       op = op.kont(x);
       const continued = performance.now();
-      bp_loop_slow(io, "continuation", effect, ran, continued, x, op);
+      bp_loop_slow(io, "continuation", effect, ran, continued, x, op, kont);
       if (op !== undefined && continued >= slice) {
         // A ready channel/read can keep this inner chain alive indefinitely.
         // Queue its *next* operation without replaying the completed effect
