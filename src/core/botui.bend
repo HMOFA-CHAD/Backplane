@@ -317,6 +317,12 @@ def BU.moving.go(rs: List<&2, BRow>) -> Bool:
     case r <> t:
       Bool.or(BRow.moving(r), BU.moving.go(t))
 
+# Bot conversations omit synthetic activity summaries. The underlying
+# signals, asks and lifecycle remain available to the operational views.
+# Match the owning thread, including the Uberbot's routed replica chat.
+def BU.chat.summary(+st: M.State, +id: String) -> Bool:
+  Bool.not(Bool.or(BT.World.is_bot_thread(M.State.bots(st), id), US.Ub.chat.is(st, id)))
+
 # The main area
 # -------------
 

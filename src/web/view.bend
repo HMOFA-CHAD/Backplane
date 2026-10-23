@@ -660,6 +660,16 @@ def View.signal.live.loc(+lc: I.Loc, empty: Bool, +signal: Nat, text: String, +k
 def View.signal.of.loc(+lc: I.Loc, +info: Map<&2, String>, +live: Map<&2, String>, +id: String) -> List<&2, D.Node>:
   View.signal.live.loc(lc, String.is_empty(U.Str.get(live, id)), SG.Signal.cached(info, id), U.Str.get(live, id), "live:" ++ id)
 
+# An empty bot live row has no summary or placeholder; actual streamed text
+# keeps its memo and identity, including the first delta after an idle chat.
+def View.thread.live.hide.loc(+lc: I.Loc, hide: Bool, +info: Map<&2, String>, +live: Map<&2, String>, +id: String) -> List<&2, D.Node>:
+  match hide:
+    case True{}: Nil{}
+    case False{}: View.signal.of.loc(lc, info, live, id)
+
+def View.thread.live.loc(+lc: I.Loc, +st: M.State, +info: Map<&2, String>, +live: Map<&2, String>, +id: String) -> List<&2, D.Node>:
+  View.thread.live.hide.loc(lc, Bool.and(String.is_empty(U.Str.get(live, id)), Bool.not(BI.BU.chat.summary(st, id))), info, live, id)
+
 def View.live.of.loc(+lc: I.Loc, +st: M.State, +live: Map<&2, String>, +id: String) -> List<&2, D.Node>:
   View.live.k.loc(lc, String.is_empty(U.Str.get(live, id)), U.Side.phase(st, U.Ui.thread(st, id)), U.Str.get(live, id), "live:" ++ id)
 
@@ -677,8 +687,8 @@ def View.one(ns: List<&2, D.Node>) -> D.Node:
 # it in place for a delta)
 def View.live.signal.u.loc(+lc: I.Loc, u: U.Ui) -> D.Node:
   match u:
-    case U.Ui{_, +sel, _, +live, _, _, _, _, _, _, _, _, _, _, +nf, _, _}:
-      View.one(View.signal.of.loc(lc, nf, live, sel))
+    case U.Ui{+st, +sel, _, +live, _, _, _, _, _, _, _, _, _, _, +nf, _, _}:
+      View.one(View.thread.live.loc(lc, st, nf, live, sel))
 
 # Text deltas keep the existing incremental memo path. Derive activity only
 # when the live row actually needs to display a status.
@@ -2338,6 +2348,17 @@ def View.workbar(+lc: I.Loc, +info: Map<&2, String>, +id: String, running: Bool)
   D.El{"div", "workbar", [D.At{"class", "thread-workbar"}, D.At{"role", "group"}, D.At{"aria-label", View.work.label(lc)}],
     List.append(&2, D.Node, [View.dot(lc, SG.Signal.name(signal)), D.Dom.span("work-state", SG.Signal.label(lc, signal))], View.tools(TO.Tools.stop.loc(lc, running)))}
 
+# Keep a running Stop control, but never reserve a status strip for an
+# idle bot conversation. Ordinary thread workbars retain their summaries.
+def View.thread.workbar(+lc: I.Loc, summary: Bool, +info: Map<&2, String>, +id: String, running: Bool) -> List<&2, D.Node>:
+  match summary running:
+    case True{} _:
+      [View.workbar(lc, info, id, running)]
+    case False{} True{}:
+      [D.El{"div", "workbar", [D.At{"class", "thread-workbar"}, D.At{"role", "group"}, D.At{"aria-label", View.work.label(lc)}], View.tools(TO.Tools.stop.loc(lc, True{}))}]
+    case False{} False{}:
+      Nil{}
+
 def View.tabs(+cur: String) -> D.Node:
   View.tabs.loc(I.En{}, cur)
 
@@ -2348,13 +2369,14 @@ def View.thread.p(+lc: I.Loc, u: U.Ui, t: M.Thread, pend: List<&2, String>, +att
         D.At{"data-thread", id}, D.At{"data-drop", "attach"}, D.At{"data-drop-hover", "drop-hover"}], List.concat(&2, D.Node, [
         View.top(lc, hd, M.Thread{id, p, ti, c, a, turn, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, st, UZ.Chip.of(st, id, now), mini, panel, M.Snooze.on(now, U.Side.until(st, id)), U.Flag.get(op, "snooze"), term, String.eq(U.Str.get(nf, "view.kind:" ++ id), "diff"), String.eq(U.Str.get(drafts, "@del"), id), U.Str.get(drafts, "@ren"), U.Str.get(drafts, "@f.title")),
         View.kx.note(U.KX.note(nf, sel), nf, sel), View.kn.loc(lc, U.KN.thread(nf, st, sel), True{}),
-        [View.workspace(lc, U.Fm.tab(U.Str.get(nf, "view.kind:" ++ id)), panel, term), View.workbar(lc, nf, id, View.running(turn))],
+        [View.workspace(lc, U.Fm.tab(U.Str.get(nf, "view.kind:" ++ id)), panel, term)],
+        View.thread.workbar(lc, BI.BU.chat.summary(st, id), nf, id, View.running(turn)),
         View.subthreads(lc, st, id), View.thread.subs(lc, st, nf, id, now),
         [D.El{"div", "timeline", [D.At{"class", "timeline"}, D.At{"id", "timeline"}], List.concat(&2, D.Node, [
           fab, View.parent(st, id, U.Tasks.up(st, id)),
           [D.El{"div", "work", [D.At{"class", "work"}], View.pins.loc(lc, U.Ec.pins(U.Ec.make(U.MailvLocal.terms(tr), st, id, now), st, id), U.Ec.make(U.MailvLocal.terms(tr), st, id, now))}],
           View.paged(lc, drafts, M.State.mine(st, id), st, id, nf, View.running(turn), U.Ec.make(U.MailvLocal.terms(tr), st, id, now)),
-          View.sending.loc(lc, pend), View.signal.of.loc(lc, nf, live, id), View.hold.pill(pill)])},
+          View.sending.loc(lc, pend), View.thread.live.loc(lc, st, nf, live, id), View.hold.pill(pill)])},
          View.asks.box(lc, st, id, U.Str.get(drafts, sel), nf),
          View.todos(lc, nf, id, U.Todos.shown(st, id, View.running(turn))),
          View.queued(lc, M.Queue.context(M.Queue.items(st, id)), View.running(turn))],
