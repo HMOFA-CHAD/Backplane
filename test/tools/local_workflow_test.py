@@ -13,6 +13,22 @@ spec.loader.exec_module(local)
 
 
 class LocalWorkflow(unittest.TestCase):
+    def test_transferred_emit_requires_exact_inputs_and_bytes_before_caching(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);prepared=root/'prepared';prepared.mkdir()
+            (prepared/'emit.js').write_text('verified compiler output')
+            meta={'emit_key':'current','emit_sha256':local.digest(prepared/'emit.js')}
+            env={'BACKPLANE_EMIT_CACHE':str(root/'cache')}
+            with patch.object(local.subprocess,'check_output',return_value='current'):
+                local.import_emit(prepared,meta,env)
+                cached=(root/'cache/current.js').read_text()
+                (prepared/'emit.js').write_text('corrupted transfer')
+                with self.assertRaisesRegex(SystemExit,'input/hash mismatch'):
+                    local.import_emit(prepared,meta,env)
+                self.assertEqual((root/'cache/current.js').read_text(),cached)
+                with self.assertRaisesRegex(SystemExit,'input/hash mismatch'):
+                    local.import_emit(prepared,{**meta,'emit_key':'different'},env)
+
     def test_apply_requires_smoke_and_never_requests_deploy_on_refusal(self):
         with tempfile.TemporaryDirectory() as temp:
             stage = Path(temp)

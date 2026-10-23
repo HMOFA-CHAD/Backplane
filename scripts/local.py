@@ -75,7 +75,7 @@ def runtime(given):
     raise SystemExit('Supply --runtime DIR containing the pinned Electron 44.9.2 runtime')
 
 
-def phone_bridge(env, prepared=None):
+def phone_bridge_inputs(env):
     named = ['scripts/build-mobile.sh','scripts/bridge-native.py','scripts/js-unmarshal.py','scripts/state-key.py','src/mobile/index.html','src/mobile/bridge.js']
     # The HTML bundle also reads JS imports shared with the browser; Bend's
     # import closure alone does not follow those JavaScript module edges.
@@ -84,11 +84,43 @@ def phone_bridge(env, prepared=None):
     def key():
         return subprocess.check_output(['scripts/inputs-key.sh','local-phone-bridge-v2:'+bun,*sorted(set(named))], cwd=ROOT,
             env={**env,'BP_KEY_ROOTS':'src/mobile/app.bend'}, text=True).strip()
+    return key
+
+
+def phone_bridge_cached(env):
+    before = phone_bridge_inputs(env)()
+    cache = Path(os.environ.get('XDG_CACHE_HOME',Path.home()/'.cache'))/'backplane-bend/phone-bridge'/before
+    receipt = cache.with_suffix('.ok')
+    return cache.is_file() and receipt.is_file() and receipt.read_text().strip() == digest(cache)
+
+
+def warm_build(env):
+    key = subprocess.check_output(['scripts/build-js.sh','--key','src/server/main.bend'],cwd=ROOT,env=env,text=True).strip()
+    cache = Path(env.get('BACKPLANE_EMIT_CACHE') or Path(env.get('XDG_CACHE_HOME',Path.home()/'.cache'))/'backplane-bend/emit-js')
+    emit, receipt = cache/(key+'.js'), cache/(key+'.js.ok')
+    return emit.is_file() and receipt.is_file() and receipt.read_text().strip() == str(emit.stat().st_size) and phone_bridge_cached(env)
+
+
+def import_emit(prepared, remote, env):
+    key = subprocess.check_output(['scripts/build-js.sh','--key','src/server/main.bend'],cwd=ROOT,env=env,text=True).strip()
+    if remote['emit_key'] != key or digest(prepared/'emit.js') != remote['emit_sha256']:
+        raise SystemExit('Transferred emit input/hash mismatch')
+    if env.get('BACKPLANE_EMIT_CACHE') == '0': return
+    cache = Path(env.get('BACKPLANE_EMIT_CACHE') or Path(env.get('XDG_CACHE_HOME',Path.home()/'.cache'))/'backplane-bend/emit-js')
+    cache.mkdir(parents=True,exist_ok=True)
+    target = cache/(key+'.js')
+    temp = target.with_suffix('.'+str(os.getpid())+'.tmp')
+    shutil.copy2(prepared/'emit.js',temp);temp.replace(target)
+    target.with_suffix('.js.ok').write_text(str(target.stat().st_size))
+
+
+def phone_bridge(env, prepared=None):
+    key = phone_bridge_inputs(env)
     before = key()
     cache = Path(os.environ.get('XDG_CACHE_HOME',Path.home()/'.cache'))/'backplane-bend/phone-bridge'/before
     receipt = cache.with_suffix('.ok')
     bridge = ROOT/'mobile/build/assets/bridge.js'
-    if prepared:
+    if prepared and json.loads((prepared/'REMOTE.json').read_text()).get('phone_bridge_key'):
         meta = json.loads((prepared/'REMOTE.json').read_text())
         if meta['phone_bridge_key'] != before or digest(prepared/'bridge.js') != meta['bridge_sha256']:
             raise SystemExit('Transferred bridge input/hash mismatch')
@@ -128,6 +160,7 @@ def build(args):
         remote = json.loads((prepared/'REMOTE.json').read_text())
         if remote['commit'] != sha or payload_hashes(prepared) != remote['files']:
             raise SystemExit('Transferred payload source/hash mismatch')
+        if remote.get('emit_key'): import_emit(prepared,remote,env)
         env['BACKPLANE_VERSION_STAMP'] = remote['version']
         shutil.copytree(prepared/'payload',stage/'payload',symlinks=True)
         for name in ['metrics.json','web-metrics.json','phase.json']:
