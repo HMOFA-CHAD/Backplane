@@ -62,12 +62,18 @@ def Tree.display_parent(+s: M.State, +id: String) -> String:
   +p = Tree.parent(s, id)
   Tree.raw.k(Tree.same(Tree.archived(M.State.thread.get(s, id)), Tree.archived(M.State.thread.get(s, p))), p)
 
+# Tree.root validates the entire raw ancestry once before entering root.go.
+# Its remaining suffix cannot contain a cycle or an invalid project edge.
+def Tree.display_raw(+s: M.State, +id: String) -> String:
+  +p = Tree.raw(s, id)
+  Tree.raw.k(Tree.same(Tree.archived(M.State.thread.get(s, id)), Tree.archived(M.State.thread.get(s, p))), p)
+
 def Tree.root.go(fuel: Nat, +s: M.State, id: String, p: String) -> String:
   match fuel p:
     case _ SNil{}: id
     case 0n SCon{c, t}: id
     case 1n+n SCon{+c, +t}:
-      Tree.root.go(n, s, SCon{c, t}, Tree.display_parent(s, SCon{c, t}))
+      Tree.root.go(n, s, SCon{c, t}, Tree.display_raw(s, SCon{c, t}))
 
 def Tree.root(+s: M.State, +id: String) -> String:
   Tree.root.go(64n, s, id, Tree.display_parent(s, id))
@@ -87,12 +93,25 @@ def Tree.roots.add(skip: Bool, t: M.Thread, rest: List<&2, M.Thread>) -> List<&2
     case True{}: rest
     case False{}: t <> rest
 
-def Tree.roots.go(ts: List<&2, M.Thread>, +s: M.State, +seen: List<&2, String>) -> List<&2, M.Thread>:
+def Tree.seen.has(r: Map<&2, Bool> & Bool) -> Bool:
+  (_, found) = r
+  found
+
+def Tree.seen.of(ids: List<&2, String>, seen: Map<&2, Bool>) -> Map<&2, Bool>:
+  match ids:
+    case Nil{}: seen
+    case +id <> rest: Tree.seen.of(rest, Map.set(&2, Bool, seen, id, True{}))
+
+def Tree.roots.map(ts: List<&2, M.Thread>, +s: M.State, +seen: Map<&2, Bool>) -> List<&2, M.Thread>:
   match ts:
     case Nil{}: Nil{}
     case +t <> rest:
       +id = Tree.root(s, M.Thread.id(t))
-      Tree.roots.add(Bool.or(Bool.not(Tree.alive(t)), Tree.has(seen, id)), M.State.thread.get(s, id), Tree.roots.go(rest, s, id <> seen))
+      Tree.roots.add(Bool.or(Bool.not(Tree.alive(t)), Tree.seen.has(Map.has(&2, Bool, seen, id))), M.State.thread.get(s, id),
+        Tree.roots.map(rest, s, Map.set(&2, Bool, seen, id, True{})))
+
+def Tree.roots.go(ts: List<&2, M.Thread>, +s: M.State, seen: List<&2, String>) -> List<&2, M.Thread>:
+  Tree.roots.map(ts, s, Tree.seen.of(seen, Map.new(&2, Bool)))
 
 # The subtree occupies the earliest shelf of any of its conversations.
 # This makes a working child reachable even when its parent was settled;
@@ -188,11 +207,27 @@ def Tree.walk(fuel: Nat, jobs: List<&2, TJob>, +s: M.State, +selected: String, +
       +open = Bool.or(search, Tree.open(s, M.Thread.id(t), selected))
       TRow{t, depth, open, List.length(&2, M.Thread, kids)} <> Tree.walk(n, Tree.next(open, kids, depth, rest), s, selected, search, by)
 
+# A forest can only reach its roots' projects: Tree.raw rejects every
+# cross-project link. Do not validate/index unrelated projects per shelf.
+def Tree.projects(ts: List<&2, M.Thread>, +s: M.State, projects: Map<&2, Bool>) -> Map<&2, Bool>:
+  match ts:
+    case Nil{}: projects
+    case t <> rest:
+      Tree.projects(rest, s, Map.set(&2, Bool, projects, Tree.project(M.State.thread.get(s, M.Thread.id(t))), True{}))
+
+def Tree.candidates(ts: List<&2, M.Thread>, +projects: Map<&2, Bool>) -> List<&2, M.Thread>:
+  match ts:
+    case Nil{}: Nil{}
+    case +t <> rest:
+      Tree.roots.add(Bool.not(Tree.seen.has(Map.has(&2, Bool, projects, Tree.project(t)))), t, Tree.candidates(rest, projects))
+
 def Tree.rows.k(ts: List<&2, M.Thread>, +s: M.State, selected: String, search: Bool) -> List<&2, TRow>:
   match ts:
     case Nil{}: Nil{}
     case +t <> +rest:
-      Tree.walk(1n+List.length(&2, M.Thread, Tree.all(s)), Tree.jobs(t <> rest, 0n), s, selected, search, Tree.index(Tree.all(s), s, Map.new(&2, List<&2, M.Thread>)))
+      +all = Tree.all(s)
+      Tree.walk(1n+List.length(&2, M.Thread, all), Tree.jobs(t <> rest, 0n), s, selected, search,
+        Tree.index(Tree.candidates(all, Tree.projects(t <> rest, s, Map.new(&2, Bool))), s, Map.new(&2, List<&2, M.Thread>)))
 
 def Tree.rows(+s: M.State, ts: List<&2, M.Thread>, selected: String) -> List<&2, TRow>:
   Tree.rows.k(ts, s, selected, False{})
