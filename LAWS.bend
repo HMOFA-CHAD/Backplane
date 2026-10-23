@@ -5009,6 +5009,84 @@ law settle_waits_for_work:
 law settle_without_work:
   {H.Hub.settle.go([H.Hub.thread(H.Answer.demo(False{}), "t1")], M.State.navs(H.Answer.demo(False{})), M.Work.kids.map(H.Answer.demo(False{})), H.Answer.demo(False{}), 9n, 2n) == [M.ThreadSettled{"t1", False{}, 9n}] : List<&2, M.Change>}
 
+# Settling by work (model.bend's Lifecycle.*, hub.bend's Shelve.*): a
+# thread settles by itself once the work it owns is done, and wakes when
+# real work starts on it again
+
+# a thread that works never settles by itself
+law life_working_held:
+  for turn: M.TurnState
+  for sh: M.Shelf
+  for o: M.Override
+  for sn: Bool
+  {M.Lifecycle.done.k(True{}, turn, sh, o, sn) == False{} : Bool}
+
+# a failed turn stays for the person
+law life_failed_held:
+  for w: Bool
+  for sh: M.Shelf
+  for o: M.Override
+  for sn: Bool
+  {M.Lifecycle.done.k(w, M.Failed{}, sh, o, sn) == False{} : Bool}
+
+# a pinned thread is never settled by its work
+law life_pinned_held:
+  for w: Bool
+  for turn: M.TurnState
+  for o: M.Override
+  for sn: Bool
+  {M.Lifecycle.done.k(w, turn, M.Pinned{}, o, sn) == False{} : Bool}
+
+# a thread the person brought back stays until work starts on it again
+law life_brought_back_held:
+  for w: Bool
+  for sn: Bool
+  {M.Lifecycle.done.k(w, M.Completed{}, M.Active{}, M.ForcedActive{}, sn) == False{} : Bool}
+
+# only a start wakes: a thread that already worked is not woken again (a
+# manual settle of a running thread holds until its next piece of work)
+law life_wake_needs_start:
+  for now: Bool
+  for sh: M.Shelf
+  for o: M.Override
+  {M.Lifecycle.wake.k(True{}, now, sh, o) == False{} : Bool}
+
+law life_wake_needs_work:
+  for was: Bool
+  for sh: M.Shelf
+  for o: M.Override
+  {M.Lifecycle.wake.k(was, False{}, sh, o) == False{} : Bool}
+
+# a woken thread has no override left: it settles once its work is done
+law life_woke_clears_override:
+  for +at: Nat
+  for t: M.Thread
+  {M.Lifecycle.override(M.Thread.woke(at, t)) == M.NoOverride{} : M.Override}
+
+# a turn that completed with nothing else out settles its thread
+law life_finished_settles:
+  {H.Shelve.step(H.Shelve.demo(Nil{}), [M.TurnChanged{"t1", M.Completed{}, 5n}]) == [M.ThreadSettled{"t1", False{}, 5n}] : List<&2, M.Change>}
+
+# a turn that ends with its background work still out does not
+law life_owned_work_held:
+  {H.Shelve.step(H.Shelve.demo([M.WorkSet{"t1", "bg", "a\tx", 3n}]), [M.TurnChanged{"t1", M.Completed{}, 5n}]) == [] : List<&2, M.Change>}
+
+# and settles when that work is done
+law life_owned_work_done:
+  {H.Shelve.step(H.Shelve.demo([M.WorkSet{"t1", "bg", "a\tx", 3n}, M.TurnChanged{"t1", M.Completed{}, 5n}]), [M.WorkSet{"t1", "bg", "", 6n}]) == [M.ThreadSettled{"t1", False{}, 6n}] : List<&2, M.Change>}
+
+# a new turn on a settled thread wakes it
+law life_new_turn_wakes:
+  {H.Shelve.step(H.Shelve.demo([M.TurnChanged{"t1", M.Completed{}, 5n}, M.ThreadSettled{"t1", False{}, 5n}]), [M.TurnChanged{"t1", M.Running{}, 7n}]) == [M.ThreadWoke{"t1", 7n}] : List<&2, M.Change>}
+
+# a settled thread finishing again (a duplicate) is left as it is
+law life_duplicate_quiet:
+  {H.Shelve.step(H.Shelve.demo([M.TurnChanged{"t1", M.Completed{}, 5n}, M.ThreadSettled{"t1", False{}, 5n}]), [M.TurnChanged{"t1", M.Completed{}, 6n}]) == [] : List<&2, M.Change>}
+
+# the person settled a running thread: its own events do not undo that
+law life_manual_settle_held:
+  {H.Shelve.step(H.Shelve.demo([M.ThreadSettled{"t1", True{}, 3n}]), [M.TurnChanged{"t1", M.Running{}, 4n}]) == [] : List<&2, M.Change>}
+
 law scratch_busy_kept:
   for +now: Nat
   for +w: Nat

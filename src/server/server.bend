@@ -9864,7 +9864,7 @@ def Hub.step.wrote(r: Hub & Wrote, +cs: List<&2, M.Change>, os: List<&2, B.Out>,
 def Hub.step.go(+st: M.State, h: Hub, cs: List<&2, M.Change>, os: List<&2, B.Out>) -> IO(Hub & Bool):
   do IO<Hub & Bool>:
     t0 : U32 <- PS.Perf.us()
-    +cs2 : List<&2, M.Change> = B.Pend.fix(st, cs)
+    +cs2 : List<&2, M.Change> = B.Shelve.fix(st, cs)
     t1 : U32 <- PS.Perf.span("hub.step.pend", t0)
     r : Hub & Wrote <- Hub.commit.w(cs2, h)
     t2 : U32 <- PS.Perf.span("hub.step.commit", t1)

@@ -138,6 +138,7 @@ def Cards.touched(+ch: M.Change) -> List<&2, String>:
     case M.ThreadRenamed{+id, _, _}: [id]
     case M.ThreadSettled{+id, _, _}: [id]
     case M.ThreadUnsettled{+id, _}: [id]
+    case M.ThreadWoke{+id, _}: [id]
     case M.ThreadArchived{+id, _, _}: [id]
     case M.ThreadPinned{+id, _, _}: [id]
     case M.ThreadMerged{+id, _, _}: [id]

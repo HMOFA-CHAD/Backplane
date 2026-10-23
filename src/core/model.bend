@@ -301,6 +301,10 @@ type Change is Data:
   # failed, skipped or live. Both fold into the setting deploy.ship
   DeployAsked{by: String, note: String, commit: String, cover: String, at: Nat}
   DeployBuilt{commit: String, state: String, version: String, detail: String, at: Nat}
+  # the hub saw real work start on a thread that was settled (or that the
+  # person brought back): it is back on the active shelf with no override,
+  # so it settles by itself once that work is done (Lifecycle.*, laws life_*)
+  ThreadWoke{id: String, at: Nat}
 
 # the later of two times. Base's Nat.max recurses once per unit and
 # overflows at epoch scale; Nat.is_ge compiles to a machine comparison.
@@ -492,6 +496,20 @@ def Thread.settled(manual: Bool, +at: Nat, t: Thread) -> Thread:
 def Thread.unsettled(+at: Nat, t: Thread) -> Thread:
   Thread{id, p, ti, c, a, tu, pe, ar, _, +sa, _, pi, en, br, wt, pr, mo, rm, im, se, de} = t
   Thread{id, p, ti, c, Time.max(a, at), tu, pe, ar, ForcedActive{}, sa, Time.max(sa, at), pi, en, br, wt, pr, mo, rm, im, se, de}
+
+# when a woken thread was brought back: unchanged when it already was
+# (so a thread on the active shelf keeps its place), else now, so it comes
+# back on top of the active shelf like any unsettle
+def Thread.woke.ua(+sa: Nat, +ua: Nat, +at: Nat) -> Nat:
+  Bool.pick(Nat, Nat.is_ge(ua, sa), ua, Time.max(sa, at))
+
+# woken by work: back on the active shelf, its override cleared (a manual
+# settle or bring-back held until real work started again). Its activity
+# is left alone: the work that woke it is what moves it (law
+# life_woke_clears_override)
+def Thread.woke(+at: Nat, t: Thread) -> Thread:
+  Thread{id, p, ti, c, a, tu, pe, ar, _, +sa, +ua, pi, en, br, wt, pr, mo, rm, im, se, de} = t
+  Thread{id, p, ti, c, a, tu, pe, ar, NoOverride{}, sa, Thread.woke.ua(sa, ua, at), pi, en, br, wt, pr, mo, rm, im, se, de}
 
 def Thread.archived_set(b: Bool, t: Thread) -> Thread:
   Thread{id, p, ti, c, a, tu, pe, _, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de} = t
@@ -2067,6 +2085,8 @@ def State.apply.go(s: State, e: Change) -> State:
       State.thread((t => Thread.settled(manual, at, t)), s, id)
     case ThreadUnsettled{+id, +at}:
       State.thread((t => Thread.unsettled(at, t)), s, id)
+    case ThreadWoke{+id, +at}:
+      State.thread((t => Thread.woke(at, t)), s, id)
     case ThreadArchived{+id, b, _}:
       State.thread((t => Thread.archived_set(b, t)), s, id)
     case ThreadPinned{+id, b, _}:
@@ -3229,6 +3249,125 @@ def Work.busy.at(+m: Map<&2, Nat>, +s: State, +th: String) -> Nat:
 # Work.busy.at with the rows from Work.rows.map (one pass), not two lookups in the settings
 def Work.busy.m(+kids: Map<&2, Nat>, +rows: Map<&2, Nat>, +th: String) -> Nat:
   Nat.add(Work.kids.at.k(Map.get(Nat, 0n, kids, th)), Work.kids.at.k(Map.get(Nat, 0n, rows, th)))
+
+# Lifecycle
+# ---------
+# A thread settles by itself once the work it owns is done, and wakes
+# (ThreadWoke) when real work starts on it again; hub.bend's Shelve.*
+# applies these to every step and every tick (laws life_*). A thread works
+# while a turn runs or waits in its queue, an ask waits on the person, or
+# work it owns is out: delegated child tasks, background rows, watched
+# work (Work.busy). Only a turn that completed settles: a failure or a stop
+# stays for the person (Settle.auto's inactivity window still applies).
+
+def Lifecycle.pending(t: Thread) -> Nat:
+  match t:
+    case Thread{_, _, _, _, _, _, pe, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      pe
+
+def Lifecycle.override(t: Thread) -> Override:
+  match t:
+    case Thread{_, _, _, _, _, _, _, _, o, _, _, _, _, _, _, _, _, _, _, _, _}:
+      o
+
+def Lifecycle.settled_at(t: Thread) -> Nat:
+  match t:
+    case Thread{_, _, _, _, _, _, _, _, _, sa, _, _, _, _, _, _, _, _, _, _, _}:
+      sa
+
+def Lifecycle.unsettled_at(t: Thread) -> Nat:
+  match t:
+    case Thread{_, _, _, _, _, _, _, _, _, _, ua, _, _, _, _, _, _, _, _, _, _}:
+      ua
+
+def Lifecycle.working.k(run: Bool, asks: Bool, queued: Bool, +busy: Nat) -> Bool:
+  match run asks queued:
+    case False{} False{} False{}:
+      Nat.is_gt(busy, 0n)
+    case _ _ _:
+      True{}
+
+# whether a thread works now (kids: Work.kids.map, every parent's children
+# counted once)
+def Lifecycle.working(+kids: Map<&2, Nat>, +s: State, +t: Thread) -> Bool:
+  Lifecycle.working.k(State.running.k(t), Nat.is_gt(Lifecycle.pending(t), 0n), Queue.waiting(s, Thread.id(t)), Work.busy.at(kids, s, Thread.id(t)))
+
+def Lifecycle.done.k(working: Bool, turn: TurnState, sh: Shelf, o: Override, snoozed: Bool) -> Bool:
+  match working turn sh o snoozed:
+    case False{} Completed{} Active{} NoOverride{} False{}:
+      True{}
+    case _ _ _ _ _:
+      False{}
+
+def Lifecycle.done.c(turn: TurnState, sh: Shelf, o: Override, snoozed: Bool, +kids: Map<&2, Nat>, +s: State, +t: Thread) -> Bool:
+  match turn sh o snoozed:
+    case Completed{} Active{} NoOverride{} False{}:
+      Lifecycle.done.k(Lifecycle.working(kids, s, t), Completed{}, Active{}, NoOverride{}, False{})
+    case _ _ _ _:
+      False{}
+
+# whether a thread settles by itself now: its last turn completed, nothing
+# works (Lifecycle.working), it is on the active shelf with no override
+# (pinned, hidden, settled or brought back by the person: left alone) and
+# not snoozed. The cheap tests go first: the tick asks it of every thread
+def Lifecycle.done(+kids: Map<&2, Nat>, +s: State, +t: Thread, snoozed: Bool) -> Bool:
+  Lifecycle.done.c(Thread.turn(t), Shelf.of(t), Lifecycle.override(t), snoozed, kids, s, t)
+
+# a step's wake: the thread went from idle to working, and it was settled
+# (by itself or by the person) or brought back by the person (whose hold
+# then gives way to the work, so the thread settles once it is done)
+def Lifecycle.wake.k(was: Bool, now: Bool, sh: Shelf, o: Override) -> Bool:
+  match was now sh o:
+    case False{} True{} Settled{} _:
+      True{}
+    case False{} True{} Active{} ForcedActive{}:
+      True{}
+    case _ _ _ _:
+      False{}
+
+# whether a settle no longer holds against work: an auto-settle never
+# does, a manual one only once a message came after it (Thread.touched
+# moves unsettled_at past settled_at; a turn's own events never do)
+def Lifecycle.lapsed(o: Override, +sa: Nat, +ua: Nat) -> Bool:
+  match o:
+    case ForcedSettled{}:
+      Nat.is_gt(ua, sa)
+    case _:
+      True{}
+
+def Lifecycle.stale.c(sh: Shelf, lapsed: Bool, +kids: Map<&2, Nat>, +s: State, +t: Thread) -> Bool:
+  match sh lapsed:
+    case Settled{} True{}:
+      Lifecycle.working(kids, s, t)
+    case _ _:
+      False{}
+
+# the tick's wake, for state left behind (a log from before this rule, a
+# step that bypassed it): a settled thread that works, settled by itself
+# or by the person before the message that started this work
+def Lifecycle.stale(+kids: Map<&2, Nat>, +s: State, +t: Thread) -> Bool:
+  Lifecycle.stale.c(Shelf.of(t), Lifecycle.lapsed(Lifecycle.override(t), Lifecycle.settled_at(t), Lifecycle.unsettled_at(t)), kids, s, t)
+
+def Lifecycle.task.p(t: Task) -> String:
+  match t:
+    case Task{_, p, _, _, _, _, _, _, _}:
+      p
+
+def Lifecycle.task.k(r: Map<&2, Task> & Task) -> String:
+  (_, t) = r
+  Lifecycle.task.p(t)
+
+# the thread that delegated a task ("" for none)
+def Lifecycle.task.parent(+s: State, +id: String) -> String:
+  match s:
+    case State{_, _, _, _, +tk, _, _, _, _, _, _}:
+      Lifecycle.task.k(Map.get(Task, Task.blank(id), tk, id))
+
+# when an auto-settle is stamped: now, but always after the thread was
+# last brought back (a thread settles only while settled_at passes
+# unsettled_at, and a turn may start and end within one second)
+def Lifecycle.at(+t: Thread, +now: Nat) -> Nat:
+  Time.max(now, 1n+Lifecycle.unsettled_at(t))
 
 def Work.row.title(+l: String) -> String:
   Bool.pick(String, String.is_empty(Bg.title(l)), Bg.doing(l), Bg.title(l))

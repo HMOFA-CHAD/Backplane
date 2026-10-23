@@ -7083,6 +7083,73 @@ def Laws.settle_waits_for_work():
 def Laws.settle_without_work():
   {==}
 
+def Laws.life_working_held(turn, sh, o, sn):
+  {==}
+
+def Laws.life_failed_held(w, sh, o, sn):
+  match w:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def Laws.life_pinned_held(w, turn, o, sn):
+  match w:
+    case True{}:
+      {==}
+    case False{}:
+      match turn:
+        case M.Idle{}:
+          {==}
+        case M.Running{}:
+          {==}
+        case M.Completed{}:
+          {==}
+        case M.Interrupted{}:
+          {==}
+        case M.Failed{}:
+          {==}
+
+def Laws.life_brought_back_held(w, sn):
+  match w:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def Laws.life_wake_needs_start(now, sh, o):
+  {==}
+
+def Laws.life_wake_needs_work(was, sh, o):
+  match was:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def Laws.life_woke_clears_override(at, t):
+  match t:
+    case M.Thread{_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      {==}
+
+def Laws.life_finished_settles():
+  {==}
+
+def Laws.life_owned_work_held():
+  {==}
+
+def Laws.life_owned_work_done():
+  {==}
+
+def Laws.life_new_turn_wakes():
+  {==}
+
+def Laws.life_duplicate_quiet():
+  {==}
+
+def Laws.life_manual_settle_held():
+  {==}
+
 def Laws.scratch_busy_kept(now, w, t, n):
   and_false_r(M.Scratch.expired(now, w, t))
 
@@ -11667,6 +11734,7 @@ def Laws.foh_clean(cs):
     case M.ActivityLogged{_, _, _, _, _, _} <> +t: Laws.foh_clean(t)
     case M.ThreadSettled{_, _, _} <> +t: Laws.foh_clean(t)
     case M.ThreadUnsettled{_, _} <> +t: Laws.foh_clean(t)
+    case M.ThreadWoke{_, _} <> +t: Laws.foh_clean(t)
     case M.ThreadArchived{_, _, _} <> +t: Laws.foh_clean(t)
     case M.ThreadPinned{_, _, _} <> +t: Laws.foh_clean(t)
     case M.ThreadDeleted{_, _} <> +t: Laws.foh_clean(t)
