@@ -4,8 +4,9 @@ The promoted uberbot is the person's conversational interface. Workers and
 bots keep their own source timelines and rooms. Their reports enter internal
 mail; they do not appear as incoming worker messages in the coordinator's chat.
 
-A committed report, including FYI, starts or joins the owning conversation's
-private triage run. This also works when generic `mail.on` automation is off.
+A committed report, including FYI, enters the owning conversation's durable
+FIFO. A private triage run binds exactly one input; newer reports wait for
+separate runs and never inject a different actionable ID into its model turn. This also works when generic `mail.on` automation is off.
 Room reports file once, then route to their member bots; the coordinator's
 member wake goes through triage. Direct reports, launched-thread subscriptions,
 task results, bot results, and explicit wakes share this path. Source work is
@@ -25,7 +26,9 @@ threads/rooms, or escalation. Meaningful completions, blockers, decisions,
 actual approvals and uncertain outcomes require attention. FYI, unchanged holds
 and duplicates stay quiet. Inputs are processed oldest first, including equal
 timestamps: a newer FYI cannot hide an older ask. `mail_dispose` requires the
-exact input and returns `next_input`; it records only that notice. On successful
+exact input; a bound run returns empty `next_input` after its one receipt,
+while newer arrivals receive separate runs. A legacy persisted run retains its
+pending-input walk during upgrade. A receipt records only that notice. On successful
 completion with all inputs handled, the hub marks the quiet conversation done.
 An actual open source approval cannot be disposed as a routine notice. Decisions
 and receipts never supply permission, answer an approval or complete source work.
@@ -37,6 +40,18 @@ Bub must write a fresh contextual answer with actionable source links. Original
 asks remain at their sources for the person to answer. Source alerts from
 managed workers/private runs/other bots are suppressed; browsing their timelines
 and approval cards remains available.
+
+A private triage tool refusal neither escalates nor acknowledges its source
+input. It returns a denial with permitted evidence alternatives, without raw
+arguments or a new approval. Prefer `thread_read` for a source's status and
+available timeline; its `status.turn` remains available even when entries are
+empty. A refused lookup is an internal evidence limitation, not a worker result
+or proof that the person must authorize something. Failed/unknown triage sends
+only a concise private limitation with source/run links; raw errors and final
+responses stay in the run timeline. Bub resolves covered reports and evidence
+limits quietly, surfacing only verified material outcomes, real decisions,
+genuine source approvals or actionable coordination blockers. Actual pending
+source and run approvals are retained; no denial supplies authorization.
 
 The model inherits the app's existing text-generation provider/model settings,
 so the person can use a cheaper configured model. Optional advanced per-bot
@@ -80,3 +95,21 @@ Validation belongs to the shared integration batch:
 
 A source patch or pure test pass does not establish runtime acceptance or live
 activation. Run the runtime test on the exact combined build before local handoff.
+
+Coordinator FIFO settings contain only input IDs; source bodies stay in the
+mail journal and each bound run reads its exact body, including one older than
+the recent history window. Dequeue and new RunSet commit together. Duplicate
+queue kicks cannot start a second active run. Pending IDs survive restart;
+restart continuation disabled and explicit interruptions keep the queue held.
+A quiet receipt cannot mark newer queued reports seen/done. Rejected
+dispositions return the actual current input and never claim processing.
+
+Explicit Stop/thread_interrupt of a running turn writes a durable
+`triage.hold.<owner/conv>` register at the stop boundary. The hold persists
+between runs; stopping an idle turn remains a no-op. Its undisposed seed stays at
+the front of the FIFO. New arrivals only append while held; neither an old
+queue kick nor restart continuation clears the register. Internal fallback or
+restart interruptions do not invent a user stop. Clearing the exact hold via
+an explicit authenticated setting change is required before queue processing
+can resume; an arrival or generic restart setting is insufficient. Source
+approvals are untouched.

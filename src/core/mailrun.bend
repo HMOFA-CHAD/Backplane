@@ -81,7 +81,7 @@ def Run.asks(+xs: List<&2, M.Ask>) -> String:
 def Run.disposition.got(r: Maybe<&2, ML.Run>, +s: M.State) -> String:
   match r:
     case None{}: ""
-    case Some{+r}: "Current actionable input: " ++ MD.Disposition.current(s, r) ++ "\nFor a routine status, duplicate notice, or already-known hold needing no new action, use mail_dispose(input, done/defer, reason). It acknowledges only that notice, never permission or completion of the underlying objective. For a local FYI reply use mode reply with text; pending/unknown is not delivery and must not be resent. Use reviewed decide/escalate/mail for substantive decisions, new actions or external targets. Reading mail or final response text is not a durable disposition. A newer incoming actionable input needs its own exact ID.\n"
+    case Some{+r}: "Current actionable input: " ++ MD.Disposition.current(s, r) ++ "\nFor a routine status, duplicate notice, or already-known hold needing no new action, use mail_dispose(input, done/defer, reason). It acknowledges only that notice, never permission or completion of the underlying objective. For a local FYI reply use mode reply with text; pending/unknown is not delivery and must not be resent. Use reviewed decide/escalate/mail for substantive decisions, new actions or external targets. Reading mail or final response text is not a durable disposition. A fresh coordinator run is bound to this exact input; newer arrivals wait for separate runs. If a disposition is rejected, nothing was handled: use the returned current_input or the brief-bound ID, never substitute a newer history ID. Legacy runs may return a next_input to assess.\n"
 
 def Run.brief(+s: M.State, +bot: String, +conv: String) -> String:
   +c = ML.Box.conv(M.State.mail(s), conv)

@@ -86,7 +86,8 @@ def run(+s: M.State) -> ML.Run:
   run_got(ML.Box.run_of(M.State.mail(s), runid(s)))
 
 def ask_state() -> M.State:
-  +s = running()
+  +live = running()
+  +s = M.State.apply(live, M.SettingSet{"run.bound." ++ runid(live), "", 11n})
   M.State.replay([M.AskOpened{"approval-1", "worker", "approval", "flash", "Flash held hardware?", "", 12n},
     M.MailPosted{"m2", "c", "thread:worker", "bot:b", "ask", "approval-1", "act", "Needs real approval", 10n, 10n}], s)
 
@@ -233,7 +234,8 @@ def room_restart_checks() -> IO(Unit):
 
 def event_checks() -> IO(Unit):
   do IO<Unit>:
-    +s : M.State = running()
+    +live : M.State = running()
+    +s : M.State = M.State.apply(live, M.SettingSet{"run.bound." ++ runid(live), "", 59n})
     +first : H.Step = H.Run.escalate.topic(True{}, s, 60n, "b", "c", "bot", "artifact complete", "artifact-v1")
     +one : M.State = M.State.replay(H.Queue.changes(first), s)
     +b : MB.Body = body("m2", "fyi")
@@ -289,6 +291,99 @@ def context_replay_checks() -> IO(Unit):
     +denied : J.Json <- CX.Context.read(False{}, "", "foh", args, ls)
     check("full replay history still fails closed for unauthorized calls", Maybe.is_some(&2, J.Json, J.Json.get(denied, "error")))
 
+def permit_step(o: MC.McpOut) -> H.Step:
+  match o:
+    case MC.McpOut{_, st, _}: st
+
+def tool_boundary_checks() -> IO(Unit):
+  do IO<Unit>:
+    +s : M.State = M.State.apply(running(), M.TurnChanged{"worker", M.Running{}, 80n})
+    +args : J.Json = J.Json.obj([J.KV{"tool_name", J.Str{"Bash"}}, J.KV{"input", J.Json.obj([J.KV{"command", J.Str{"status-evidence-private-marker | bounded-output"}}])}])
+    +denied : MC.McpOut = MC.Mcp.permit(s, 81n, runid(s), J.Num{"1"}, args)
+    check("triage composed lookup remains denied", String.contains(MC.McpOut.reply(denied), "deny"))
+    check("denial recommends supported source read", String.contains(MC.McpOut.reply(denied), "thread_read"))
+    check("denial never echoes untrusted command", Bool.not(String.contains(MC.McpOut.reply(denied), "status-evidence-private-marker")))
+    n("triage tool refusal makes no receipt escalation or approval", List.length(&2, M.Change, H.Queue.changes(permit_step(denied))), 0n)
+    n("triage tool refusal starts no work", List.length(&2, H.Out, H.Step.outs_of(permit_step(denied))), 0n)
+    C.Check.str("source input remains current after refusal", D.Disposition.current(M.State.replay(H.Queue.changes(permit_step(denied)), s), run(s)), "m1")
+    +assessment : MC.Res = MC.Mcp.run.call(True{}, 42n, s, 82n, runid(s), J.Json.obj([J.KV{"to", J.Str{"bot"}}, J.KV{"input", J.Str{"m1"}}, J.KV{"text", J.Str{"Verified material result, source linked"}}]))
+    check("real assessment still accepted after refused lookup", MC.Res.good(assessment))
+    +read : MC.Res = MC.Mcp.read.k(True{}, s, "worker", 2n)
+    C.Check.str("source read includes status even with empty timeline", J.Json.get_str(J.Json.get_obj(res_json(read), "status"), "turn", ""), "running")
+    n("source empty timeline is preserved as evidence limitation", List.length(&2, J.Json, J.Json.elems(J.Json.get_obj(res_json(read), "entries"))), 0n)
+    +noisy : M.State = M.State.replay([M.MessagePosted{runid(s), "private-final", M.Assistant{}, "Outside the charter: Bash status-evidence-private-marker", 83n}, M.ActivityLogged{runid(s), "private-error", "error", "tool", "status-evidence-private-marker", 83n}], s)
+    +failed : M.State = M.State.replay(H.Queue.changes(H.Run.after(noisy, 84n, H.Step{[M.TurnChanged{runid(s), M.Failed{}, 84n}], Nil{}})), noisy)
+    check("failed triage reports concise evidence limitation", String.contains(H.Ride.of(failed, "foh"), "evidence limitation"))
+    check("failure never copies tool errors or raw final", Bool.not(String.contains(H.Ride.of(failed, "foh"), "status-evidence-private-marker")))
+    check("failure retains actionable source link", String.contains(H.Ride.of(failed, "foh"), "backplane://thread/worker"))
+    check("private limitation is quiet unless verified material", String.contains(H.Ride.of(failed, "foh"), "quietly"))
+    +asked : M.State = M.State.replay(H.Queue.changes(H.Run.after(s, 85n, H.Step{[M.AskOpened{"own-permit", runid(s), "approval", "Bash", "status-evidence-private-marker", "", 85n}], Nil{}})), s)
+    check("private run's actual ask is retained", N.Ask.open(asked, runid(s)))
+    check("private run ask does not forward raw arguments", Bool.not(String.contains(H.Ride.of(asked, "foh"), "status-evidence-private-marker")))
+    +source : MC.McpOut = MC.Mcp.permit(s, 86n, "worker", J.Num{"2"}, args)
+    check("actual source permission still opens approval", N.Ask.open(M.State.replay(H.Queue.changes(permit_step(source)), s), "worker"))
+
+def queue_nexts(os: List<&2, H.Out>) -> Nat:
+  match os:
+    case Nil{}: 0n
+    case H.RunNext{_, _} <> t: 1n+queue_nexts(t)
+    case _ <> t: queue_nexts(t)
+
+def input_race_checks() -> IO(Unit):
+  do IO<Unit>:
+    +s : M.State = running()
+    +b : MB.Body = body("m2", "fyi")
+    +with_newer : M.State = committed(s, b)
+    +delivery : H.Step = H.Mail.route(with_newer, 90n, b)
+    +queued : M.State = M.State.replay(H.Queue.changes(delivery), with_newer)
+    C.Check.str("new arrival cannot replace brief-bound input", D.Disposition.current(queued, run(s)), "m1")
+    n("new arrival never injects into running triage", posts(H.Queue.changes(delivery), runid(s)), 0n)
+    C.Check.str("new arrival is durably queued by exact id", String.join(T.Triage.queue(queued, "b", "c"), ","), "m2")
+    +wrong : MC.Res = MC.Mcp.dispose(queued, 91n, runid(s), dispose_args("m2"))
+    check("newer id is rejected without claiming processing", Bool.not(MC.Res.good(wrong)))
+    C.Check.str("rejection returns actual current id", J.Json.get_str(res_json(wrong), "current_input", ""), "m1")
+    n("rejected newer id writes no receipt", List.length(&2, M.Change, H.Queue.changes(res_step(wrong))), 0n)
+    +right : MC.Res = MC.Mcp.dispose(queued, 92n, runid(s), dispose_args("m1"))
+    check("brief-bound id still accepted after newer arrival", MC.Res.good(right))
+    C.Check.str("bound receipt never hands newer id to same run", J.Json.get_str(res_json(right), "next_input", "bad"), "")
+    +acked : M.State = M.State.replay(H.Queue.changes(res_step(right)), queued)
+    +ended : H.Step = H.Run.after(acked, 93n, H.Step{[M.TurnChanged{runid(s), M.Completed{}, 93n}], Nil{}})
+    +after : M.State = M.State.replay(H.Queue.changes(ended), acked)
+    C.Check.str("quiet receipt with queued mail cannot mark it seen done", ML.Mark.status(ML.Box.mark_of(M.State.mail(after), "b", "c")), "unread")
+    C.Check.str("routine disposition generates no fallback escalation", H.Ride.of(after, "foh"), "")
+    n("completed bound run schedules one queue kick", queue_nexts(H.Step.outs_of(ended)), 1n)
+    +next : H.Step = H.Run.queue.start(after, 94n, "b", "c")
+    +nextstate : M.State = M.State.replay(H.Queue.changes(next), after)
+    check("queued notice gets a different run", Bool.not(String.eq(runid(nextstate), runid(s))))
+    C.Check.str("new run binds exactly the queued input", ML.Run.mail(run(nextstate)), "m2")
+    n("starting queued run atomically removes queue id", List.length(&2, String, T.Triage.queue(nextstate, "b", "c")), 0n)
+    n("duplicate queue kick starts nothing while active", List.length(&2, M.Change, H.Queue.changes(H.Run.queue.start(nextstate, 95n, "b", "c"))), 0n)
+    n("restart sees durable queued input", queue_nexts(H.Step.outs_of(H.Run.recover(M.State.apply(after, M.SettingSet{"restart.continue", "on", 96n}), 96n, Nil{}, H.Step.none()))), 1n)
+    n("disabled restart continuation keeps queue held", queue_nexts(H.Step.outs_of(H.Run.recover(M.State.apply(after, M.SettingSet{"restart.continue", "off", 97n}), 97n, Nil{}, H.Step.none()))), 0n)
+    +stopped : H.Step = H.Run.after(queued, 98n, H.Retire.stop(queued, 98n, runid(s), Nil{}))
+    +held : M.State = M.State.replay(H.Queue.changes(stopped), queued)
+    n("explicitly interrupted run does not resume queue", queue_nexts(H.Step.outs_of(stopped)), 0n)
+    check("explicit stop stores a durable conversation hold", T.Triage.held(held, "b", "c"))
+    C.Check.str("undisposed stopped seed stays before newer mail", String.join(T.Triage.queue(held, "b", "c"), ","), "m1,m2")
+    +third : MB.Body = body("m3", "fyi")
+    +thirdstate : M.State = committed(held, third)
+    +arrival : H.Step = H.Mail.route(thirdstate, 99n, third)
+    +held3 : M.State = M.State.replay(H.Queue.changes(arrival), thirdstate)
+    C.Check.str("later arrival cannot clear conversation hold", String.join(T.Triage.queue(held3, "b", "c"), ","), "m1,m2,m3")
+    C.Check.str("later arrival starts no run while held", runid(held3), "")
+    n("held queue rejects even an already queued kick", List.length(&2, M.Change, H.Queue.changes(H.Run.queue.start(held3, 100n, "b", "c"))), 0n)
+    +restarting : M.State = M.State.apply(held3, M.SettingSet{"restart.continue", "on", 101n})
+    n("restart continuation cannot override explicit hold", queue_nexts(H.Step.outs_of(H.Run.recover(restarting, 101n, Nil{}, H.Step.none()))), 0n)
+    +cleared : M.State = M.State.apply(restarting, M.SettingSet{T.Triage.hold.key("b", "c"), "", 102n})
+    +resumed : M.State = M.State.replay(H.Queue.changes(H.Run.queue.start(cleared, 102n, "b", "c")), cleared)
+    C.Check.str("only explicit hold clearance permits fresh seed assessment", ML.Run.mail(run(resumed)), "m1")
+    +between : H.Step = H.Hub.interrupt.k(False{}, held3, 103n, 1, "stop", runid(s))
+    +betweenstate : M.State = M.State.replay(H.Queue.changes(between), held3)
+    n("idle stop preserves the earlier durable hold between runs", List.length(&2, M.Change, H.Queue.changes(H.Run.queue.start(betweenstate, 103n, "b", "c"))), 0n)
+    +sourceask : M.State = M.State.apply(queued, M.AskOpened{"hold-source-approval", "worker", "approval", "flash", "Person must decide", "", 104n})
+    +heldask : M.State = M.State.replay(H.Queue.changes(H.Retire.stop(sourceask, 104n, runid(s), Nil{})), sourceask)
+    check("holding mail triage never closes source approval", N.Ask.open(heldask, "worker"))
+
 def main() -> IO(Unit):
   do IO<Unit>:
     quiet_checks()
@@ -301,3 +396,5 @@ def main() -> IO(Unit):
     event_checks()
     delivery_failure_checks()
     context_replay_checks()
+    tool_boundary_checks()
+    input_race_checks()

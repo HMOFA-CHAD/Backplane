@@ -285,14 +285,14 @@ def Mcp.mine(es: List<&2, M.Entry>, +th: String, acc: List<&2, J.Json>) -> List<
     case +e <> t:
       Mcp.mine(t, th, Mcp.mine.k(String.eq(Mcp.of(e), th), e, acc))
 
-def Mcp.read.last(+xs: List<&2, J.Json>, +limit: Nat, +target: String) -> Res:
-  Res.ok(J.Json.obj([J.KV{"threadId", J.Str{target}},
+def Mcp.read.last(+xs: List<&2, J.Json>, +limit: Nat, +target: String, status: J.Json) -> Res:
+  Res.ok(J.Json.obj([J.KV{"threadId", J.Str{target}}, J.KV{"status", status},
     J.KV{"entries", J.Json.arr(List.drop(&2, J.Json, xs, Nat.sub(List.length(&2, J.Json, xs), limit)))}]))
 
 def Mcp.read.k(ok: Bool, +s: M.State, +target: String, +limit: Nat) -> Res:
   match ok s:
     case True{} M.State{_, _, es, _, _, _, _, _, _, _, _}:
-      Mcp.read.last(Mcp.mine(es, target, Nil{}), limit, target)
+      Mcp.read.last(Mcp.mine(es, target, Nil{}), limit, target, Mcp.thread_json(B.Hub.thread(s, target)))
     case False{} _:
       Res.fail("that thread is not in this project")
 
@@ -792,7 +792,7 @@ def Mcp.tools() -> J.Json:
     Tool.def("thread_list", "List the threads of this thread's project (id, title, provider, model, turn state), newest activity first. With `machine` (machine_list shows them), the threads of that other machine of the person's, whose ids work in the thread tools here; `project` narrows it to one project there.",
       [Tool.prop("machine", "string", "Another machine's name (or link id): list its threads."), Tool.prop("project", "string", "With machine: a project there, by name or id.")], Nil{}),
     Tool.def("machine_list", "List the person's machines linked to this one (this one first), whether each is here or away, and each one's projects with ids you can give thread_launch. A thread elsewhere has an id like <link>~<id>; thread_send, thread_read, thread_wait, thread_interrupt and thread_update take it, so you can work with a thread on any of their machines.", Nil{}, Nil{}),
-    Tool.def("thread_read", "Read a thread's timeline in this project (or on another machine, by its <link>~<id>): messages and tool activity, oldest first (the last `limit` entries).",
+    Tool.def("thread_read", "Read a thread's status (including turn state) and available timeline in this project (or on another machine, by its <link>~<id>): messages and tool activity, oldest first (the last `limit` entries). Empty entries alone do not mean stopped or completed; inspect status.turn.",
       [Tool.prop("threadId", "string", "The thread to read."), Tool.prop("limit", "number", "How many entries (default 40).")], ["threadId"]),
     Tool.def("thread_send", "Send a message to another thread in this project, or on another machine by its <link>~<id>. It is delivered at once: an idle thread starts a turn with it, a running turn takes it (Claude at once; Codex, Grok and Muse with their next Backplane tool result, or as a new turn if theirs ends first).",
       [Tool.prop("threadId", "string", "The thread."), Tool.prop("text", "string", "The message.")], ["threadId", "text"]),
@@ -1036,7 +1036,7 @@ def Mcp.dispose.once(handled: Bool, pending: Bool, +s: M.State, +now: Nat, +r: M
 
 def Mcp.dispose.valid(valid: Bool, +s: M.State, +now: Nat, +r: ML.Run, +a: J.Json) -> Res:
   match valid:
-    case False{}: Res.fail("mail_dispose requires a live mailroom run, exact current input, done/defer/reply, and reason; no other fields are allowed")
+    case False{}: Res{False{}, J.Json.obj([J.KV{"error", J.Str{"mail_dispose requires a live mailroom run, exact current input, done/defer/reply, and reason; no other fields are allowed. Nothing was handled. Use current_input only; newer arrivals belong to separate runs."}}, J.KV{"current_input", J.Str{MD.Disposition.current(s, r)}}, J.KV{"bound_input", J.Str{ML.Run.mail(r)}}]), B.Step.none()}
     case True{}: Mcp.dispose.once(Bool.not(String.is_empty(M.Setting.get(s, MD.Disposition.key(ML.Run.thread(r), J.Json.get_str(a, "input", "")), ""))),
       Bool.not(String.is_empty(M.Setting.get(s, MD.Disposition.pending(ML.Run.thread(r), J.Json.get_str(a, "input", "")), ""))), s, now, r, a)
 
@@ -1201,9 +1201,17 @@ def Perm.k(i: Nat, +ask: String, +s: M.State, +now: Nat, +thread: String, +id: J
 def Mcp.permit.old(+s: M.State, +now: Nat, +thread: String, +id: J.Json, +a: J.Json) -> McpOut:
   Perm.k(C.Codec.pos(["AskUserQuestion", "ExitPlanMode"], J.Json.get_str(a, "tool_name", "")), B.Hub.id("q", now, B.Hub.seq(s)), s, now, thread, id, J.Json.get_str(a, "tool_name", ""), J.Json.get_obj(a, "input"))
 
+# A private assessor's refused tool is not a source outcome, an actual
+# worker approval, or a disposition of the received report. Keep it local
+# so an alternative read or a later contextual assessment can still work.
+def Perm.run.denied(triage: Bool, +s: M.State, +now: Nat, +r: ML.Run, +id: J.Json, +tool: String, +input: J.Json) -> McpOut:
+  match triage:
+    case True{}: McpOut{Mcp.result(id, Perm.text(Perm.deny("Tool unavailable under the private triage charter; no source approval was opened and no input was acknowledged or escalated. " ++ TRI.Triage.evidence.tools()))), B.Step.none(), ""}
+    case False{}: McpOut{Mcp.result(id, Perm.text(Perm.deny("Outside the charter; escalated"))), B.Run.escalate(s, now, ML.Run.bot(r), ML.Run.conv(r), "bot", "Outside the charter: " ++ tool ++ " " ++ String.take(J.Json.show(input), 1000n)), ""}
+
 def Perm.run.verdict(ok: Bool, +s: M.State, +now: Nat, +r: ML.Run, +id: J.Json, +tool: String, +input: J.Json) -> McpOut:
   match ok:
-    case False{}: McpOut{Mcp.result(id, Perm.text(Perm.deny("Outside the charter; escalated"))), B.Run.escalate(s, now, ML.Run.bot(r), ML.Run.conv(r), "bot", "Outside the charter: " ++ tool ++ " " ++ String.take(J.Json.show(input), 1000n)), ""}
+    case False{}: Perm.run.denied(TRI.Triage.owner(s, ML.Run.bot(r)), s, now, r, id, tool, input)
     case True{}: McpOut{Mcp.result(id, Perm.text(Perm.allow(input))), Mcp.run.decide(s, now, r, tool ++ " " ++ String.take(J.Json.show(input), 1000n), "charter: " ++ CH.Charter.line(ML.Box.charter(M.State.mail(s), ML.Run.bot(r)), tool, input)), ""}
 
 def Perm.run.risky(risky: Bool, +s: M.State, +now: Nat, +r: ML.Run, +id: J.Json, +tool: String, +input: J.Json) -> McpOut:

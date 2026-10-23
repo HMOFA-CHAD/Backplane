@@ -157,6 +157,7 @@ type Wire is Data:
 type Msg is Data:
   Desktop{client: U32, kind: String, text: String, out: Chan(String), epoch: String, lease: String}
   MailRouted{body: MB.Body}
+  MailNext{bot: String, conv: String}
   MailFailed{body: MB.Body, reason: String}
   RunReady{thread: String, head: String, bodies: List<&2, MB.Body>}
   # n: how many probes since the lock was asked for (the guard is tried
@@ -9176,13 +9177,31 @@ def RunJob.start(r: MST.StoreResult<List<&2, MB.Body>>, +inbox: Chan(Msg), +s: M
     case MST.Missing{path}: Self.post(inbox, Commit{[M.ActivityLogged{th, B.Hub.id("run-read", now, M.State.seq(s)), "error", "mail", "triggering mail body unavailable: " ++ path, now}, M.TurnChanged{th, M.Failed{}, now}, M.ThreadSettled{th, False{}, now}]})
     case MST.StoreError{+path, +err}: Self.post(inbox, Commit{[M.ActivityLogged{th, B.Hub.id("run-read", now, M.State.seq(s)), "error", "mail", path ++ ": " ++ err, now}, M.TurnChanged{th, M.Failed{}, now}, M.ThreadSettled{th, False{}, now}]})
 
+def RunJob.exact.result(r: MST.StoreResult<MB.Body>) -> MST.StoreResult<List<&2, MB.Body>>:
+  match r:
+    case MST.Stored{b}: MST.Stored{[b]}
+    case MST.Missing{p}: MST.Missing{p}
+    case MST.StoreError{p, e}: MST.StoreError{p, e}
+
+def RunJob.read(bound: Bool, +home: String, +conv: String, +input: String) -> IO(MST.StoreResult<List<&2, MB.Body>>):
+  match bound:
+    case False{}: MST.MailStore.read(home, conv, "", 20n)
+    case True{}:
+      do IO<MST.StoreResult<List<&2, MB.Body>>>:
+        r : MST.StoreResult<MB.Body> <- MST.MailStore.exact(home, conv, input)
+        return RunJob.exact.result(r)
+
 def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
   match h o:
     case Hub{+st, f, ls, cl, as, inbox, cfg, note} B.RunStart{+thread, conv, head}:
       do IO<Hub>:
-        r : MST.StoreResult<List<&2, MB.Body>> <- MST.MailStore.read(Cfg.home(cfg), conv, "", 20n)
+        r : MST.StoreResult<List<&2, MB.Body>> <- RunJob.read(Bool.not(String.is_empty(M.Setting.get(st, "run.bound." ++ thread, ""))), Cfg.home(cfg), conv, M.Setting.get(st, "run.bound." ++ thread, ""))
         +now : Nat <- Now.nat()
         RunJob.start(r, inbox, st, now, thread, head)
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case Hub{st, f, ls, cl, as, +inbox, cfg, note} B.RunNext{bot, conv}:
+      do IO<Hub>:
+        Self.post(inbox, MailNext{bot, conv})
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case Hub{st, f, ls, cl, as, inbox, cfg, note} B.CharterWrite{path, text}:
       do IO<Hub>:
@@ -14494,6 +14513,7 @@ def Msg.kind(m: Msg) -> String:
     case Reexec{_, _}:
       "reexec"
     case MailRouted{_}: "mail-route"
+    case MailNext{_, _}: "mail-next"
     case MailFailed{_, _}: "mail-failed"
     case RunReady{_, _, _}: "run-ready"
     case Commit{_}:
@@ -15063,6 +15083,10 @@ def Hub.mail.failed(h: Hub, +body: MB.Body, +reason: String, +now: Nat) -> IO(Hu
 def Hub.mail.routed(h: Hub, body: MB.Body, +now: Nat) -> IO(Hub):
   match h:
     case Hub{+st, f, ls, cl, as, inbox, cfg, note}: Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Mail.route(st, now, body))
+
+def Hub.mail.next(h: Hub, +bot: String, +conv: String, +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}: Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Run.queue.start(st, now, bot, conv))
 
 def Hub.run.ready(h: Hub, +th: String, head: String, bs: List<&2, MB.Body>, +now: Nat) -> IO(Hub):
   match h:
@@ -15771,6 +15795,7 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
     case LinkFound{lk}:
       Hub.link(h, lk)
     case MailRouted{body}: Hub.mail.routed(h, body, now)
+    case MailNext{bot, conv}: Hub.mail.next(h, bot, conv, now)
     case MailFailed{body, reason}: Hub.mail.failed(h, body, reason, now)
     case RunReady{thread, head, bs}: Hub.run.ready(h, thread, head, bs, now)
     case Commit{cs}:
