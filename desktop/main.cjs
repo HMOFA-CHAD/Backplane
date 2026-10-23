@@ -99,19 +99,23 @@ async function connect(ses) {
 }
 // one attempt at a time: the start after load and a Reconnect share it
 let browserStarting=null;
-function connectBrowser(ses){
-  browserStarting??=startBrowser(ses).finally(()=>{browserStarting=null;});
+function connectBrowser(ses,reconnect=false){
+  browserStarting??=startBrowser(ses,reconnect).finally(()=>{browserStarting=null;});
   return browserStarting;
 }
-async function startBrowser(ses){
+async function startBrowser(ses,reconnect){
   if(desktopBrowser&&!desktopBrowser.isClosed())return;
-  const browserWindow=window;
+  const browserWindow=window,selectedConnection=connection;
+  // A user-requested fresh controller binds to the currently authenticated
+  // service version at this same selected origin. Never replay a prior call.
+  const browserConnection=reconnect?await service.discover({browserReconnectOrigin:selectedConnection.origin}):selectedConnection;
+  if(!browserConnection)throw new Error('Selected Browser service unavailable');
   const guestPath=path.join(__dirname,'browser-guest.cjs'),preloadPath=path.join(__dirname,'browser-recording-preload.cjs');
   const hash=file=>createHash('sha256').update(fs.readFileSync(file)).digest('hex');
   const config=build.desktopBrowser||{};
   const token=await service.token();
-  if(quitting||window!==browserWindow||browserWindow.isDestroyed())return;
-  const controller=createDesktopBrowserController({electron,window:browserWindow,appSession:ses,origin,version:connection.version,token,
+  if(quitting||window!==browserWindow||browserWindow.isDestroyed()||connection!==selectedConnection||origin!==browserConnection.origin)return;
+  const controller=createDesktopBrowserController({electron,window:browserWindow,appSession:ses,origin:browserConnection.origin,version:browserConnection.version,token,
     guestManagerSha256:config.guestManagerSha256||hash(guestPath),
     recorder:{preloadPath,preloadSha256:config.preloadSha256||hash(preloadPath),recorderSourceSha256:'2e4b03765cc4ae6595e32048555ffe27e750994a85c18b89027064f3c0c15350',subframePreload:true,popupPreloadVerified:false},
     unknownState:browserUnknown,executeCall:createBrowserActions(),
@@ -161,7 +165,7 @@ function start() {
   // Reloaded renderers subscribe after main may already have become ready or
   // failed. Query the current state instead of depending on a one-shot event.
   ipcMain.handle('desktop:browser-state',event=>{if(!trusted(event)||!directBrowser)throw new Error('Invalid Browser sender');return desktopBrowser?.state()??{phase:'connecting',message:'Connecting Browser…'};});
-  ipcMain.handle('desktop:browser-reconnect',async event=>{if(!trusted(event)||!directBrowser)throw new Error('Invalid Browser sender');await connectBrowser(ses);return desktopBrowser?.state()??{phase:'error',message:'Browser unavailable'};});
+  ipcMain.handle('desktop:browser-reconnect',async event=>{if(!trusted(event)||!directBrowser)throw new Error('Invalid Browser sender');await connectBrowser(ses,true);return desktopBrowser?.state()??{phase:'error',message:'Browser unavailable'};});
   Menu.setApplicationMenu(applicationMenu(Menu, process.platform));
   app.setAppUserModelId?.('works.backplane.desktop');
   if (process.platform === 'darwin') app.dock?.setIcon(iconPath());
