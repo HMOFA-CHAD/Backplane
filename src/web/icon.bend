@@ -25,6 +25,15 @@ def WIcon.svg(+name: String, +px: U32) -> D.Node:
     D.At{"fill", "none"}, D.At{"stroke", "currentColor"}, D.At{"stroke-width", "2"}, D.At{"stroke-linecap", "round"}, D.At{"stroke-linejoin", "round"},
     D.At{"aria-hidden", "true"}], WIcon.paths(I.Icon.layers(name))}
 
+# Hierarchy rows share exactly two immutable glyphs. Keep their changing
+# labels, counts, targets and expanded state on the ordinary server button;
+# only this fixed 14px picture is made by the existing client memo renderer.
+def WIcon.tree(expanded: Bool) -> D.Node:
+  D.El{"bp-memo", Bool.pick(String, expanded, "down", "right"), [D.At{"fn", "tree-icon"}], [D.Txt{""}]}
+
+def WIcon.tree.make(key: String) -> D.Node:
+  WIcon.svg(Bool.pick(String, String.eq(key, "down"), "chevron-down", "chevron-right"), 14)
+
 def WIcon.label(label: String) -> List<&2, D.Node>:
   match label:
     case SNil{}:
