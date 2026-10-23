@@ -493,6 +493,8 @@ button.chip:hover { border-color: var(--bad); color: var(--bad); }
 .msg.sending { opacity: 0.6; } .msg .note { color: var(--faint); font-size: calc(11px * var(--text-scale, 100) / 100); }
 .link { align-self: flex-start; background: none; border: 0; border-left: 2px solid var(--accent); color: var(--accent); padding: 2px 8px; font-size: calc(12px * var(--text-scale, 100) / 100); max-width: 860px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .link.in { align-self: flex-end; border-left: 0; border-right: 2px solid var(--accent); }
+/* Outgoing timeline links keep their text height within the available width. */
+.timeline > button.link.out { flex-shrink: 0; max-width: min(860px, 100%); }
 
 .modal-back { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 20; }
 .picker { position: fixed; z-index: 21; top: 10vh; left: 50%; transform: translateX(-50%); width: min(640px, calc(100vw - 24px)); max-height: 76vh; display: flex; flex-direction: column; background: var(--raise); border: 1px solid var(--line); }
