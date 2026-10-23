@@ -462,10 +462,22 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
    const returned=await waitPresented(id);await saveTabs('afterThreadSwitch',{presentation:returned});
    check('thread switch restores its actual guest',returned.ok&&(await native()).filter(v=>v.visible).length===1&&(await native()).find(v=>v.id===id)?.visible===true);
   }
-  await page.screenshot({path:path.join(out,'shared-browser-chrome.png')});
-  const pixels=await app.evaluate(async({webContents},id)=>(await webContents.fromId(id).capturePage()).toPNG().toString('base64'),id);
-  fs.writeFileSync(path.join(out,'shared-browser-guest.png'),Buffer.from(pixels,'base64'));
   const receipt={status:'PASS',checks,retainedPrefix:retained,retainedHumanPrefix:retainedHuman,retainedInputPrefix:retainedInput,retainedHistoryPrefix:retainedHistory,retainedNativeHistory,retainedChrome,retainedReload,retainedSelection,guestId:id,scope:'Actual Electron native guest + authenticated preview MCP + trusted human input; isolated controlled local page only',remaining:['physical manual input/IME','full Electron exit/relaunch cookie and tab restoration','remote machine browser attachment/reconnect','popup adoption (current guest policy denies unqualified popups)']};
+  // All functional assertions are complete. Preserve them before optional
+  // documentation capture, which is separate from preview_snapshot's native
+  // PNG acceptance retained in the prefix receipt.
+  receipt.artifacts={chrome:'pending',nativeGuest:'pending'};
+  fs.writeFileSync(path.join(out,'shared-browser-functional.json'),JSON.stringify(receipt,null,2)+'\n');
+  try{await page.screenshot({path:path.join(out,'shared-browser-chrome.png'),timeout:3000});receipt.artifacts.chrome='saved';}
+  catch{receipt.artifacts.chrome='unavailable';}
+  try{
+   const pixels=await app.evaluate(async({webContents},id)=>{
+    const wc=webContents.fromId(id);if(!wc||wc.isDestroyed())return null;
+    let timer;try{return await Promise.race([wc.capturePage().then(p=>p.toPNG().toString('base64')),new Promise(resolve=>{timer=setTimeout(()=>resolve(null),3000);})]);}finally{clearTimeout(timer);}
+   },id);
+   if(pixels){fs.writeFileSync(path.join(out,'shared-browser-guest.png'),Buffer.from(pixels,'base64'));receipt.artifacts.nativeGuest='saved';}
+   else receipt.artifacts.nativeGuest='timed out or unavailable';
+  }catch{receipt.artifacts.nativeGuest='unavailable';}
   fs.writeFileSync(path.join(out,'shared-browser.json'),JSON.stringify(receipt,null,2)+'\n');
   return receipt;
  }catch(error){
