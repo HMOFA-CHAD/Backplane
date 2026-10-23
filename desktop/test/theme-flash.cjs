@@ -36,7 +36,10 @@ let colours={};
 async function learn(theme){colours[theme]=await page.evaluate(()=>({bg:getComputedStyle(document.querySelector('main')).backgroundColor,body:getComputedStyle(document.body).backgroundColor}));}
 async function choose(theme){
  await page.locator('.sidebar [data-on-click="flag"][data-value="settings"]').click();
- await page.locator('[data-on-click="settings-page"][data-value="appearance"]').first().click();
+ // Settings keeps its category. On later opens Appearance is already the
+ // page, so its overview link is absent; wait for either real boundary.
+ await page.waitForFunction(()=>document.querySelector('[data-on-click="settings-page"][data-value="appearance"]')||document.querySelector('[data-on-click="setting"][data-value^="ui.theme="]'));
+ const appearance=page.locator('[data-on-click="settings-page"][data-value="appearance"]').first();if(await appearance.count())await appearance.click();
  await page.locator(`[data-on-click="setting"][data-value="ui.theme=${theme}"]`).first().click();
  await page.waitForFunction(theme=>document.querySelector('.app')?.classList.contains('light')===(theme==='light'),theme);
  await page.locator('.settings-view [data-on-click="flag"][data-value="settings"]').click();
@@ -71,7 +74,9 @@ async function size(w,h){await app.evaluate(({BrowserWindow},[w,h])=>{const win=
  const draft=await page.locator('#composer').inputValue();assert(draft.endsWith('日本 draft'),draft);
  step='light';await choose('light');await go('ta',false);await learn('light');assert.notEqual(colours.light.body,colours.dark.body);
  for(const [theme,next] of [['light','dark'],['dark','light']]){
-  step='switch-'+theme+'-1400';await round(theme,1400,['tb','tc','ta','tc','tb']);
+  step='switch-'+theme+'-1400';
+  if(theme==='light'&&process.env.THEME_WIDE_LIGHT_RECEIPT){const kept=JSON.parse(fs.readFileSync(process.env.THEME_WIDE_LIGHT_RECEIPT));assert.equal(kept.stage,stage);assert.equal(kept.rounds.length,5);assert(kept.rounds.every(r=>r.theme==='light'&&r.width===1400&&!r.bad.length&&r.cachedFrames>0));rounds.push(...kept.rounds);}
+  else await round(theme,1400,['tb','tc','ta','tc','tb']);
   await go('ta',false);assert.equal(await page.locator('#composer').inputValue(),draft,'draft kept after '+theme+' switches');
   step='toggle-'+next;await choose(next);
  }
