@@ -1689,11 +1689,12 @@ async function startThin(again = false) {
   const current = () => !ended && attempt === thinAttempt && viewMode === "view-v1";
   const fail = message => {
     if (!current()) return;
-    checkpointFocused();remoteReady = false;frontendNode = null;desktopBrowser.hide();Plot2d.reset();Solid.reset();
+    checkpointFocused();remoteReady = false;desktopBrowser.hide();Plot2d.reset();Solid.reset();
     showViewStatus(message);void restoreFocused(true);later();
   };
-  const disconnect = () => {
+  const disconnect = event => {
     if (!current()) return;
+    trace("thin-disconnect", { reason: typeof event === "string" ? event : event?.type || "connection-ended", code: event?.code });
     ended = true;
     checkpointFocused();remoteReady = false;desktopBrowser.hide();Plot2d.reset();Solid.reset();
     clearTimeout(thinGreetingTimer);clearInterval(thinExpiry);clearTimeout(thinDraftTimer);clearTimeout(thinFieldTimer);
@@ -1760,8 +1761,19 @@ async function startThin(again = false) {
       state: state => {
         if (!current()) return;
         remoteReady = state.remoteReady === true;
-        if (!remoteReady) { frontendNode = null;desktopBrowser.hide(); }
-        if (state.phase === "error") fail("Conversation unavailable. Your draft is kept; retry explicitly.");
+        if (!remoteReady) {
+          // Keep the last validated tree as a read-only picture. The local Ui
+          // has no canonical bot/catalog state in view mode. Falling back to
+          // it here removed the sidebar and cats after a refusal or disconnect.
+          // A selection's callback replaces this picture before the next frame.
+          if (frontendNode) transitionNode = frontendNode;
+          frontendNode = null;desktopBrowser.hide();
+        }
+        if (state.phase === "error") {
+          trace("thin-error", { reason: state.reason });
+          fail(state.reason === "LIMIT" ? "This view exceeds the hub's size limit. Your draft is kept; retry explicitly."
+            : "Conversation unavailable. Your draft is kept; retry explicitly.");
+        }
         else if (remoteReady && !s.up) { s.up = true;upStatus();outboxFlush();void checkDeploy(); }
         else if (remoteReady) showViewStatus("");
         later();
@@ -1783,7 +1795,7 @@ async function startThin(again = false) {
       else if (o) Plot2d.got(o, at);
       return;
     }
-    if (bytes.byteLength > 262144) { disconnect();try { s.close(); } catch {}return; }
+    if (bytes.byteLength > 262144) { disconnect("frame-limit");try { s.close(); } catch {}return; }
     try {
       const j = Wire.cbor(bytes, KEYS, WORDS), envelope = Wire.plain(j);
       if (envelope.t === "hb") { s.hb = true;return; }
@@ -1791,13 +1803,13 @@ async function startThin(again = false) {
       if (envelope.t === "view") { clearTimeout(thinGreetingTimer);thin.greeting(envelope); }
       else if (!thin.receive(envelope) && envelope.t === "reply" && Number.isSafeInteger(envelope.id) && envelope.id < 2 ** 47) thin.ack(envelope);
       // A thin socket never folds log/changes/info into canonical Ui.
-    } catch { disconnect();try { s.close(); } catch {} }
+    } catch { disconnect("decode-error");try { s.close(); } catch {} }
   };
   s.onclose = disconnect;s.onerror = disconnect;
   s.thin = true;
-  s.dead = () => { disconnect();try { s.close(); } catch {} };
+  s.dead = reason => { disconnect(reason || "heartbeat-expired");try { s.close(); } catch {} };
   // Include the HTTP Upgrade/connect phase in the greeting deadline.
-  thinGreetingTimer = setTimeout(() => { disconnect();try { s.close(); } catch {} }, 4000);
+  thinGreetingTimer = setTimeout(() => { disconnect("greeting-timeout");try { s.close(); } catch {} }, 4000);
   thinExpiry = setInterval(() => { if (current()) thin.expire(); }, 250);
 }
 
@@ -1805,7 +1817,7 @@ async function startThin(again = false) {
 let heard = BigInt(Date.now()), tick = Date.now(), hiddenAt = 0;
 setInterval(() => {
   const t = Date.now(), slept = t - tick > 30000;tick = t;
-  if (socket && (slept || ((!socket.thin || socket.hb) && App.alive_due(heard, BigInt(t))))) socket.dead();
+  if (socket && (slept || !socket.thin || socket.hb) && App.alive_due(heard, BigInt(t))) socket.dead("heartbeat-expired");
 }, 5000);
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") hiddenAt = Date.now(); }, true);
 watchWake(window, document, why => {
@@ -1814,7 +1826,9 @@ watchWake(window, document, why => {
   // the network changed, or the page slept a while: a socket may be dead
   // without a close, so a quiet one is replaced (cheap: a bounded view)
   if (socket && (why === "online" || (why === "visible" && away > 60000) || why === "pageshow")) {
-    if (Date.now() - Number(heard) > 3000) socket.dead();
+    // Heartbeats are 15 seconds apart. A healthy idle socket is often quiet
+    // for more than 3 seconds; use the same 40-second lease as the timer.
+    if (App.alive_due(heard, BigInt(Date.now()))) socket.dead("wake-expired");
   }
   if (thinRetry.pending) { thinBackoff.reset();thinRetry.wake(); }
 });

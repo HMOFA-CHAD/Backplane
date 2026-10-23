@@ -17,6 +17,7 @@ import ../core/sched.bend as SC
 import ../core/plane.bend as PL
 import ../core/uber.bend as UB
 import ../core/task.bend as TK
+import ../core/presentation.bend as PS
 
 # The bots on the web (docs/bots.md): the sidebar's cats and rooms, a bot's
 # header, tabs and tab bodies, a room, a bot on another machine. What is
@@ -506,8 +507,36 @@ def WB.memory.k.loc(+lc: I.Loc, +ms: List<&2, BT.Mem>, +own: Bool, +now: Nat) ->
 def WB.memory.k(+ms: List<&2, BT.Mem>, +own: Bool, +now: Nat) -> D.Node:
   WB.memory.k.loc(I.En{}, ms, own, now)
 
+# Memory is a bounded view just like a conversation. Rendering the whole
+# store eventually exceeds the view transport's reply limit.
+def WB.memory.size() -> Nat:
+  24n
+
+def WB.memory.field(+bot: String) -> String:
+  "memory-page:" ++ bot
+
+def WB.memory.page(+u: U.Ui, +bot: String, +count: Nat) -> Nat:
+  +last = Nat.div(Nat.sub(count, 1n), WB.memory.size())
+  Nat.min(last, Maybe.default(&2, Nat, PS.Session.nat(U.Ui.scratch(u, "@f." ++ WB.memory.field(bot)), PS.Session.nat.max()), 0n))
+
+def WB.memory.pages(+lc: I.Loc, +bot: String, +page: Nat, +count: Nat) -> D.Node:
+  +start = Nat.mul(page, WB.memory.size())
+  D.El{"nav", "memory-pages", [D.At{"class", "bform-btns memory-pages"}, D.At{"aria-label", MSG.T.bots.tab.memory(lc)}], List.concat(&2, D.Node, [
+    D.Dom.when(Nat.is_gt(page, 0n), D.Dom.button("", "bfield", WB.bf(WB.memory.field(bot), Nat.show(Nat.sub(page, 1n))), MSG.T.common.prev(lc), MSG.T.common.prev(lc))),
+    [D.Dom.span("memory-range", Nat.show(Nat.add(start, 1n)) ++ "–" ++ Nat.show(Nat.min(count, Nat.add(start, WB.memory.size()))) ++ " / " ++ Nat.show(count))],
+    D.Dom.when(Nat.is_lt(Nat.add(start, WB.memory.size()), count), D.Dom.button("", "bfield", WB.bf(WB.memory.field(bot), Nat.show(Nat.add(page, 1n))), MSG.T.common.more(lc), MSG.T.common.more(lc)))])}
+
+def WB.memory.paged(+lc: I.Loc, +ms: List<&2, BT.Mem>, +own: Bool, +now: Nat, +bot: String, +page: Nat) -> D.Node:
+  WB.div("memory-view", [WB.memory.k.loc(lc, List.take(&2, BT.Mem, List.drop(&2, BT.Mem, ms, Nat.mul(page, WB.memory.size())), WB.memory.size()), own, now),
+    WB.memory.pages(lc, bot, page, List.length(&2, BT.Mem, ms))])
+
 def WB.memory.loc(+lc: I.Loc, +u: U.Ui, +b: BT.Bot) -> D.Node:
-  WB.memory.k.loc(lc, BI.BU.mems(u, BT.Bot.id(b)), BI.BU.owns(BT.Bot.id(b)), U.Side.now(u))
+  +ms = BI.BU.mems(u, BT.Bot.id(b))
+  match ms:
+    case Nil{}: WB.memory.k.loc(lc, Nil{}, BI.BU.owns(BT.Bot.id(b)), U.Side.now(u))
+    case +m <> +tail:
+      WB.memory.paged(lc, m <> tail, BI.BU.owns(BT.Bot.id(b)), U.Side.now(u), BT.Bot.id(b),
+        WB.memory.page(u, BT.Bot.id(b), List.length(&2, BT.Mem, m <> tail)))
 
 # Routines
 
