@@ -10447,9 +10447,26 @@ def Hub.cef.seen.o(h: Hub, +o: J.Json) -> IO(Hub):
       Hub.cef.seen.k(Bool.and(Cef.page.ok(st, J.Json.get_str(o, "page", "")), Bool.not(CF.Cef.pages.has(CF.Cef.session.pages(Cfg.cef(cfg)), J.Json.get_str(o, "page", "")))),
         Hub{st, f, ls, cl, as, inbox, cfg, note}, J.Json.get_str(o, "page", ""))
 
+# Inventory is canonical state, not just a legacy broadcast. Thin clients
+# consume Hub.info and discard info broadcasts; reconnects need it there too.
+def Cfg.browser.tabs.changed(changed: Bool, +cfg: Cfg, +o: J.Json) -> Cfg:
+  match changed:
+    case False{}: Cfg.with_cef(cfg, CF.Cef.session.tabs_set(Cfg.cef(cfg), o))
+    case True{}:
+      +current = Cfg.with_cef(cfg, CF.Cef.session.tabs_set(Cfg.cef(cfg), o))
+      Cfg.thin.live(current, Cfg.thin.streams(current), J.Json.get_str(o, "page", ""))
+
+def Cfg.browser.tabs(+cfg: Cfg, +o: J.Json) -> Cfg:
+  Cfg.browser.tabs.changed(CF.Cef.session.tabs_changed(Cfg.cef(cfg), o), cfg, o)
+
+def Hub.browser.tabs.current(h: Hub, +o: J.Json) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      Hub.broadcast(Hub{st, f, ls, cl, as, inbox, Cfg.browser.tabs(cfg, o), note}, J.Json.show(J.Json.obj([J.KV{"t", J.Str{"info"}},
+        J.KV{"info", J.Json.obj([J.KV{"browser.tabs." ++ J.Json.get_str(o, "page", ""), J.Str{J.Json.show(o)}}])}])))
+
 def Hub.browser.tabs(h: Hub, +o: J.Json) -> IO(Hub):
-  IO.bind(Hub, Hub, Hub.cef.seen.o(h, o), h2 => Hub.broadcast(h2, J.Json.show(J.Json.obj([J.KV{"t", J.Str{"info"}},
-    J.KV{"info", J.Json.obj([J.KV{"browser.tabs." ++ J.Json.get_str(o, "page", ""), J.Str{J.Json.show(o)}}])}]))))
+  IO.bind(Hub, Hub, Hub.cef.seen.o(h, o), h2 => Hub.browser.tabs.current(h2, o))
 
 def Hub.browser_ev.c(i: Nat, h: Hub, +o: J.Json) -> IO(Hub):
   match i:

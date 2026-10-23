@@ -1,5 +1,6 @@
 import Base
 import ./json.bend as J
+import ./browser-tabs.bend as BT
 
 # The embedded Chromium (tools/cef), the hub's side and the window's, pure.
 # The native window tells its hub its X window (browser.embed), and the hub
@@ -297,115 +298,128 @@ type CefWork is Data:
 # (Cef.want.key); live, err: the engine running and why not cef; place: the
 # page shown; shield: the last shield sent ("1", "0", "" none); local: the
 # loopback clients that may embed; pages: Cef.pages; tries: Cef.revive's
-# count; queue: the serial worker; generation: the engine request's token
+# count; queue: the serial worker; generation: the engine request's token;
+# tabs: bounded public chrome for canonical views, shared by browser engines
 type CefSession is Data:
-  CefSession{client: U32, xid: U32, display: String, request: String, live: String, err: String, place: J.Json, shield: String, local: List<&2, U32>, pages: List<&2, String>, tries: Nat, queue: Maybe<&2, Chan(CefWork)>, generation: Nat}
+  CefSession{client: U32, xid: U32, display: String, request: String, live: String, err: String, place: J.Json, shield: String, local: List<&2, U32>, pages: List<&2, String>, tries: Nat, queue: Maybe<&2, Chan(CefWork)>, generation: Nat, tabs: List<&2, J.KV>}
 
 def Cef.empty() -> CefSession:
-  CefSession{0, 0, "", "chrome", "chrome", "", J.Null{}, "", Nil{}, Nil{}, 0n, None{}, 0n}
+  CefSession{0, 0, "", "chrome", "chrome", "", J.Null{}, "", Nil{}, Nil{}, 0n, None{}, 0n, Nil{}}
 
 def Cef.session.client(s: CefSession) -> U32:
   match s:
-    case CefSession{c, _, _, _, _, _, _, _, _, _, _, _, _}: c
+    case CefSession{c, _, _, _, _, _, _, _, _, _, _, _, _, _}: c
 
 def Cef.session.xid(s: CefSession) -> U32:
   match s:
-    case CefSession{_, x, _, _, _, _, _, _, _, _, _, _, _}: x
+    case CefSession{_, x, _, _, _, _, _, _, _, _, _, _, _, _}: x
 
 def Cef.session.display(s: CefSession) -> String:
   match s:
-    case CefSession{_, _, d, _, _, _, _, _, _, _, _, _, _}: d
+    case CefSession{_, _, d, _, _, _, _, _, _, _, _, _, _, _}: d
 
 def Cef.session.known(+s: CefSession) -> Bool:
   Cef.known(Cef.session.xid(s), Cef.session.display(s))
 
 def Cef.session.request(s: CefSession) -> String:
   match s:
-    case CefSession{_, _, _, r, _, _, _, _, _, _, _, _, _}: r
+    case CefSession{_, _, _, r, _, _, _, _, _, _, _, _, _, _}: r
 
 def Cef.session.live(s: CefSession) -> String:
   match s:
-    case CefSession{_, _, _, _, l, _, _, _, _, _, _, _, _}: l
+    case CefSession{_, _, _, _, l, _, _, _, _, _, _, _, _, _}: l
 
 def Cef.session.place(s: CefSession) -> J.Json:
   match s:
-    case CefSession{_, _, _, _, _, _, p, _, _, _, _, _, _}: p
+    case CefSession{_, _, _, _, _, _, p, _, _, _, _, _, _, _}: p
 
 def Cef.session.page(+s: CefSession) -> String:
   J.Json.get_str(Cef.session.place(s), "page", "")
 
 def Cef.session.shield(s: CefSession) -> String:
   match s:
-    case CefSession{_, _, _, _, _, _, _, sh, _, _, _, _, _}: sh
+    case CefSession{_, _, _, _, _, _, _, sh, _, _, _, _, _, _}: sh
 
 def Cef.session.local(s: CefSession) -> List<&2, U32>:
   match s:
-    case CefSession{_, _, _, _, _, _, _, _, lo, _, _, _, _}: lo
+    case CefSession{_, _, _, _, _, _, _, _, lo, _, _, _, _, _}: lo
 
 def Cef.session.pages(s: CefSession) -> List<&2, String>:
   match s:
-    case CefSession{_, _, _, _, _, _, _, _, _, pg, _, _, _}: pg
+    case CefSession{_, _, _, _, _, _, _, _, _, pg, _, _, _, _}: pg
 
 def Cef.session.tries(s: CefSession) -> Nat:
   match s:
-    case CefSession{_, _, _, _, _, _, _, _, _, _, t, _, _}: t
+    case CefSession{_, _, _, _, _, _, _, _, _, _, t, _, _, _}: t
 
 def Cef.session.queue(s: CefSession) -> Maybe<&2, Chan(CefWork)>:
   match s:
-    case CefSession{_, _, _, _, _, _, _, _, _, _, _, q, _}: q
+    case CefSession{_, _, _, _, _, _, _, _, _, _, _, q, _, _}: q
 
 def Cef.session.token(s: CefSession) -> String:
   match s:
-    case CefSession{_, _, _, _, _, _, _, _, _, _, _, _, n}: Nat.show(n)
+    case CefSession{_, _, _, _, _, _, _, _, _, _, _, _, n, _}: Nat.show(n)
 
 def Cef.current(s: CefSession, +token: String) -> Bool:
   String.eq(Cef.session.token(s), token)
 
 def Cef.session.info(s: CefSession) -> List<&2, J.KV>:
   match s:
-    case CefSession{_, _, _, _, l, e, _, _, _, _, _, _, _}:
-      [J.KV{"browser.engine.live", J.Str{l}}, J.KV{"browser.engine.err", J.Str{e}}]
+    case CefSession{_, _, _, _, l, e, _, _, _, _, _, _, _, tabs}:
+      List.append(&2, J.KV, [J.KV{"browser.engine.live", J.Str{l}}, J.KV{"browser.engine.err", J.Str{e}}], tabs)
+
+def Cef.session.tabs(s: CefSession) -> List<&2, J.KV>:
+  match s:
+    case CefSession{_, _, _, _, _, _, _, _, _, _, _, _, _, tabs}: tabs
+
+def Cef.session.tabs_changed(+s: CefSession, +event: J.Json) -> Bool:
+  BT.Tabs.changed(Cef.session.tabs(s), event)
+
+def Cef.session.tabs_set(s: CefSession, event: J.Json) -> CefSession:
+  match s:
+    case CefSession{c, x, d, r, l, err, p, sh, lo, pg, t, q, n, tabs}:
+      CefSession{c, x, d, r, l, err, p, sh, lo, pg, t, q, n, BT.Tabs.cache(tabs, event)}
 
 # a window embedded: its X window is known, the shield is to be sent again
 def Cef.session.embed_set(s: CefSession, client: U32, xid: U32, display: String) -> CefSession:
   match s:
-    case CefSession{_, _, _, r, l, err, _, _, lo, pg, _, q, n}: CefSession{client, xid, display, r, l, err, J.Null{}, "", lo, pg, 0n, q, n}
+    case CefSession{_, _, _, r, l, err, _, _, lo, pg, _, q, n, tabs}: CefSession{client, xid, display, r, l, err, J.Null{}, "", lo, pg, 0n, q, n, tabs}
 
 # the engine was asked for: the next generation
 def Cef.session.request_set(s: CefSession, r: String) -> CefSession:
   match s:
-    case CefSession{c, x, d, _, l, err, p, sh, lo, pg, t, q, n}: CefSession{c, x, d, r, l, err, p, sh, lo, pg, t, q, 1n+n}
+    case CefSession{c, x, d, _, l, err, p, sh, lo, pg, t, q, n, tabs}: CefSession{c, x, d, r, l, err, p, sh, lo, pg, t, q, 1n+n, tabs}
 
 # the helper answered: the engine running, and why not cef
 def Cef.session.done(s: CefSession, l: String, err: String) -> CefSession:
   match s:
-    case CefSession{c, x, d, r, _, _, p, _, lo, pg, _, q, n}: CefSession{c, x, d, r, l, err, p, "", lo, pg, 0n, q, n}
+    case CefSession{c, x, d, r, _, _, p, _, lo, pg, _, q, n, tabs}: CefSession{c, x, d, r, l, err, p, "", lo, pg, 0n, q, n, tabs}
 
 # the window placed a page (or hid it): the shield sent with it
 def Cef.session.place_set(s: CefSession, p: J.Json, sh: String) -> CefSession:
   match s:
-    case CefSession{c, x, d, r, l, err, _, _, lo, pg, t, q, n}: CefSession{c, x, d, r, l, err, p, sh, lo, pg, t, q, n}
+    case CefSession{c, x, d, r, l, err, _, _, lo, pg, t, q, n, tabs}: CefSession{c, x, d, r, l, err, p, sh, lo, pg, t, q, n, tabs}
 
 def Cef.session.shield_set(s: CefSession, sh: String) -> CefSession:
   match s:
-    case CefSession{c, x, d, r, l, err, p, _, lo, pg, t, q, n}: CefSession{c, x, d, r, l, err, p, sh, lo, pg, t, q, n}
+    case CefSession{c, x, d, r, l, err, p, _, lo, pg, t, q, n, tabs}: CefSession{c, x, d, r, l, err, p, sh, lo, pg, t, q, n, tabs}
 
 def Cef.session.local_set(s: CefSession, lo: List<&2, U32>) -> CefSession:
   match s:
-    case CefSession{c, x, d, r, l, err, p, sh, _, pg, t, q, n}: CefSession{c, x, d, r, l, err, p, sh, lo, pg, t, q, n}
+    case CefSession{c, x, d, r, l, err, p, sh, _, pg, t, q, n, tabs}: CefSession{c, x, d, r, l, err, p, sh, lo, pg, t, q, n, tabs}
 
 def Cef.session.pages_set(s: CefSession, pg: List<&2, String>) -> CefSession:
   match s:
-    case CefSession{c, x, d, r, l, err, p, sh, lo, _, t, q, n}: CefSession{c, x, d, r, l, err, p, sh, lo, pg, t, q, n}
+    case CefSession{c, x, d, r, l, err, p, sh, lo, _, t, q, n, tabs}: CefSession{c, x, d, r, l, err, p, sh, lo, pg, t, q, n, tabs}
 
 # a helper restart re-showed the page once more
 def Cef.session.tried(s: CefSession) -> CefSession:
   match s:
-    case CefSession{c, x, d, r, l, err, p, sh, lo, pg, t, q, n}: CefSession{c, x, d, r, l, err, p, sh, lo, pg, 1n+t, q, n}
+    case CefSession{c, x, d, r, l, err, p, sh, lo, pg, t, q, n, tabs}: CefSession{c, x, d, r, l, err, p, sh, lo, pg, 1n+t, q, n, tabs}
 
 def Cef.session.queued(s: CefSession, q: Chan(CefWork)) -> CefSession:
   match s:
-    case CefSession{c, x, d, r, l, err, p, sh, lo, pg, t, _, n}: CefSession{c, x, d, r, l, err, p, sh, lo, pg, t, Some{q}, n}
+    case CefSession{c, x, d, r, l, err, p, sh, lo, pg, t, _, n, tabs}: CefSession{c, x, d, r, l, err, p, sh, lo, pg, t, Some{q}, n, tabs}
 
 # a loopback client may embed (the newest 32 kept: ids are never reused)
 def Cef.session.near(+s: CefSession, +client: U32) -> CefSession:

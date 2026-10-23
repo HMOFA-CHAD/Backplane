@@ -43,6 +43,11 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
  const fromHuman=process.env.BROWSER_CONTINUE_HUMAN==='1';
  const fromHandback=process.env.BROWSER_CONTINUE_HANDBACK==='1';
  const fromHistory=process.env.BROWSER_CONTINUE_HISTORY==='1';
+ const fromProjection=process.env.BROWSER_CONTINUE_PROJECTION==='1';
+ const nativeHistoryChecks=['toolbar Back navigates SAME actual guest','toolbar Forward navigates SAME actual guest'];
+ const nativeHistoryReceipt=fromProjection?process.env.BROWSER_NATIVE_HISTORY_RECEIPT:null;
+ if(fromProjection){assert(fromHistory,'projection suffix retains prior history setup and receipts');const receipt=JSON.parse(fs.readFileSync(nativeHistoryReceipt,'utf8'));assert(nativeHistoryChecks.every(name=>receipt.checks.includes(name)),'projection suffix requires both actual native Back/Forward passes');}
+ const retainedNativeHistory=fromProjection?{receipt:nativeHistoryReceipt,checks:nativeHistoryChecks}:null;
  const historyPrefixChecks=['handback snapshot sees actual human edits','role locator and Enter submit locally','navigation keeps actual guest identity','old document refs refused','refusal does not break fresh snapshots'];
  const historyPrefixReceipt=fromHistory?process.env.BROWSER_HISTORY_PREFIX_RECEIPT:null;
  if(fromHistory){assert(fromHandback,'history suffix retains prior ownership/input receipts');const receipt=JSON.parse(fs.readFileSync(historyPrefixReceipt,'utf8'));assert(historyPrefixChecks.every(name=>receipt.checks.includes(name)),'history suffix requires actual five passed handback/navigation checks');}
@@ -329,6 +334,7 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
    proto.emit=function(name,...args){if(name==='message')record(this,'received',args[0]);return emit.call(this,name,...args);};
    proto.terminate=function(...args){if(isPrivate(this))add({direction:'terminate',stack:new Error('Fixture private Browser termination boundary').stack.split('\n').slice(0,12).join('\n')});return terminate.apply(this,args);};
   });
+  if(!fromProjection){
   await saveHistory('beforeBack');
   await page.locator('[data-on-click="br-back"]').first().click();
   const backReady=await waitNativeHistory('/one');await saveHistory('afterBack');
@@ -338,11 +344,19 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
   const forwardReady=await waitNativeHistory('/two');await saveHistory('afterForward');
   check('toolbar Forward navigates SAME actual guest',forwardReady);
   await page.waitForFunction(()=>document.querySelector('.browser-tab.on')?.textContent.includes('two'));
+  }
+  // Keep the failed actual title requirement and also check its address.
+  // Continuation opens one -> two solely as fresh setup; no settled history
+  // toolbar input or acceptance is replayed.
+  await page.waitForFunction(owner=>document.querySelector('.browser-tab.on')?.textContent.includes('two')&&document.querySelector(`[data-bfield="brurl:${owner}"]`)?.value.endsWith('/two'),threadId);
+  check('canonical Browser tabs and address reflect actual guest',(await inspect(id))!=null&&(await native()).some(v=>v.id===id&&v.url.endsWith('/two')));
   phase='remaining-browser';
   await page.locator('[data-on-click="br-reload"]').first().click();
   await page.reload();
   await page.waitForFunction(()=>document.documentElement.dataset.backplaneRemoteReady==='true');
   await page.locator(`[data-desktop-browser-owner="${threadId}"]`).waitFor();
+  await page.waitForFunction(owner=>document.querySelector('.browser-tab.on')?.textContent.includes('two')&&document.querySelector(`[data-bfield="brurl:${owner}"]`)?.value.endsWith('/two'),threadId);
+  check('renderer reconnect restores canonical Browser chrome',await page.locator('[data-on-click="br-select"]').count()===1);
   const retained=(await native()).find(v=>v.id===id);
   check('renderer reload re-presents existing guest',retained?.visible===true);
   const after=await inspect(id);
@@ -372,7 +386,7 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
   await page.screenshot({path:path.join(out,'shared-browser-chrome.png')});
   const pixels=await app.evaluate(async({webContents},id)=>(await webContents.fromId(id).capturePage()).toPNG().toString('base64'),id);
   fs.writeFileSync(path.join(out,'shared-browser-guest.png'),Buffer.from(pixels,'base64'));
-  const receipt={status:'PASS',checks,retainedPrefix:retained,retainedHumanPrefix:retainedHuman,retainedInputPrefix:retainedInput,retainedHistoryPrefix:retainedHistory,guestId:id,scope:'Actual Electron native guest + authenticated preview MCP + trusted human input; isolated controlled local page only',remaining:['physical manual input/IME','full Electron exit/relaunch cookie and tab restoration','remote machine browser attachment/reconnect','popup adoption (current guest policy denies unqualified popups)']};
+  const receipt={status:'PASS',checks,retainedPrefix:retained,retainedHumanPrefix:retainedHuman,retainedInputPrefix:retainedInput,retainedHistoryPrefix:retainedHistory,retainedNativeHistory,guestId:id,scope:'Actual Electron native guest + authenticated preview MCP + trusted human input; isolated controlled local page only',remaining:['physical manual input/IME','full Electron exit/relaunch cookie and tab restoration','remote machine browser attachment/reconnect','popup adoption (current guest policy denies unqualified popups)']};
   fs.writeFileSync(path.join(out,'shared-browser.json'),JSON.stringify(receipt,null,2)+'\n');
   return receipt;
  }catch(error){
@@ -395,7 +409,7 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
   }
   fs.writeFileSync(path.join(out,'ownership-wire.json'),JSON.stringify(wire,null,2)+'\n');
   fs.writeFileSync(path.join(out,'ownership-observation.json'),JSON.stringify({phase,ownership},null,2)+'\n');
-  fs.writeFileSync(path.join(out,'shared-browser.json'),JSON.stringify({status:'FAIL',checks,retainedPrefix:retained,retainedHumanPrefix:retainedHuman,retainedInputPrefix:retainedInput,retainedHistoryPrefix:retainedHistory,phase,error:error.stack,scope:'No deployment acceptance claimed'},null,2)+'\n');throw error;
+  fs.writeFileSync(path.join(out,'shared-browser.json'),JSON.stringify({status:'FAIL',checks,retainedPrefix:retained,retainedHumanPrefix:retainedHuman,retainedInputPrefix:retainedInput,retainedHistoryPrefix:retainedHistory,retainedNativeHistory,phase,error:error.stack,scope:'No deployment acceptance claimed'},null,2)+'\n');throw error;
  }
  finally{if(wireTap)await wireTap.detach().catch(()=>{});await site.close();}
 }
