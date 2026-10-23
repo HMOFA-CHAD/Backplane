@@ -11,6 +11,7 @@ import ../core/model.bend as M
 import ../core/signal.bend as SG
 import ../core/i18n.bend as I
 import ./dom.bend as D
+import ./sidebar-slot.bend as SS
 import ./usage-page.bend as UV
 import ./settings-menu.bend as SM
 import ./icon.bend as WI
@@ -3241,15 +3242,29 @@ def View.tour.cls(+u: U.Ui) -> String:
   View.tour.cls.k(U.Tour.on(u), U.Tour.target(1n, u))
 
 # the whole page
-def View.page.b(+lc: I.Loc, +bv: BI.View, u: U.Ui) -> D.Node:
+def View.page.b.sidebar(+lc: I.Loc, +bv: BI.View, u: U.Ui, sidebar: D.Node) -> D.Node:
   match u:
     case U.Ui{+st, +sel, +d, +l, +o, +on, +now, +ad, +pa, +v, +r, +w, +e, +note, +nf, +ob, +tr}:
       D.El{"div", "app", [D.At{"style", "--text-scale:" ++ U32.show(TS.Scale.of(st))}, D.At{"class", Bool.pick(String, pa, "app panel", "app") ++ Bool.pick(String, Bool.or(Bool.or(Bool.not(String.is_empty(sel)), U.Flag.get(o, "settings")), WB.WB.shown(bv)), " picked", "")
         ++ Bool.pick(String, String.eq(M.Setting.get(st, "ui.theme", ""), "light"), " light", "") ++ View.tour.cls(U.Ui{st, sel, d, l, o, on, now, ad, pa, v, r, w, e, note, nf, ob, tr})}],
-        D.Dom.cat([View.sidebar(lc, U.Ui{st, sel, d, l, o, on, now, ad, pa, v, r, w, e, note, nf, ob, tr}),
+        D.Dom.cat([sidebar,
           View.main.b(lc, U.Flag.get(o, "settings"), bv, U.Ui{st, sel, d, l, o, on, now, ad, pa, v, r, w, e, note, nf, ob, tr}, sel, List.length(&2, M.Project, U.Ui.projects(st)))],
           D.Dom.cat(View.aside.if(lc, pa, U.Str.get(nf, "view.kind:" ++ sel), U.Ui{st, sel, d, l, o, on, now, ad, pa, v, r, w, e, note, nf, ob, tr}),
             D.Dom.cat(View.picker(lc, U.Flag.get(o, "proj"), U.Ui{st, sel, d, l, o, on, now, ad, pa, v, r, w, e, note, nf, ob, tr}), D.Dom.cat(View.error(e), View.tour(lc, U.Ui{st, sel, d, l, o, on, now, ad, pa, v, r, w, e, note, nf, ob, tr})))))}
+
+def View.page.sidebar.node(reuse: Bool, +lc: I.Loc, u: U.Ui) -> D.Node:
+  match reuse:
+    case True{}: SS.Slot.placeholder()
+    case False{}: View.sidebar(lc, u)
+
+def View.page.b(+lc: I.Loc, +bv: BI.View, +u: U.Ui) -> D.Node:
+  View.page.b.sidebar(lc, bv, u, View.sidebar(lc, u))
+
+def View.page.signals.sidebar(+u: U.Ui, reuse: Bool) -> D.Node:
+  View.page.b.sidebar(U.Lang.loc(u), BI.BU.view(u), u, View.page.sidebar.node(reuse, U.Lang.loc(u), u))
+
+def View.page.sidebar(u: U.Ui, reuse: Bool) -> D.Node:
+  View.page.signals.sidebar(U.Side.with_signals(u), reuse)
 
 # the page in the device's language, looked up once here and passed down
 def View.page.signals(+u: U.Ui) -> D.Node:
