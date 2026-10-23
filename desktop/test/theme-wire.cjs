@@ -14,7 +14,7 @@ async function watchViews(page,{limit=600}={}){
  const keys=dict('keys'),words=dict('words'),cdp=await page.context().newCDPSession(page);
  const log=[],calls=new Map(),waiters=new Set();let seq=0,over=0;
  const short=v=>typeof v==='string'?v.slice(0,64):undefined;
- const note=e=>{e.n=++seq;if(log.length<limit)log.push(e);else over++;for(const w of [...waiters])w();};
+ const note=e=>{e.n=++seq;if(log.length>=limit){log.shift();over++;}log.push(e);for(const w of [...waiters])w();};
  for(const [name,dir] of [['Network.webSocketFrameSent','sent'],['Network.webSocketFrameReceived','received']])cdp.on(name,e=>{
   const at=Date.now();
   try{
@@ -24,7 +24,7 @@ async function watchViews(page,{limit=600}={}){
     const c={method:o.m,action:short(o.p?.action),value:VALUES.has(o.p?.action)?short(o.p?.value):undefined,target:short(o.p?.target?.kind)};
     calls.set(o.id,c);note({at,dir,id:o.id,...c});
    }else if(dir==='received'&&o?.t==='reply'&&calls.has(o.id)){
-    const c=calls.get(o.id),r=o.result||{};
+    const c=calls.get(o.id),r=o.result||{};calls.delete(o.id);
     note({at,dir,id:o.id,method:c.method,action:c.action,value:c.value,ok:o.ok!==false&&!o.error,error:short(o.error?.message||o.error),
      target:short(r.target?.kind),nextTarget:short(r.nextTarget?.kind),remoteReady:r.remoteReady===true});
    }else if(dir==='received'&&o?.t==='view.changed')note({at,dir,method:'view.changed'});

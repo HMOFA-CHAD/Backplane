@@ -57,6 +57,7 @@ const collect=()=>page.evaluate(()=>{const r=window.__themeStream;r.stop=true;r.
 const live=()=>page.evaluate(()=>{const m=document.querySelector('main[data-thread]'),row=m?.querySelector('[data-id="@live:tb"]'),idx=[...(row?.textContent||'').matchAll(/sample-(\d+)\((\d+)\)/g)];
  return{thread:m?.dataset.thread,live:!!row,stream:idx.length?idx[0][2]:'',newest:idx.length?Math.max(...idx.map(x=>+x[1])):-1};});
 async function round(n,theme,width,draft){
+ if(process.env.THEME_STREAM_PREFIX_RECEIPT){const p=JSON.parse(fs.readFileSync(process.env.THEME_STREAM_PREFIX_RECEIPT));assert.equal(p.stage,stage);const kept=p.rounds.find(r=>r.round===n&&r.theme===theme&&r.width===width);if(kept){assert(kept.liveAtReturn&&kept.ask&&kept.draftKept&&['palette','shrank','otherStream','stale','noStop'].every(k=>kept[k].length===0));rounds.push(kept);return;}}
  const narrow=width<=760,name=`${theme}-${width}`;step='stream-'+name;
  // a new reply in tb, seen growing before anything else happens
  await go('tb',narrow);await page.waitForFunction(()=>!document.querySelector('main[data-thread="tb"] [data-id="@live:tb"]'));
