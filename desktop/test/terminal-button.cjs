@@ -9,7 +9,8 @@ fs.mkdirSync(out, { recursive: true });
 const baseline = process.env.TERMINAL_BASELINE === '1';
 const missing = process.env.TERMINAL_MISSING_SHELL === '1';
 const workspace = process.env.TERMINAL_WORKSPACE === '1';
-const resumeWorkspace = workspace && process.env.TERMINAL_WORKSPACE_RESUME === '1';
+const resumeBindings = workspace && process.env.TERMINAL_BINDINGS_RESUME === '1';
+const resumeWorkspace = workspace && (resumeBindings || process.env.TERMINAL_WORKSPACE_RESUME === '1');
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'backplane-terminal-check-'));
 const project = path.join(home, 'project root'), cwd = path.join(project, "thread's worktree");
 fs.mkdirSync(cwd, { recursive: true });
@@ -36,10 +37,10 @@ const binary = path.join(stage, 'payload/backplane-serve'), web = path.join(stag
 const service = new Service({ home, binary, web, expectedVersion: info.version });
 const quote = s => "'" + s.replaceAll("'", "'\\''") + "'";
 const prefix = { mode: missing ? 'missing-shell' : baseline ? 'baseline-output-dropped' : workspace ? 'workspace-keyboard-floating-terminal' : 'terminal-button',
-  stage, source: info.commit, version: info.version, cwd, project, home, shell: env.SHELL, resumeWorkspace, automation: 'off', telemetry: 'off' };
+  stage, source: info.commit, version: info.version, cwd, project, home, shell: env.SHELL, resumeWorkspace, resumeBindings, automation: 'off', telemetry: 'off' };
 fs.writeFileSync(path.join(out, 'START.json'), JSON.stringify(prefix, null, 2));
 console.log(JSON.stringify({ state: 'started', ...prefix }));
-let app, page, step = 'service-start'; const errors = [], wire = [];
+let app, page, step = 'service-start', saveBindingEvidence; const errors = [], wire = [], bindings = {};
 // Decode synthetic-fixture frames using the product codec; retain only state
 // metadata. No command text, terminal bytes, transcript, headers or auth.
 async function captureWorkspaceState(page) {
@@ -120,7 +121,7 @@ async function captureWorkspaceState(page) {
         await page.waitForFunction(marker => document.querySelector('.term-pane')?.textContent.includes(marker), marker);
       }
     }
-    if (workspace) {
+    if (workspace && !resumeBindings) {
       step = 'workspace-session-navigation';
       // The new panel stays attached to the same real shell across navigation.
       const shell = page.locator('#term');
@@ -184,22 +185,65 @@ async function captureWorkspaceState(page) {
       await blur();await page.keyboard.press('Control+Shift+U');
       await page.locator('.bot-tabs [data-value="chat"].on').waitFor();
       await page.locator(`[data-on-click="select"][data-value="${thread}"]`).first().click();await page.locator('[data-id="hello"]').waitFor();
-      await blur();await page.keyboard.press('Meta+`');await page.locator('#term').waitFor({ state: 'detached' });
-      await page.keyboard.press('Meta+`');await page.locator('#term').waitFor();
-      await page.keyboard.press('Control+Shift+P');await page.locator('#workspace-query').waitFor();
-      await page.locator('#workspace-query').fill('Browser');await page.waitForFunction(() => document.querySelectorAll('.workspace-command').length === 1);
-      await page.screenshot({ path: path.join(out, 'workspace-palette.png') });
-      await page.keyboard.press('Escape');
     }
+  }
+  if (workspace) {
+    step = 'workspace-terminal-bindings';
+    // Cached message content is not an authoritative readiness receipt.
+    await page.waitForFunction(id => document.documentElement.dataset.backplaneRemoteReady === 'true' && document.querySelector('main[data-thread]')?.dataset.thread === id, thread);
+    await page.locator('textarea:focus,input:focus').evaluateAll(xs => xs.forEach(el => el.blur()));
+    const nativeWindow = await app.browserWindow(page);
+    await nativeWindow.evaluate(win => {
+      win.__terminalBindingKeys = [];
+      win.webContents.on('before-input-event', (_event, input) => {
+        if (win.__terminalBindingKeys.length >= 32 || !(input.meta || input.key === 'Meta' || input.control && input.key.toLowerCase() === 'j')) return;
+        win.__terminalBindingKeys.push({ at:Date.now(),type:input.type,key:input.key,code:input.code,meta:input.meta,control:input.control,shift:input.shift,alt:input.alt,isComposing:input.isComposing });
+      });
+    });
+    await page.evaluate(() => {
+      window.__terminalBindingKeys = [];
+      for (const type of ['keydown','keyup']) window.addEventListener(type, event => {
+        if (window.__terminalBindingKeys.length >= 32 || !(event.metaKey || event.key === 'Meta' || event.ctrlKey && event.key.toLowerCase() === 'j')) return;
+        window.__terminalBindingKeys.push({ at:Date.now(),type:event.type,key:event.key,code:event.code,meta:event.metaKey,control:event.ctrlKey,shift:event.shiftKey,alt:event.altKey,isComposing:event.isComposing,defaultPrevented:event.defaultPrevented,
+          ready:document.documentElement.dataset.backplaneRemoteReady,focused:document.hasFocus() });
+      }, true);
+    });
+    saveBindingEvidence = async () => {
+      const native = await nativeWindow.evaluate(win => win.__terminalBindingKeys).catch(() => []);
+      const renderer = await page.evaluate(() => window.__terminalBindingKeys).catch(() => []);
+      fs.writeFileSync(path.join(out, 'KEY-STATE.json'), JSON.stringify({ ...bindings, native, renderer }, null, 2));
+    };
+    await page.keyboard.press('Meta+`');
+    bindings.superGraveHide = await page.locator('#term').waitFor({ state:'detached',timeout:1500 }).then(() => true, () => false);
+    await saveBindingEvidence();
+    if (bindings.superGraveHide) {
+      await page.keyboard.press('Meta+`');await page.locator('#term').waitFor();
+      bindings.superGraveReopen = true;
+    }
+    // Always establish the documented fallback and palette even when the
+    // desktop/native pipeline never delivers the Super chord to the renderer.
+    step = 'workspace-terminal-fallback';
+    await page.keyboard.press('Control+j');await page.locator('#term').waitFor({ state:'detached' });
+    await page.keyboard.press('Control+j');await page.locator('#term').waitFor();
+    bindings.ctrlJHideReopen = true;
+    step = 'workspace-browser-palette';
+    await page.keyboard.press('Control+Shift+P');await page.locator('#workspace-query').waitFor();
+    await page.locator('#workspace-query').fill('Browser');await page.waitForFunction(() => document.querySelectorAll('.workspace-command').length === 1);
+    bindings.browserPaletteSearch = true;
+    await page.screenshot({ path:path.join(out,'workspace-palette.png') });
+    await page.keyboard.press('Escape');await page.locator('#workspace-query').waitFor({ state:'detached' });
+    await saveBindingEvidence();
+    assert.equal(bindings.superGraveHide,true,'Super+grave did not toggle; inspect KEY-STATE for native/renderer delivery; Ctrl+J and Browser palette receipts are retained');
   }
   fs.writeFileSync(path.join(out, 'WIRE-STATE.json'), JSON.stringify(wire, null, 2));
   await page.screenshot({ path: path.join(out, 'terminal.png') });
   assert.deepEqual(errors, []);
   const result = { state: 'passed', mode: missing ? 'missing-shell' : baseline ? 'baseline-output-dropped' : workspace ? 'workspace-keyboard-floating-terminal' : 'terminal-button', stage, source: info.commit,
-    version: info.version, cwd, project, home, errors, resumeWorkspace, automation: 'off', telemetry: 'off' };
+    version: info.version, cwd, project, home, errors, resumeWorkspace, resumeBindings, bindings, automation: 'off', telemetry: 'off' };
   fs.writeFileSync(path.join(out, 'RESULT.json'), JSON.stringify(result, null, 2)); console.log(JSON.stringify(result));
 } catch (error) {
   console.error(error); process.exitCode = 1;
+  if (saveBindingEvidence) await saveBindingEvidence().catch(() => {});
   fs.writeFileSync(path.join(out, 'WIRE-STATE.json'), JSON.stringify(wire, null, 2));
   // Structural evidence only: never copy terminal text, commands, tokens or full DOM.
   const display = page ? await page.evaluate(() => ({
