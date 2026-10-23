@@ -2,6 +2,7 @@ import Base
 import ./json.bend as J
 import ./acp.bend as AC
 import ./agy.bend as AG
+import ./opencode.bend as OC
 
 # Muse Code over MSP (the Muse Session Protocol: JSON-RPC over stdio,
 # `muse serve`), one process per turn: initialize, the initialized note,
@@ -127,16 +128,16 @@ def Msp.hint(+msg: String) -> String:
 
 def Msp.fail(a: AC.Acp, +msg: String) -> AC.AcpOut:
   match a:
-    case AC.Acp{s, b, _}:
-      AC.AcpOut{AC.Acp{s, b, True{}}, Nil{}, [AC.Acp.failed(Msp.hint(msg))], Nil{}}
+    case AC.Acp{s, b, _, k}:
+      AC.AcpOut{AC.Acp{s, b, True{}, k}, Nil{}, [AC.Acp.failed(Msp.hint(msg))], Nil{}}
 
 def Msp.none(a: AC.Acp) -> AC.AcpOut:
   AC.AcpOut{a, Nil{}, Nil{}, Nil{}}
 
 def Msp.opened(a: AC.Acp, +t: MspTurn, +sid: String) -> AC.AcpOut:
   match a:
-    case AC.Acp{_, b, d}:
-      AC.AcpOut{AC.Acp{sid, b, d}, Msp.say.k(String.is_empty(Msp.session(t)), t, sid), [AC.Acp.event("thread.started", [J.KV{"thread_id", J.Str{sid}}])], Nil{}}
+    case AC.Acp{_, b, d, k}:
+      AC.AcpOut{AC.Acp{sid, b, d, k}, Msp.say.k(String.is_empty(Msp.session(t)), t, sid), [AC.Acp.event("thread.started", [J.KV{"thread_id", J.Str{sid}}])], Nil{}}
 
 # a failed initialize, open or turn/start ends the turn; the mode's and the
 # approvals' answers say nothing that matters
@@ -223,8 +224,8 @@ def Msp.todos(xs: List<&2, J.Json>) -> List<&2, J.Json>:
 
 def Msp.done(a: AC.Acp) -> AC.Acp:
   match a:
-    case AC.Acp{s, b, _}:
-      AC.Acp{s, b, True{}}
+    case AC.Acp{s, b, _, k}:
+      AC.Acp{s, b, True{}, k}
 
 def Msp.ended(ok: Bool, a: AC.Acp, +p: J.Json) -> AC.AcpOut:
   match ok:
@@ -251,7 +252,7 @@ def Msp.note.k(i: Nat, a: AC.Acp, +p: J.Json) -> AC.AcpOut:
 
 def Msp.sid(a: AC.Acp) -> String:
   match a:
-    case AC.Acp{s, _, _}:
+    case AC.Acp{s, _, _, _}:
       s
 
 # only this session's events, once it is open (a subagent's session and a
@@ -376,7 +377,8 @@ def Msp.mode.k(i: Nat) -> String:
 # ----------------------------
 # Grok over ACP, Muse over MSP, Google's Antigravity agent over ACP
 # (agy.bend, through its runner script) or opencode over ACP (through
-# `env`, its config in OPENCODE_CONFIG_CONTENT): the same process
+# `env`, its config in OPENCODE_CONFIG_CONTENT; its own resume, tool
+# calls and failures in opencode.bend): the same process
 # handling, its own lines, command and words.
 
 type Proto is Data:
@@ -394,7 +396,7 @@ def Proto.line(a: AC.Acp, +p: Proto, line: String) -> AC.AcpOut:
     case PAgy{t}:
       AG.Agy.line(a, t, line)
     case POc{t}:
-      AC.Acp.line(a, t, line)
+      OC.Ocp.line(a, t, line)
 
 def Proto.init(p: Proto) -> String:
   match p:

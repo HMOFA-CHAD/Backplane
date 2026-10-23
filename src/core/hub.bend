@@ -3258,10 +3258,12 @@ def Codex.todo(todo: Bool, +thread: String, +now: Nat, +it: J.Json) -> Step:
     case False{}:
       Step.none()
 
-# item.started and item.updated share a case: only todo lists are read there
+# item.started and item.updated share a case: only todo lists are read
+# there; "notice" is a provider's word to the person, neither the agent's
+# reply nor a failure (opencode's renewed session, opencode.bend)
 def Codex.kind(+t: String) -> Nat:
-  Bool.pick(Nat, String.eq(t, "tool.done"), 6n, Bool.pick(Nat, Bool.or(String.eq(t, "item.started"), String.eq(t, "item.updated")), 5n,
-    C.Codec.pos(["thread.started", "item.completed", "turn.completed", "turn.failed", "item.delta"], t)))
+  Bool.pick(Nat, String.eq(t, "notice"), 7n, Bool.pick(Nat, String.eq(t, "tool.done"), 6n, Bool.pick(Nat, Bool.or(String.eq(t, "item.started"), String.eq(t, "item.updated")), 5n,
+    C.Codec.pos(["thread.started", "item.completed", "turn.completed", "turn.failed", "item.delta"], t))))
 
 def Codex.line.k(i: Nat, +s: M.State, +thread: String, +now: Nat, +o: J.Json) -> Step:
   match i:
@@ -3278,6 +3280,8 @@ def Codex.line.k(i: Nat, +s: M.State, +thread: String, +now: Nat, +o: J.Json) ->
       Codex.todo(String.eq(J.Json.get_str(J.Json.get_obj(o, "item"), "type", ""), "todo_list"), thread, now, J.Json.get_obj(o, "item"))
     case 6n:
       Step.outs([Steps.out(thread, Hub.cwd(s, Hub.thread(s, thread)), "")])
+    case 7n:
+      Step{[M.ActivityLogged{thread, Hub.id("n", now, Hub.seq(s)), "info", "session", J.Json.get_str(o, "message", ""), now}], Nil{}}
     case 3n:
       Step{[M.ActivityLogged{thread, Hub.id("e", now, Hub.seq(s)), "error", Hub.provider(Hub.thread(s, thread)), J.Json.get_str(J.Json.get_obj(o, "error"), "message", J.Json.get_str(o, "message", "turn failed")), now}, M.TurnChanged{thread, M.Failed{}, now}], Nil{}}
     case _:

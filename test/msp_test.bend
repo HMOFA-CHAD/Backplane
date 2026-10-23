@@ -52,9 +52,9 @@ def params(+line: String) -> J.Json:
 
 def done(a: A.Acp) -> String:
   match a:
-    case A.Acp{_, _, True{}}:
+    case A.Acp{_, _, True{}, _}:
       "done"
-    case A.Acp{_, _, False{}}:
+    case A.Acp{_, _, False{}, _}:
       "open"
 
 def yes(b: Bool) -> String:

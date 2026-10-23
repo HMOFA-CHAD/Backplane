@@ -169,6 +169,7 @@ import ./src/core/release.bend as REL
 import ./src/core/review.bend as RV
 import ./src/core/slash.bend as SL
 import ./src/core/agy.bend as AGY
+import ./src/core/opencode.bend as OC
 import ./src/core/told.bend as TLD
 import ./src/core/rules.bend as RLS
 import ./src/core/tboard.bend as TBD
@@ -11604,3 +11605,29 @@ law triage_unknown_run_quiet:
   for conv: String
   for text: String
   {H.Run.triage.got(None{}, s, now, bot, conv, text) == H.Step.none() : H.Step}
+
+# opencode (src/core/opencode.bend): a session opencode no longer has, or
+# one made in another folder, opens afresh instead of failing every turn
+law oc_lost_session:
+  {OC.Ocp.lost("session not found: ses_1") == True{} : Bool}
+
+law oc_other_folder_session:
+  {OC.Ocp.lost("session ses_1 does not belong to cwd: /p") == True{} : Bool}
+
+# a tool call reads as what it works on, and a shell's command once
+law oc_tool_names_target:
+  {OC.Ocp.say.k("read", "src/a.bend") == "read src/a.bend" : String}
+
+law oc_tool_command_once:
+  {OC.Ocp.say.k("ls -la src", "src") == "ls -la src" : String}
+
+# a provider's notice is an info row for the person: never the agent's
+# reply and never a failure (opencode's renewed session)
+law oc_notice_kind:
+  {H.Codex.kind("notice") == 7n : Nat}
+
+law oc_notice_info:
+  for s: M.State
+  for th: String
+  for now: Nat
+  {H.Codex.line.k(7n, s, th, now, J.Json.obj([J.KV{"message", J.Str{"m"}}])) == H.Step{[M.ActivityLogged{th, H.Hub.id("n", now, H.Hub.seq(s)), "info", "session", "m", now}], Nil{}} : H.Step}
