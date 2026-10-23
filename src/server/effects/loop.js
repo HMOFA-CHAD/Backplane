@@ -1138,6 +1138,23 @@ async function bp_idle(io) {
   bp_due(io);
 }
 
+// A slow synchronous effect or continuation blocks every socket and timer.
+// Keep only fixed phase names, compiled effect tags and numeric counters;
+// never arguments, results, addresses or application content. At most 64
+// records per process, emitted only for a turn of at least one second.
+let bp_loop_slow_count = 0;
+function bp_loop_slow(io, phase, effect, began, ended) {
+  const ms = ended - began;
+  if (ms < 1000 || bp_loop_slow_count >= 64) return;
+  bp_loop_slow_count++;
+  const tag = typeof effect === "string" && /^[A-Za-z0-9_./-]{1,96}$/.test(effect) ? effect : "unknown";
+  try {
+    console.error("[bp-loop] " + JSON.stringify({ phase, effect: tag,
+      at: Date.now(), durationMs: Math.round(ms), process: process.pid,
+      runnable: io.runs.length, waits: io.waits.length, pending: io.pend }));
+  } catch { /* A diagnostic sink must not terminate the scheduler. */ }
+}
+
 async function bp_run(m) {
   const io = { runs: [], live: 0, waits: [], pend: 0, wake: null,
     timer: undefined, tick: 1, exit: null };
@@ -1173,14 +1190,16 @@ async function bp_run(m) {
       slice = performance.now() + 4;
       continue;
     }
-    if ((n & 63) === 0 && performance.now() >= slice) {
+    if (performance.now() >= slice) {
       io.tick = 1;
       await new Promise((res) => setImmediate(res));
       bp_due(io);
       slice = performance.now() + 4;
     }
     const s = io.runs.shift();
+    const started = performance.now();
     let op = s.fun(s.arg);
+    bp_loop_slow(io, "dispatch", op?.$, started, performance.now());
     while (op !== undefined) {
       if (op.$ === "Emit") {
         io.live -= 1;
@@ -1195,11 +1214,25 @@ async function bp_run(m) {
       if (run === undefined) {
         throw "bend: no effect registers " + op.$;
       }
+      const effect = op.$, began = performance.now();
       const x = run(...op.args, op.kont);
+      const ran = performance.now();
+      bp_loop_slow(io, "effect", effect, began, ran);
       if (x === undefined) {
         break;
       }
       op = op.kont(x);
+      const continued = performance.now();
+      bp_loop_slow(io, "continuation", effect, ran, continued);
+      if (op !== undefined && continued >= slice) {
+        // A ready channel/read can keep this inner chain alive indefinitely.
+        // Queue its *next* operation without replaying the completed effect
+        // or adding a live computation. The outer turn polls due timers and
+        // lets Bun deliver socket callbacks before running more work.
+        const next = op;
+        io_push(() => next, null, false);
+        break;
+      }
     }
   }
 }
