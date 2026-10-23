@@ -30,6 +30,14 @@ defs with the same answers computed natively:
   request with contains, and a 16 KB terminal paste held the hub 1.3 s, 64 KB
   for 12 s.
 
+Server-only `Cbor.Enc.text(s, acc)` writes the same code-point UTF-8 bytes
+straight onto its reversed byte accumulator. It counts UTF-8 width with a
+native iteration first, avoiding the reference encoder's temporary byte list
+and its reversal/copy. Lone surrogates remain their original three bytes;
+TextEncoder would replace them and is deliberately not used. The original
+Enc.head writes the length, so header limits and byte order stay unchanged.
+No decoder, dictionary, wire format, cache, client or action state changes.
+
 Each is found by its shape and must be found exactly once, else the build
 stops (a new Bend that emits them otherwise needs this looked at again).
 With --server (scripts/build-js.sh: one bundle) that holds for every def;
@@ -42,6 +50,7 @@ them).
 """
 import re
 import sys
+from pathlib import Path
 
 I = r"[A-Za-z0-9_$]+"
 
@@ -88,6 +97,13 @@ HAS = re.compile(
     r'function (' + I + r')\((' + I + r'),(' + I + r'),' + I + r'\)\{(?=let (' + I + r')=0;for\(;;\)switch\(\4\)\{case 0:\{let (' + I + r')=\2,(' + I + r')=\3;if\(\5===""\)return ' + I + r'\(\6\);else\{let ' + I + r'=\5\.codePointAt\(0\)>65535\?)'
 )
 
+# The unchanged pure Enc.text is one call to Enc.u8 then Enc.text.k. Keep
+# both its namespaced identity and its exact emitted shape as build fences.
+CBOR_TEXT = re.compile(
+    r'function (' + I + r'\$058Enc\$text\$)\((' + I + r'),(' + I + r')\)\{'
+    r'(?=return ' + I + r'\$058Enc\$text\$k\$\(' + I + r'\$058Enc\$u8\$\(\2,\{\$:"[^"\n]+\.U8",n:0,rev:\{\$:"Nil"\}\}\),\3\)\})'
+)
+
 args = sys.argv[1:]
 server = "--server" in args
 files = [a for a in args if a != "--server"]
@@ -100,6 +116,15 @@ for name, rx, required in (("String.cmp", CMP, True), ("Map.bit.go", BIT, True),
     if n != 1 and (required or n > 1):
         sys.exit(f"js-native: {name} found {n} times, not once")
     found[name] = n
+found["Cbor.Enc.text"] = sum(len(CBOR_TEXT.findall(s)) for s in srcs.values()) if server else 0
+if server and found["Cbor.Enc.text"] != 1:
+    sys.exit(f"js-native: Cbor.Enc.text found {found['Cbor.Enc.text']} times, not once")
+if server:
+    for s in srcs.values():
+        for match in CBOR_TEXT.finditer(s):
+            head = match.group(1).replace("$058Enc$text$", "$058Enc$head$")
+            if len(re.findall(r"function " + re.escape(head) + r"\(", s)) != 1:
+                sys.exit("js-native: Cbor.Enc.text needs its exact Enc.head once")
 for f, s in srcs.items():
     hit = CMP.search(s) or BIT.search(s) or SPLIT.search(s) or LEN.search(s) or PRE.search(s) or HAS.search(s)
     if not hit:
@@ -111,6 +136,10 @@ for f, s in srcs.items():
     s = SPLIT.sub(lambda m: m.group(0) + 'return __bpSplit(%s,%s);' % (m.group(2), m.group(3)), s)
     s = PRE.sub(lambda m: m.group(0) + 'return __bpPre(%s,%s);' % (m.group(2), m.group(3)), s)
     s = HAS.sub(lambda m: m.group(0) + 'return __bpHas(%s,%s);' % (m.group(2), m.group(3)), s)
+    if server and CBOR_TEXT.search(s):
+        s = CBOR_TEXT.sub(lambda m: m.group(0) + 'return __bpCborText(%s,%s,%s);' %
+            (m.group(2), m.group(3), m.group(1).replace("$058Enc$text$", "$058Enc$head$")), s)
+        s = Path(__file__).with_name("js-cbor-text.js").read_text(encoding="utf-8") + "\n" + s
     # (a module's imports may come after it: they are hoisted)
     s = HELPERS + s
     open(f, "w", encoding="utf-8").write(s)
@@ -119,7 +148,8 @@ for f, s in srcs.items():
 outs = "".join(open(f, encoding="utf-8").read() for f in files)
 for name, call in (("String.cmp", "snd:{$:__bpOrd("), ("Map.bit.go", "snd:__bpBit("),
                    ("String.split", "return __bpSplit("), ("List.length", 'x.$!=="Nil";x=x.tail)n++;return '),
-                   ("String.starts_with", "return __bpPre("), ("String.contains", "return __bpHas(")):
+                   ("String.starts_with", "return __bpPre("), ("String.contains", "return __bpHas("),
+                   ("Cbor.Enc.text", "return __bpCborText(")):
     n = outs.count(call)
     if n != found[name]:
         sys.exit(f"js-native: {name}'s native body is in the output {n} times, not {found[name]}")
