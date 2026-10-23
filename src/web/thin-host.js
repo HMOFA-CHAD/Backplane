@@ -199,14 +199,20 @@ export class ThinHost {
     if (!original || original.operation) return false;
     return this.flush(this.client.request(this.hub, 'view.cancel', { requestId }));
   }
+  uploadPending() {
+    return ['attach-up', 'attach-end'].includes(this.pending.get(this.active)?.operation?.action);
+  }
   update() {
     if (!this.ready) return false;
     const link = this.client.links.get(this.hub);
+    // A background refresh must not retire an upload's admission/completion
+    // receipt. Refresh once that upload action has settled.
+    if (this.uploadPending()) { link.invalidated = true;return true; }
     return this.flush(this.client.request(this.hub, 'view.update', { session: requestSession(this.session, false, this.target), anchor: this.api.anchor(), viewRevision: link.viewRevision }));
   }
   receive(envelope) {
     if (envelope?.t === 'view.changed') {
-      if (this.ready) this.flush(this.client.changed(this.hub, envelope, requestSession(this.session, false, this.target), this.api.anchor()));
+      if (this.ready) this.flush(this.client.changed(this.hub, envelope, requestSession(this.session, false, this.target), this.api.anchor(), this.uploadPending()));
       return true;
     }
     if (envelope?.t !== 'reply') return false;
