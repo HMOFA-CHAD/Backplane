@@ -1,5 +1,7 @@
 #!/bin/sh
-# Run every test program. A test prints lines "ok ..." or "FAIL ..." and the
+# Run the small required regression set. TEST_FULL=1 explicitly selects the
+# legacy full suite; it is not the default local/deploy gate. A test prints
+# lines "ok ..." or "FAIL ..." and the
 # script fails when any FAIL appears or a test exits non-zero.
 #
 # Tests now run in parallel (TEST_JOBS at a time), each exactly as
@@ -58,6 +60,26 @@ for t in test/*_test.bend; do
 done
 
 tests=$all_tests
+selected=0
+if [ "${TEST_FULL:-0}" != 1 ] && [ -f scripts/fast-tests.txt ]; then
+  tests=$(sed 's/#.*//' scripts/fast-tests.txt)
+  selected=1
+fi
+if [ -n "${TEST_FILES:-}" ]; then tests=$TEST_FILES; selected=1; fi
+if [ "$selected" = 1 ]; then
+  chosen=""
+  for t in $tests; do
+    case " $all_tests " in *" $t "*) ;; *) echo "test.sh: unknown selected test: $t" >&2; exit 2 ;; esac
+    case " $chosen " in *" $t "*) echo "test.sh: duplicate selected test: $t" >&2; exit 2 ;; esac
+    chosen="$chosen $t"
+  done
+  [ -n "$chosen" ] || { echo "test.sh: empty required test set" >&2; exit 2; }
+  tests=$chosen
+  # One compiler at a time: the measured focused cases fit ~5 GiB, rather
+  # than two concurrent compilers exceeding a 10 GiB scope.
+  jobs=1
+  echo "test.sh: fast required set ($(printf '%s\n' $tests | wc -l | tr -d ' ') files); 120s budget"
+fi
 if [ "${TEST_SHARD_COUNT:-1}" -gt 1 ]; then
   tests=$(python3 scripts/test-shard.py scripts/test-timings.txt "${TEST_SHARD:?TEST_SHARD_COUNT is set but TEST_SHARD is not}" "$TEST_SHARD_COUNT" $all_tests)
   tests=" $tests"
@@ -155,5 +177,5 @@ for t in $tests; do
   i=$(( i + 1 ))
 done
 # every test passed, unsharded: recorded for these inputs (scripts/verified.sh)
-if [ $status = 0 ] && [ "${TEST_SHARD_COUNT:-1}" -le 1 ]; then scripts/verified.sh mark test "$vkey" || true; fi
+if [ $status = 0 ] && [ "$selected" = 0 ] && [ "${TEST_SHARD_COUNT:-1}" -le 1 ]; then scripts/verified.sh mark test "$vkey" || true; fi
 exit $status

@@ -61,10 +61,32 @@ python3 scripts/local.py rollback /absolute/path/to/build/local/STAGE
 Keep the installed local stage until its successor is accepted; it holds both
 the active desktop and rollback. Do not delete it as a disposable worktree build.
 
-The combined CI controller takes one machine-wide lock before admission,
-reserves 16 GiB/two cores through `bp-admit`, runs two test workers at most and
+The combined CI controller takes one machine-wide lock, admits one phase at a
+time through `bp-admit --no-wait`, runs two test workers at most and
 records every gate's elapsed seconds and reused input key in
-`build/local-ci/TIME/RESULT.json`. Proof keys cover the actual import closure,
+`build/local-ci/TIME/RESULT.json`. An unavailable local reservation immediately
+uses Boat under its existing opt-in/budget controls; it never waits indefinitely
+or dispatches GitHub CI. A blocked build emits the payload on Boat, verifies its
+source/compiler input key and returned hashes, then packages/tests the desktop
+locally. Cheap Node guards and the focused Bend check can also split serially
+across local/Boat. A completed phase is never duplicated. Initial per-phase
+ceilings are explicitly provisional (focused 6, checker 16, proof/build 12,
+fast tests 6 GiB; explicit two-worker legacy tests 12 GiB after a measured 10 GiB scope OOM); successful local measurements replace them with the
+observed aggregate peak plus 20% rounded to GiB. A serial remote checker can
+use its measured process peak plus 64 MiB of helper allowance, then that same
+20% margin. Warm cache hits never lower a previously measured cold peak.
+The checker ceiling is based
+on the prior manifest OOM record, not a claim about build RAM. Headroom stays
+intact; no application is stopped to make a reservation fit.
+
+`*.resources.json` records phase wall time and maximum process RSS, plus the
+aggregate admission-scope peak for local phases. The stage's `measurements/`
+separates Bend emit, stamping/minification, Bun compile/runtime embedding, web
+codegen and desktop packaging. A reused emit has no fresh compiler peak. Bun
+embeds its runtime; this path has no separate C link. Test timing output names
+the expensive files rather than attributing test cost to the build. The
+admission wrapper must support `--no-wait`; otherwise code phases use Boat.
+Proof keys cover the actual import closure,
 compiler/libraries and runner; test keys also include JS/Python drivers. A
 changed input, corrupted record, incomplete run or failure cannot create a pass.
 The build stage is always recreated and inspected, even when other gates reuse passes.
@@ -97,3 +119,9 @@ allowed on translucent edges. Native macOS/Windows packaging remains untested.
 The shared phone bridge is built or reused by its exact inputs in the same acceptance sequence; Android Kotlin is compiled when an SDK is available. iOS native
 builds require a Mac; Android native builds require an SDK. Linux screenshots
 at phone width qualify the web layout, not native phone binaries.
+
+The local deployment target is at most 120 seconds end to end: invocation/source change through queue/transfer, changed-target build, staging and safe restart until the exact service is listening and the requested desktop/web is available. Report cold, warm and UI-only paths separately. Full check/proof/test qualification is a separate coordinated workflow; an unfinished or failed required gate is never waived to meet the iteration target. The earlier ~85-second sum of separately measured build and restart is an estimate, not an end-to-end pass.
+
+The required default regression set is now eight files in `scripts/fast-tests.txt`, removing 253 of the previous 261 programs from the routine gate. It uses one compiler and a 120-second execution budget. The previous full run was cancelled at the user's explicit direction; it is not a full-suite pass. `TEST_FULL=1 scripts/test.sh` is the explicit legacy suite. A selected pass never creates a whole-suite verified receipt. Existing laws remain unchanged.
+
+The reduced eight-file gate passed in 69.322s (71.958s including controller overhead), measured with one compiler. Its admission-scope peak was 5.395 GiB; largest-process RSS was 5.399 GiB, both below the 6 GiB cap. This is a selected regression pass, not a new full-suite pass.

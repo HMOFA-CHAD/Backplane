@@ -155,12 +155,13 @@ export class ThinViews {
     this.calls.set(id, call);
     return { id, cmds: [this.api.send(hub, { id, m: method, p })] };
   }
-  changed(hub, e, session, anchor) {
+  changed(hub, e, session, anchor, defer = false) {
     const l = this.links.get(hub);
     if (!l || !record(e) || e.t !== 'view.changed' || e.version !== 1 || e.generation !== l.greeting.generation ||
         e.epoch !== l.greeting.epoch || e.viewId !== l.viewId || !sameTarget(e.target, l.target) ||
         !bounded(e.viewRevision, 32) || utf8Bytes(JSON.stringify(e)) > 1024) return { ignored: true, cmds: [] };
     if (e.viewRevision === l.viewRevision) return { ignored: true, cmds: [] };
+    if (defer) { l.invalidated = true; return { coalesced: true, cmds: [] }; }
     return this.request(hub, 'view.update', { session, anchor, viewRevision: l.viewRevision });
   }
   retireUpdate(call) {

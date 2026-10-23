@@ -39,6 +39,17 @@ test('two selected PNGs are sequential, keep exact bodies and each settle once i
  assert.deepEqual(f.requests.map(r=>r.options.body.body),['bytes:one.png','bytes:two.png']);
  assert.equal(f.getSession().drafts['@att:A'],'/A/one.png\n/A/two.png');assert.equal(f.getSession().route.tab,'chat');assert.equal(f.getSession().drafts.B,'other draft');assert.equal(f.completions.length,2);
 });
+test('background refresh during upload admission cannot strand the second pasted image',{timeout:1000},async()=>{
+ const f=await fixture(),p=f.batch(['one.png','two.png']);
+ const first=f.sent.at(-1);f.host.update();assert.equal(f.sent.at(-1),first);
+ await f.admit('one.png');await f.finish(0,{thread:'A',attached:'/A/one.png'});
+ const second=f.sent.at(-1);assert.equal(second.p.action,'attach-up');
+ f.host.receive({t:'view.changed',version:1,generation:'7',epoch:'e',viewId:'view',target:second.p.target,viewRevision:'2'});
+ assert.equal(f.sent.at(-1),second);
+ await f.admit('two.png');assert.equal(f.requests.length,2);
+ await f.finish(1,{thread:'A',attached:'/A/two.png'});await p;
+ assert.equal(f.getSession().drafts['@att:A'],'/A/one.png\n/A/two.png');
+});
 test('navigation retires old HTTP completion and remaining batch without retargeting or erasing newer empty draft',{timeout:1000},async()=>{
  const f=await fixture(),p=f.batch(['one.png','two.png']);await f.admit('one.png');f.host.request('select','B');f.host.receive(f.reply());f.host.request('draft','');
  await f.finish(0,{thread:'A',attached:'/A/one.png'});await p;

@@ -156,10 +156,12 @@ build_web_dist() {
   if [ -n "$wkey" ] && [ -f "$wcache/$wkey.tar" ] && mkdir -p dist/web && tar -xf "$wcache/$wkey.tar" -C dist/web; then
     touch "$wcache/$wkey.tar"
     say "web client reused ($wkey)"
+    mkdir -p build
+    printf '{"state":"reused","peak_rss_kib":null}\n' > build/web-metrics.json
     return 0
   fi
   rm -rf dist/web
-  bend src/web/index.html -o dist/web >/dev/null
+  python3 scripts/local-phase.py --record build/web-metrics.json -- bend src/web/index.html -o dist/web >/dev/null
   python3 scripts/js-unmarshal.py ../core/client.Ui dist/web/chunk-*.js
   python3 scripts/js-native.py dist/web/chunk-*.js
   cp src/web/sw.js dist/web/sw.js
@@ -207,14 +209,14 @@ build_dist() {
   # holds both (15 GB: measured 14.8 together), else after it
   if [ "$(mem_budget)" -lt 15 ]; then
     say "the hub, then the web (a $(mem_budget) GB budget)"
-    BACKPLANE_VERSION_STAMP=$ver BACKPLANE_COMMIT_STAMP=$(git rev-parse HEAD) scripts/build-js.sh src/server/main.bend dist/backplane-serve
+    BACKPLANE_VERSION_STAMP=$ver BACKPLANE_COMMIT_STAMP=${BACKPLANE_COMMIT_STAMP:-$(git rev-parse HEAD)} scripts/build-js.sh src/server/main.bend dist/backplane-serve
     build_web_dist
   else
     mkdir -p build
     build_web_dist > build/web-dist.log 2>&1 &
     webpid=$!
     hubrc=0
-    BACKPLANE_VERSION_STAMP=$ver BACKPLANE_COMMIT_STAMP=$(git rev-parse HEAD) scripts/build-js.sh src/server/main.bend dist/backplane-serve || hubrc=$?
+    BACKPLANE_VERSION_STAMP=$ver BACKPLANE_COMMIT_STAMP=${BACKPLANE_COMMIT_STAMP:-$(git rev-parse HEAD)} scripts/build-js.sh src/server/main.bend dist/backplane-serve || hubrc=$?
     webrc=0
     wait "$webpid" || webrc=$?
     [ "$webrc" = 0 ] || { cat build/web-dist.log >&2; say "the web client did not build"; exit 1; }

@@ -51,6 +51,17 @@ async function agent() {
           await tool('escalate', { to: 'person', input, key: 'artifact-v1-complete', text: 'Meaningful artifact completion; ask Bub to contextualize it with backplane://thread/worker and backplane://project/p. Hardware remains held.' });
           final = 'Privately queued or already queued, never a raw user message.';
         } else {
+          if (current.includes('TRIAGE_RACE_FIRST')) {
+            log({ raceReady: input });
+            const deadline = Date.now() + 15000;
+            while (!(await Bun.file(process.env.TRIAGE_RACE_GATE!).exists())) {
+              if (Date.now() > deadline) throw Error('race gate did not open');
+              await sleep(20);
+            }
+          }
+          await tool('thread_read', { threadId: 'worker', limit: 2 });
+          const denied = await tool('permission_prompt', { tool_name: 'Bash', input: { command: 'status-evidence-private-marker | bounded-output' } });
+          if (!denied.includes('deny') || denied.includes('status-evidence-private-marker')) throw Error('triage denial must stay local and redact command');
           await tool('mail_dispose', { input, mode: 'done', reason: 'routine FYI, unchanged known hardware hold' });
           final = 'Notice acknowledged; underlying hardware work remains held.';
         }
@@ -59,6 +70,8 @@ async function agent() {
       } else if (text.includes('TRIAGE_ASK')) {
         await tool('permission_prompt', { tool_name: 'Bash', input: { command: 'printf isolated-approval-placeholder' }, tool_use_id: 'isolated-approval-1' });
         final = 'Approval returned in isolated fixture.';
+      } else if (text.includes('TRIAGE_RACE_')) {
+        final = `${text}: routine unchanged hold, no decision.`;
       } else if (text.includes('TRIAGE_DUPLICATE')) {
         await tool('thread_send', { threadId: 'foh', text: 'TRIAGE_COMPLETE: same artifact, direct report route.' });
         final = 'TRIAGE_DUPLICATE: same artifact, launched report route.';
@@ -95,7 +108,7 @@ else {
     ev('SettingSet', { key: 'mail.on', value: 'off' }), ev('SettingSet', { key: 'text.provider', value: 'claude' }), ev('SettingSet', { key: 'text.model', value: 'sonnet' }),
     ev('SettingSet', { key: 'restart.continue', value: 'off' }), ev('MessagePosted', { thread: 'foh', id: 'owner-context', role: 'user', text: 'Keep hardware tests on hold. UDP address width is unresolved.' })].map(JSON.stringify).join('\n') + '\n');
   const listener = Bun.listen({ hostname: '127.0.0.1', port: 0, socket: { data() {} } }); const port = listener.port; listener.stop(true);
-  const env = { ...process.env, HOME: root, PATH: `${fake}:${process.env.PATH}`, BACKPLANE_AGENTS: fake, BACKPLANE_NO_UPDATE: '1', BACKPLANE_GOOGLE_BAKE: '0', BACKPLANE_TELEMETRY: 'off', BACKPLANE_PEERS: '', BACKPLANE_KEYRING_LOCKED: '0', BACKPLANE_LOCK_DIR: join(root, 'locks'), BACKPLANE_DEPLOY_LOCKS: join(root, 'deploy'), TRIAGE_AGENT_LOG: agentLog, DISPLAY: '', WAYLAND_DISPLAY: '' };
+  const env = { ...process.env, HOME: root, PATH: `${fake}:${process.env.PATH}`, BACKPLANE_AGENTS: fake, BACKPLANE_NO_UPDATE: '1', BACKPLANE_GOOGLE_BAKE: '0', BACKPLANE_TELEMETRY: 'off', BACKPLANE_PEERS: '', BACKPLANE_KEYRING_LOCKED: '0', BACKPLANE_LOCK_DIR: join(root, 'locks'), BACKPLANE_DEPLOY_LOCKS: join(root, 'deploy'), TRIAGE_AGENT_LOG: agentLog, TRIAGE_RACE_GATE: join(root, 'race-gate'), DISPLAY: '', WAYLAND_DISPLAY: '' };
   let proc: ReturnType<typeof Bun.spawn> | undefined, ws: WebSocket | undefined, failures = 0, request = 0;
   const events = () => readFileSync(journal, 'utf8').trim().split('\n').flatMap(l => { try { return [JSON.parse(l)]; } catch { return []; } });
   const logs = () => readFileSync(agentLog, 'utf8').trim().split('\n').flatMap(l => { try { return [JSON.parse(l)]; } catch { return []; } });
@@ -118,6 +131,18 @@ else {
     check(ownerReplies().length === 0, 'quiet FYI never wakes Bub');
     check(logs().some(e => e.tool === 'mail_context' && !e.a.thread && e.reply.includes('UDP address width')), 'real history query reads original owner context');
     check(logs().some(e => e.tool === 'mail_context' && e.a.thread && e.reply.includes('"isError":true')), 'history owner spoof fails closed');
+    check(logs().some(e => e.tool === 'thread_read' && e.reply.includes('status') && e.reply.includes('turn')), 'triage reads source status through supported tool');
+    check(logs().some(e => e.tool === 'permission_prompt' && e.reply.includes('deny') && !e.reply.includes('status-evidence-private-marker')), 'refused internal lookup stays local without raw command');
+    const mailBeforeRace = events().filter(e => e.$ === 'MailPosted' && e.conv === 'launch:worker').length;
+    send('TRIAGE_RACE_FIRST');
+    check(await until(() => logs().some(e => e.raceReady)), 'race first input holds triage before disposition');
+    send('TRIAGE_RACE_SECOND');
+    check(await until(() => events().filter(e => e.$ === 'MailPosted' && e.conv === 'launch:worker').length === mailBeforeRace + 2), 'newer report arrives while first input is bound');
+    const raceIds = events().filter(e => e.$ === 'MailPosted' && e.conv === 'launch:worker').slice(-2).map(e => e.id);
+    writeFileSync(join(root, 'race-gate'), 'release');
+    check(await until(() => raceIds.every(id => events().some(e => e.$ === 'SettingSet' && e.key.startsWith('run.disposition.') && e.key.includes(id)))), 'both race notices commit exact dispositions');
+    const raceRuns = events().filter(e => e.$ === 'RunSet' && raceIds.includes(e.mail));
+    check(raceRuns.length === 2 && raceRuns[0].thread !== raceRuns[1].thread && ownerReplies().length === 0 && !events().some(e => e.$ === 'MessagePosted' && e.thread === raceRuns[0].thread && e.msg === raceIds[1]), 'newer notice uses separate run with no injection or user escalation');
     send('TRIAGE_COMPLETE');
     check(await until(() => events().some(e => e.$ === 'SettingSet' && e.key.startsWith('triage.event.') && String(e.key).includes('artifact-v1-complete')) && ownerReplies().length === 1), 'triaged completion reaches original Bub conversation');
     check(ownerReplies()[0]?.text.includes('[Worker](backplane://thread/worker)'), 'Bub authors a fresh contextual linked status');

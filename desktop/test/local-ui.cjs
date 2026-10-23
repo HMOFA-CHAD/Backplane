@@ -4,7 +4,7 @@ const {execFileSync}=require('node:child_process'),{createHash}=require('node:cr
 const {_electron}=require('playwright-core');const {Service}=require('../service.cjs');
 const stage=process.env.BACKPLANE_LOCAL_STAGE;
 assert(stage&&path.isAbsolute(stage));
-const out=path.join(stage,'evidence');fs.mkdirSync(out);
+const out=path.join(stage,fs.existsSync(path.join(stage,'evidence'))?'evidence-'+Date.now():'evidence');fs.mkdirSync(out);
 const home=fs.mkdtempSync(path.join(os.tmpdir(),'backplane-polish-'));
 const project=path.join(home,'project');fs.mkdirSync(project);
 const fake=path.join(home,'agents');fs.mkdirSync(fake);
@@ -26,12 +26,16 @@ const events=[event('ProjectCreated',{id:'polish',title:'Local polish fixture',r
 fs.writeFileSync(path.join(home,'events.jsonl'),events.map(JSON.stringify).join('\n')+'\n');
 Object.assign(process.env,{BACKPLANE_AGENTS:fake,BACKPLANE_NO_UPDATE:'1',BACKPLANE_TELEMETRY:'off',BACKPLANE_COPY:'1',BACKPLANE_PEERS:'',BACKPLANE_LOCK_DIR:path.join(home,'locks')});
 const service=new Service({home,binary:process.env.BACKPLANE_SERVICE,web:process.env.BACKPLANE_WEB,expectedVersion:process.env.BACKPLANE_SERVICE_VERSION});
-let app,page;const errors=[],observations=[],start=performance.now();
+let app,page;const errors=[],observations=[],traffic=[],start=performance.now();
 (async()=>{
  try{
   await service.start();
   app=await _electron.launch({executablePath:path.join(stage,'desktop/runtime/backplane-desktop'),args:[],env:{...process.env,BACKPLANE_HOME:home},timeout:60000});
   page=await app.firstWindow();page.on('pageerror',e=>errors.push(e.message));
+  const record=(kind,value)=>{if(traffic.length<300)traffic.push({kind,value});};
+  page.on('websocket',ws=>{ws.on('framesent',f=>record('sent',String(f.payload)));ws.on('framereceived',f=>record('received',String(f.payload)));});
+  page.on('request',r=>{if(r.url().includes('/attach?'))record('upload',r.url());});
+  page.on('response',r=>{if(r.url().includes('/attach?'))record('uploaded',{url:r.url(),status:r.status()});});
   await page.waitForFunction(()=>document.documentElement.dataset.backplaneRemoteReady==='true',{timeout:30000});
   const chrome=await app.evaluate(({Menu,BrowserWindow})=>({menu:Menu.getApplicationMenu(),visible:BrowserWindow.getAllWindows()[0].isMenuBarVisible()}));
   assert.equal(chrome.menu,null);assert.equal(chrome.visible,false);
@@ -116,6 +120,6 @@ let app,page;const errors=[],observations=[],start=performance.now();
   assert.equal(errors.length,0,errors.join('\n'));
   const result={state:'passed',seconds:(performance.now()-start)/1000,home,observations,errors,checks:['branded shell/no menu','plain and bold internal links','unsafe link literal','external links preserved','multiple pasted previews','detach','per-thread drafts and attachments','frame-by-frame switch geometry','top Settings','390px layout','light and dark layouts']};
   fs.writeFileSync(path.join(out,'RESULT.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result));
- }catch(e){console.error(e);process.exitCode=1;if(page){await page.screenshot({path:path.join(out,'failure.png')}).catch(()=>{});fs.writeFileSync(path.join(out,'failure.html'),await page.content().catch(()=>''));}fs.writeFileSync(path.join(out,'failure.json'),JSON.stringify({error:e.stack,errors},null,2));}
+ }catch(e){console.error(e);process.exitCode=1;if(page){await page.screenshot({path:path.join(out,'failure.png')}).catch(()=>{});fs.writeFileSync(path.join(out,'failure.html'),await page.content().catch(()=>''));}fs.writeFileSync(path.join(out,'failure.json'),JSON.stringify({error:e.stack,errors,traffic},null,2));}
  finally{if(app)await app.close();try{assert(await service.discover(),'resident hub survives window close');}finally{service.stop();}}
 })();
