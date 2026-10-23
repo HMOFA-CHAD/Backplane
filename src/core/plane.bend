@@ -3,6 +3,8 @@ import ./i18n.bend as I
 import ./msgs.bend as MSG
 import ./locks.bend as LK
 import ./model.bend as M
+import ./codec.bend as C
+import ./json.bend as J
 import ./signal.bend as SG
 import ./deploy.bend as DP
 import ./bot.bend as BT
@@ -175,9 +177,22 @@ def Plane.state(p: M.Phase) -> String:
 def Plane.signal.state(+n: Nat) -> String:
   Bool.pick(String, SG.Signal.blocked(n), "approval", Bool.pick(String, SG.Signal.active(n), "working", Bool.pick(String, Nat.is_eq(n, 4n), "settled", "idle")))
 
+# The activity bit includes owned work. Only the thread's own Running turn
+# means its agent is working; a completed coordinator can be waiting on work.
+def Plane.signal.blocked(p: M.Phase) -> String:
+  match p:
+    case M.PhApproval{}: "approval"
+    case M.PhInput{}: "question"
+    case M.PhFailed{}: "failed"
+    case _: "approval"
+
+def Plane.signal.current(+n: Nat, +t: M.Thread, +phase: M.Phase) -> String:
+  Bool.pick(String, SG.Signal.blocked(n), Plane.signal.blocked(phase),
+    Bool.pick(String, SG.Signal.active(n), Bool.pick(String, M.State.running.k(t), "working", "waiting"), Plane.signal.state(n)))
+
 def Plane.signal.pick(present: Bool, +ix: U.SIx, +st: M.State, +t: M.Thread) -> String:
   match present:
-    case True{}: Plane.signal.state(U.Side.signal.ix(ix, t))
+    case True{}: Plane.signal.current(U.Side.signal.ix(ix, t), t, U.Side.phase.ix(ix, st, t))
     case False{}: Plane.state(U.Side.phase.ix(ix, st, t))
 
 def Plane.signal(+ix: U.SIx, +st: M.State, +t: M.Thread) -> String:
@@ -805,10 +820,6 @@ def Plane.tally.words(+u: U.Ui, +now: Nat) -> String:
 # is the link of the machine that has it ("" for this one), so an id read on
 # another machine already works here (<link>~<id>).
 
-# the plane of a hub, from its state alone (no client: its idle threads too)
-def Plane.of.st(+st: M.State, +now: Nat) -> Plane:
-  Plane.of.f(U.Ui.far.st(U.Ui.init(now), st), U.Side.ix(st), now, True{})
-
 def Plane.text.id(+pre: String, +id: String) -> String:
   Bool.pick(String, String.is_empty(pre), id, FR.Fr.id(pre, id))
 
@@ -876,11 +887,6 @@ def Plane.text(+p: Plane, +pre: String, +name: String, +now: Nat, +idle: Bool) -
     ++ Plane.text.sec("Bots", Plane.bots(p), pre, now) ++ Plane.text.sec("Rooms with unread posts", Plane.rooms(p), pre, now)
     ++ Plane.text.sec("Locks", Plane.locks(p), pre, now) ++ Plane.text.sec("Routines", Plane.routines(p), pre, now) ++ Plane.text.idle.k(idle, Plane.idle_n(p), Plane.idle(p), pre, now)
     ++ Plane.text.machines.k(Nat.is_gt(List.length(&2, PMach, Plane.machines(p)), 1n), Plane.machines(p))
-
-# a hub's plane as text: this machine's (pre "") or, for another machine
-# asking, ids made its own with the link
-def Plane.read(+st: M.State, +now: Nat, +pre: String, +name: String, +idle: Bool) -> String:
-  Plane.text(Plane.of.st(st, now), pre, name, now, idle)
 
 # where the needle first starts in the text (the text's length when it does not)
 def Plane.text.at(t: String, +needle: String, +i: Nat, hit: Bool) -> Nat:
@@ -1027,7 +1033,7 @@ def Plane.signals.bot(r: PRow, +u: U.Ui) -> PRow:
   match r:
     case PRow{k, +id, a, v, ti, sub, ma, +state, at, +away}:
       +thread = BT.Bot.thread(BT.World.bot(M.State.bots(U.Ui.state(u)), id))
-      PRow{k, id, a, v, ti, sub, ma, Bool.pick(String, away, state, Plane.signal.state(SG.Signal.cached(U.Ui.infos(u), thread))), at, away}
+      PRow{k, id, a, v, ti, sub, ma, Bool.pick(String, away, state, Plane.signal.current(SG.Signal.cached(U.Ui.infos(u), thread), U.Ui.thread(U.Ui.state(u), thread), U.Side.phase(U.Ui.state(u), U.Ui.thread(U.Ui.state(u), thread)))), at, away}
 
 def Plane.signals.bots.rows(rs: List<&2, PRow>, +u: U.Ui) -> List<&2, PRow>:
   match rs:
@@ -1039,8 +1045,86 @@ def Plane.signals.bots(p: Plane, +u: U.Ui) -> Plane:
     case Plane{ne, ru, bots, ro, rt, id, n, ma, lo}:
       Plane{ne, ru, Plane.signals.bots.rows(bots, u), ro, rt, id, n, ma, lo}
 
+def Plane.keep.text(yes: Bool, x: String, rest: List<&2, String>) -> List<&2, String>:
+  match yes:
+    case True{}: x <> rest
+    case False{}: rest
+
+# Show identities/titles, never a watched command or inferred progress. Ended
+# rows may still await delivery; they are deliberately absent from active work.
+def Plane.await.rows(xs: List<&2, String>, +watch: Bool) -> List<&2, String>:
+  match xs:
+    case Nil{}: Nil{}
+    case +r <> rest:
+      Plane.keep.text(Bool.and(Bool.not(M.Bg.ended(r)), Bool.or(Bool.not(watch), SG.Signal.watch([r]))),
+        M.Bg.field(r, 0n) ++ " (" ++ M.Bg.title(r) ++ ": " ++ M.Bg.doing(r) ++ ")", Plane.await.rows(rest, watch))
+
+def Plane.await.children(ids: List<&2, String>, +u: U.Ui) -> List<&2, String>:
+  match ids:
+    case Nil{}: Nil{}
+    case +id <> rest:
+      Plane.keep.text(SG.Signal.active(SG.Signal.cached(U.Ui.infos(u), id)), id ++ " (" ++ U.Active.title(U.Ui.thread(U.Ui.state(u), id)) ++ ")", Plane.await.children(rest, u))
+
+def Plane.await.tasks(ts: List<&2, M.Task>, +launched: List<&2, String>) -> List<&2, String>:
+  match ts:
+    case Nil{}: Nil{}
+    case M.Task{_, _, +child, _, state, _, _, _, _} <> rest:
+      Plane.keep.text(Bool.and(Bool.not(M.TaskState.terminal(state)), Bool.not(M.Launch.has(launched, child))), child, Plane.await.tasks(rest, launched))
+
+def Plane.await.work(+u: U.Ui, +th: String) -> List<&2, String>:
+  +st = U.Ui.state(u)
+  +launched = M.Launch.of(st, th)
+  List.concat(&2, String, [Plane.await.rows(M.Bg.of(st, th), False{}), Plane.await.rows(M.Work.watch(st, th), True{}),
+    Plane.await.children(List.append(&2, String, launched, Plane.await.tasks(U.Tasks.of(st, th), launched)), u)])
+
+def Plane.await.wakes(ids: List<&2, String>, +st: M.State) -> List<&2, String>:
+  match ids:
+    case Nil{}: Nil{}
+    case +id <> rest:
+      +o = M.Wake.get(st, id)
+      (id ++ " (" ++ J.Json.get_str(o, "kind", "") ++ " " ++ J.Json.get_str(o, "target", "") ++ ")") <> Plane.await.wakes(rest, st)
+
+def Plane.observed.sub(+sub: String, +th: String, +u: U.Ui) -> String:
+  +st = U.Ui.state(u)
+  +jp = String.eq(I.I18n.tag(U.Lang.loc(u)), "ja")
+  +work = String.join(Plane.await.work(u, th), "; ")
+  +wake = String.join(Plane.await.wakes(M.Wake.ids(st, "wakes.by." ++ th), st), "; ")
+  sub ++ " · " ++ Bool.pick(String, jp, "エージェント: ", "agent: ") ++ C.Turn.name(M.Thread.turn(U.Ui.thread(st, th)))
+    ++ Bool.pick(String, String.is_empty(work), "", Bool.pick(String, jp, " · 待機中: ", " · work: ") ++ work)
+    ++ Bool.pick(String, String.is_empty(wake), "", Bool.pick(String, jp, " · 通知待ち: ", " · wake on: ") ++ wake)
+
+def Plane.observed.sub.if(show: Bool, +sub: String, th: String, u: U.Ui) -> String:
+  match show:
+    case True{}: Plane.observed.sub(sub, th, u)
+    case False{}: sub
+
+def Plane.observed.row(r: PRow, +u: U.Ui) -> PRow:
+  match r:
+    case PRow{+k, +id, a, v, ti, +sub, ma, state, at, +away}:
+      +th = Bool.pick(String, String.eq(k, "bot"), BT.Bot.thread(BT.World.bot(M.State.bots(U.Ui.state(u)), id)), id)
+      PRow{k, id, a, v, ti, Plane.observed.sub.if(Bool.and(Bool.not(away), Bool.or(String.eq(k, "thread"), String.eq(k, "bot"))), sub, th, u), ma, state, at, away}
+
+def Plane.observed.rows(rs: List<&2, PRow>, +u: U.Ui) -> List<&2, PRow>:
+  match rs:
+    case Nil{}: Nil{}
+    case r <> rest: Plane.observed.row(r, u) <> Plane.observed.rows(rest, u)
+
+def Plane.observed(p: Plane, +u: U.Ui) -> Plane:
+  match p:
+    case Plane{ne, ru, bots, ro, rt, id, n, ma, lo}:
+      Plane{Plane.observed.rows(ne, u), Plane.observed.rows(ru, u), Plane.observed.rows(bots, u), ro, rt, Plane.observed.rows(id, u), n, ma, lo}
+
 def Plane.signals.with(+u: U.Ui, +now: Nat, idle: Bool) -> Plane:
-  Plane.signals.bots(Plane.of.f(u, U.Side.signals.ix(U.Side.ix(U.Ui.state(u)), u), now, idle), u)
+  Plane.observed(Plane.signals.bots(Plane.of.f(u, U.Side.signals.ix(U.Side.ix(U.Ui.state(u)), u), now, idle), u), u)
 
 def Plane.signals.of(u: U.Ui, now: Nat, idle: Bool) -> Plane:
   Plane.signals.with(U.Side.with_signals(u), now, idle)
+
+# Hub reads and all display clients use the same current activity projection.
+# Retained ended rows and queued/unknown watches never make a completed agent
+# work. The persisted turn, delivery queue and legacy Phase API stay unchanged.
+def Plane.of.st(+st: M.State, +now: Nat) -> Plane:
+  Plane.signals.of(U.Ui.online(U.Ui.far.st(U.Ui.init(now), st), True{}), now, True{})
+
+def Plane.read(+st: M.State, +now: Nat, +pre: String, +name: String, +idle: Bool) -> String:
+  Plane.text(Plane.of.st(st, now), pre, name, now, idle)
