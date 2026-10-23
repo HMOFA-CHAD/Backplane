@@ -49,6 +49,8 @@
   background: var(--bg); color: var(--text);
 }
 html:has(.app.light), html:has(.app.light) body { background: #fafaf8; color: #1b1d21; }
+/* before the first frame: the theme the last one painted (host.js themeDocument) */
+html.light, html.light body { background: #fafaf8; color: #1b1d21; color-scheme: light; }
 
 * { box-sizing: border-box; border-radius: 0; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 13px/1.5 var(--sans); }
