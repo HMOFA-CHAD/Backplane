@@ -11,20 +11,24 @@ import ../src/core/json.bend as J
 def state(+child: Bool) -> M.State:
   M.State.replay(List.append(&2, M.Change,
     [M.ProjectCreated{"p", "Project", "/tmp/project", 1n},
-     M.ThreadCreated{"parent", "p", "Parent", M.Local{}, "", "/tmp/project", "codex", "", 1n}],
+     M.ThreadCreated{"parent", "p", "Parent", M.Local{}, "", "/tmp/project", "codex", "", 1n},
+     M.ThreadCreated{"other", "p", "Other", M.Local{}, "", "/tmp/project", "codex", "", 1n}],
     Bool.pick(List<&2, M.Change>, child,
       [M.ThreadCreated{"child", "p", "New subthread", M.Local{}, "", "/tmp/project", "codex", "", 2n},
        M.ThreadParentSet{"child", "parent", 2n}], Nil{})), M.State.empty())
 
-def request() -> J.Json:
-  J.Json.obj([J.KV{"target", V.Target.json("thread", "parent")},
+def request(+id: String) -> J.Json:
+  J.Json.obj([J.KV{"target", V.Target.json("thread", id)},
     J.KV{"session", J.Json.obj([J.KV{"rid", J.Num{"100"}}])}])
 
 def refresh(+a: TA.Actor, +child: Bool, +view: String) -> TA.Actor:
-  TA.Actor.refresh([a], True{}, state(child), J.Json.obj(Nil{}), J.Json.obj(Nil{}), 3n, request(), view)
+  TA.Actor.refresh([a], True{}, state(child), J.Json.obj(Nil{}), J.Json.obj(Nil{}), 3n, request("parent"), view)
+
+def navigate(+a: TA.Actor) -> TA.Actor:
+  TA.Actor.refresh([a], True{}, state(True{}), J.Json.obj(Nil{}), J.Json.obj(Nil{}), 3n, request("other"), "original-view")
 
 def created(+child: Bool) -> TA.Actor:
-  +a = TA.Actor.refresh(Nil{}, True{}, state(child), J.Json.obj(Nil{}), J.Json.obj(Nil{}), 2n, request(), "original-view")
+  +a = TA.Actor.refresh(Nil{}, True{}, state(child), J.Json.obj(Nil{}), J.Json.obj(Nil{}), 2n, request("parent"), "original-view")
   TA.Actor.accept(a, V.Action.run(True{}, TA.Actor.ui(a), J.Json.obj([
     J.KV{"action", J.Str{"thread-child"}}, J.KV{"value", J.Str{"parent"}}]), 2n), False{})
 
@@ -45,6 +49,9 @@ def main() -> IO(Unit):
     +navigated : TA.Actor = refresh(early, True{}, "replacement-view")
     C.Check.str("explicit replacement view retires pending selection", selected(navigated), "parent")
     C.Check.str("retired selection cannot resolve on later update", selected(refresh(navigated, True{}, "replacement-view")), "parent")
+    +different : TA.Actor = navigate(early)
+    C.Check.str("different target retires pending selection even with same view", selected(different), "other")
+    C.Check.str("different target cannot later resolve old pending child", selected(navigate(different)), "other")
     +requested : TA.Actor = created(False{})
     +late : TA.Actor = refresh(requested, True{}, "replacement-view")
     C.Check.str("old creation ACK cannot redirect replacement view", selected(TA.Actor.reply(late, True{}, "",
