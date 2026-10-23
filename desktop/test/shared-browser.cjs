@@ -44,6 +44,11 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
  const fromHandback=process.env.BROWSER_CONTINUE_HANDBACK==='1';
  const fromHistory=process.env.BROWSER_CONTINUE_HISTORY==='1';
  const fromProjection=process.env.BROWSER_CONTINUE_PROJECTION==='1';
+ const fromReload=process.env.BROWSER_CONTINUE_RELOAD==='1';
+ const chromeChecks=['canonical Browser tabs and address reflect actual guest'];
+ const chromeReceipt=fromReload?process.env.BROWSER_CHROME_PREFIX_RECEIPT:null;
+ if(fromReload){assert(fromProjection,'reload suffix retains native history and ownership receipts');const receipt=JSON.parse(fs.readFileSync(chromeReceipt,'utf8'));assert(chromeChecks.every(name=>receipt.checks.includes(name)),'reload suffix requires actual canonical tab/address pass');}
+ const retainedChrome=fromReload?{receipt:chromeReceipt,checks:chromeChecks}:null;
  const nativeHistoryChecks=['toolbar Back navigates SAME actual guest','toolbar Forward navigates SAME actual guest'];
  const nativeHistoryReceipt=fromProjection?process.env.BROWSER_NATIVE_HISTORY_RECEIPT:null;
  if(fromProjection){assert(fromHistory,'projection suffix retains prior history setup and receipts');const receipt=JSON.parse(fs.readFileSync(nativeHistoryReceipt,'utf8'));assert(nativeHistoryChecks.every(name=>receipt.checks.includes(name)),'projection suffix requires both actual native Back/Forward passes');}
@@ -88,6 +93,25 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
   assert.equal(result?.isError,false,`${name}: ${result?.content?.find(x=>x.type==='text')?.text}`);
   const text=result.content.find(x=>x.type==='text')?.text;
   return{value:text?JSON.parse(text):null,images:result.content.filter(x=>x.type==='image')};
+ }
+ // Wait for the ordinary toolbar reply before replacing its renderer/socket.
+ // The observer records the actual authenticated RPC; it never resends one.
+ function toolbarReply(command){
+  return new Promise((resolve,reject)=>{
+   let timer;
+   const cleanup=()=>{clearTimeout(timer);wireTap.off('Network.webSocketFrameSent',observe);wireTap.off('Network.webSocketFrameReceived',observe);};
+   const observe=()=>{
+    const sent=wire.frames.findLast(f=>f.direction==='sent'&&f.method==='bots.browser'&&f.op==='toolbar'&&f.command===command&&f.ownerMatches===true);
+    if(!sent)return;
+    const reply=wire.frames.find(f=>f.direction==='received'&&f.type==='reply'&&f.id===sent.id);
+    if(!reply)return;
+    cleanup();
+    if(reply.ok!==true)reject(Error(`Toolbar ${command} failed: ${reply.errorText||'RPC refused'}`));
+    else resolve({command,id:sent.id,ok:reply.ok});
+   };
+   timer=setTimeout(()=>{cleanup();reject(Error(`Toolbar ${command} RPC did not settle before renderer reload`));},4000);
+   wireTap.on('Network.webSocketFrameSent',observe);wireTap.on('Network.webSocketFrameReceived',observe);observe();
+  });
  }
  async function select(owner){
   await page.locator(`[data-on-click="select"][data-value="${owner}"]`).first().click();
@@ -349,16 +373,32 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
   // Continuation opens one -> two solely as fresh setup; no settled history
   // toolbar input or acceptance is replayed.
   await page.waitForFunction(owner=>document.querySelector('.browser-tab.on')?.textContent.includes('two')&&document.querySelector(`[data-bfield="brurl:${owner}"]`)?.value.endsWith('/two'),threadId);
-  check('canonical Browser tabs and address reflect actual guest',(await inspect(id))!=null&&(await native()).some(v=>v.id===id&&v.url.endsWith('/two')));
+  if(!fromReload)check('canonical Browser tabs and address reflect actual guest',(await inspect(id))!=null&&(await native()).some(v=>v.id===id&&v.url.endsWith('/two')));
   phase='remaining-browser';
-  await page.locator('[data-on-click="br-reload"]').first().click();
+  const beforeReload=await inspect(id);
+  const [reloadRpc]=await Promise.all([toolbarReply('reload'),page.locator('[data-on-click="br-reload"]').first().click()]);
+  const reloaded=await app.evaluate(async({webContents},{id,document})=>new Promise(resolve=>{
+   const started=Date.now();
+   async function observe(){
+    const wc=webContents.fromId(id);
+    if(!wc||wc.isDestroyed()){resolve(false);return;}
+    try{const current=await wc.executeJavaScript('typeof fixtureState!=="undefined"?fixtureState.document:null');if(typeof current==='string'&&current!==document&&!wc.isLoadingMainFrame()&&wc.getURL().endsWith('/two')){resolve(true);return;}}catch{}
+    if(Date.now()-started>=4000){resolve(false);return;}setTimeout(observe,16);
+   }observe();
+  }),{id,document:beforeReload.document});
+  historyObservation.reloadRpc=reloadRpc;await saveHistory('afterToolbarReload');
+  check('toolbar Reload completes in SAME actual guest',reloaded);
   await page.reload();
   await page.waitForFunction(()=>document.documentElement.dataset.backplaneRemoteReady==='true');
+  // Thread viewer choice is connection-local actor state, not a persisted
+  // thread/bot route. Reopen Browser with its real visible UI action, without
+  // navigating, recreating, or obtaining a new guest before the identity check.
+  await page.locator('[data-on-click="view-kind"][data-value="browser"]').first().click();
   await page.locator(`[data-desktop-browser-owner="${threadId}"]`).waitFor();
   await page.waitForFunction(owner=>document.querySelector('.browser-tab.on')?.textContent.includes('two')&&document.querySelector(`[data-bfield="brurl:${owner}"]`)?.value.endsWith('/two'),threadId);
-  check('renderer reconnect restores canonical Browser chrome',await page.locator('[data-on-click="br-select"]').count()===1);
+  check('Browser reopen after renderer reload restores canonical chrome',await page.locator('[data-on-click="br-select"]').count()===1);
   const retained=(await native()).find(v=>v.id===id);
-  check('renderer reload re-presents existing guest',retained?.visible===true);
+  check('Browser reopen after renderer reload re-presents existing guest',retained?.visible===true);
   const after=await inspect(id);
   check('profile and tab storage retained across navigation/reload',initial.profile===after.profile&&initial.tab===after.tab);
   await app.evaluate(async({webContents},id)=>{await webContents.fromId(id).session.cookies.flushStore();},id);
@@ -386,7 +426,7 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
   await page.screenshot({path:path.join(out,'shared-browser-chrome.png')});
   const pixels=await app.evaluate(async({webContents},id)=>(await webContents.fromId(id).capturePage()).toPNG().toString('base64'),id);
   fs.writeFileSync(path.join(out,'shared-browser-guest.png'),Buffer.from(pixels,'base64'));
-  const receipt={status:'PASS',checks,retainedPrefix:retained,retainedHumanPrefix:retainedHuman,retainedInputPrefix:retainedInput,retainedHistoryPrefix:retainedHistory,retainedNativeHistory,guestId:id,scope:'Actual Electron native guest + authenticated preview MCP + trusted human input; isolated controlled local page only',remaining:['physical manual input/IME','full Electron exit/relaunch cookie and tab restoration','remote machine browser attachment/reconnect','popup adoption (current guest policy denies unqualified popups)']};
+  const receipt={status:'PASS',checks,retainedPrefix:retained,retainedHumanPrefix:retainedHuman,retainedInputPrefix:retainedInput,retainedHistoryPrefix:retainedHistory,retainedNativeHistory,retainedChrome,guestId:id,scope:'Actual Electron native guest + authenticated preview MCP + trusted human input; isolated controlled local page only',remaining:['physical manual input/IME','full Electron exit/relaunch cookie and tab restoration','remote machine browser attachment/reconnect','popup adoption (current guest policy denies unqualified popups)']};
   fs.writeFileSync(path.join(out,'shared-browser.json'),JSON.stringify(receipt,null,2)+'\n');
   return receipt;
  }catch(error){
@@ -409,7 +449,7 @@ async function runSharedBrowserAcceptance({app,page,origin,token,threadId,otherT
   }
   fs.writeFileSync(path.join(out,'ownership-wire.json'),JSON.stringify(wire,null,2)+'\n');
   fs.writeFileSync(path.join(out,'ownership-observation.json'),JSON.stringify({phase,ownership},null,2)+'\n');
-  fs.writeFileSync(path.join(out,'shared-browser.json'),JSON.stringify({status:'FAIL',checks,retainedPrefix:retained,retainedHumanPrefix:retainedHuman,retainedInputPrefix:retainedInput,retainedHistoryPrefix:retainedHistory,retainedNativeHistory,phase,error:error.stack,scope:'No deployment acceptance claimed'},null,2)+'\n');throw error;
+  fs.writeFileSync(path.join(out,'shared-browser.json'),JSON.stringify({status:'FAIL',checks,retainedPrefix:retained,retainedHumanPrefix:retainedHuman,retainedInputPrefix:retainedInput,retainedHistoryPrefix:retainedHistory,retainedNativeHistory,retainedChrome,phase,error:error.stack,scope:'No deployment acceptance claimed'},null,2)+'\n');throw error;
  }
  finally{if(wireTap)await wireTap.detach().catch(()=>{});await site.close();}
 }
