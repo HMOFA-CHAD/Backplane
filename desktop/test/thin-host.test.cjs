@@ -273,11 +273,11 @@ test('live parts: stale action and auxiliary metadata cannot retire a current as
  const reads=f.sent.filter(r=>r.m==='view.message').length;f.host.receive(f.reply(action,{window:f.window([f.row('@live:A','99')])}));assert.equal(f.host.messages.next('@live:A'),'continued-@live:A');
  f.host.search('query');f.host.receive(f.reply(undefined,{window:f.window([]),search:{query:'query',rows:[],cursor:'',hasMore:false,visited:0}}));assert.equal(f.host.messages.next('@live:A'),'continued-@live:A');assert.equal(f.sent.filter(r=>r.m==='view.message').length,reads);
 });
-test('request privacy: read views send only language and bounded choices; actions send only the selected captured draft',async()=>{
+test('request privacy: views and actions send only the selected draft, language and bounded choices',async()=>{
  const privateSession={sel:'A',rid:1,drafts:{A:'initial A',B:'PRIVATE_UNSELECTED_'.repeat(20000),'@lang':'ja','@lang.os':'ja-JP','@lang.tag':'ja','@lang.preview':'1','@f.password':'PRIVATE_FORM','@mr.read':'PRIVATE_MAIL_CACHE','@wm:pending':'PRIVATE_MAIL_STATE','@img:body':'PRIVATE_DERIVED_CACHE'},outbox:{'22':'PRIVATE_PENDING_SEND'},info:{'fold:row':'1','subs:A':'0','@f.secret':'PRIVATE_INFO'},open:{settings:true},adding:false,panel:true,error:'PRIVATE_ERROR',note:'PRIVATE_NOTE'};
  const original=JSON.stringify(privateSession),f=await fixture({session:()=>privateSession});f.open();assert.equal(f.host.ready,true);assert.equal(f.sent[0].m,'view.open');assert(Buffer.byteLength(JSON.stringify(f.sent[0]))<4096,'filter before shared request-size validation');
  const language={'@lang':'ja','@lang.os':'ja-JP','@lang.tag':'ja','@lang.preview':'1'};
- function readOnly(request){assert.deepEqual(request.p.session.drafts,language);assert.deepEqual(request.p.session.outbox,{});assert.deepEqual(request.p.session.info,{'fold:row':'1','subs:A':'0'});assert.deepEqual(request.p.session.open,{settings:true});assert.equal(request.p.session.panel,true);assert(!JSON.stringify(request).includes('PRIVATE_'));}
+ function readOnly(request){assert.deepEqual(request.p.session.drafts,{...language,A:f.getSession().drafts.A});assert.deepEqual(request.p.session.outbox,{});assert.deepEqual(request.p.session.info,{'fold:row':'1','subs:A':'0'});assert.deepEqual(request.p.session.open,{settings:true});assert.equal(request.p.session.panel,true);assert(!JSON.stringify(request).includes('PRIVATE_'));}
  readOnly(f.sent[0]);f.host.page();readOnly(f.sent.at(-1));f.host.receive(f.reply());
  f.host.request('draft','new captured A');f.host.update();readOnly(f.sent.at(-1));const stale={...f.sent.at(-1).p.session,drafts:{...language,A:'stale actor draft'}};f.host.receive(f.reply(undefined,{session:stale}));assert.equal(f.getSession().drafts.A,'new captured A');
  f.host.receive({t:'view.changed',version:1,generation:'7',epoch:'actual',viewId:'view-A',target:{kind:'thread',id:'A'},viewRevision:'2'});readOnly(f.sent.at(-1));f.host.receive(f.reply(undefined,{viewRevision:'2'}));
@@ -377,4 +377,29 @@ for (const queued of [false, true]) test('legacy subthread picker defers refresh
   assert.equal(f.getSession().open.proj,true);assert.equal(f.sent.at(-1).m,'view.update');assert.equal(f.sent.at(-1).p.session.open.proj,true);
   f.host.receive(f.reply());assert.equal(f.getSession().open.proj,true);assert.equal(f.host.ready,true);assert.equal(f.commands.length,0);
  }
+});
+
+// Changed-path autocomplete transport and action ordering, without providers.
+test('composer references: debounced edits refresh with only the current draft, never an action',async()=>{
+ let refresh;const f=await fixture({draftRefresh:fn=>refresh=fn});f.open();
+ for(const sigil of ['@','>','%','#']){f.host.request('draft','prefix '+sigil);refresh();const request=f.sent.at(-1);assert.equal(request.m,'view.update');assert.deepEqual(request.p.session.drafts,{A:'prefix '+sigil});f.host.receive(f.reply(request));}
+ assert.equal(f.commands.length,0);assert(!f.sent.some(r=>r.m==='view.action'));
+ f.host.request('select','B');assert(!Object.hasOwn(f.sent.at(-1).p.session.drafts,'A'));
+});
+test('composer references: refresh waits for active and queued menu intentions',async()=>{
+ for(const queued of [false,true])for(const action of ['skill','skill-move','skill-close']){
+  const f=await fixture();f.open();if(queued)f.host.request('fold','row');
+  f.host.request(action,action==='skill-move'?'down':'');const before=f.sent.length;
+  f.host.update();f.host.receive({t:'view.changed',version:1,generation:'7',epoch:'actual',viewId:'view-A',target:{kind:'thread',id:'A'},viewRevision:'2'});
+  assert.equal(f.sent.length,before,'no stale read may retire '+action);
+  if(queued){f.host.receive(f.reply());assert.equal(f.sent.at(-1).p.action,action);}
+  f.host.receive(f.reply());assert.equal(f.sent.at(-1).m,'view.update');
+ }
+});
+test('composer references: late completion Keep cannot replace newer typing or another thread',async()=>{
+ const f=await fixture();f.open();f.host.request('draft','ask @');f.host.request('skill','@Miso');const old=f.sent.at(-1);
+ f.host.request('draft','newer 日本語');f.host.receive(f.reply(old,{session:{...old.p.session,drafts:{A:'ask @Miso '}},cmds:[{type:'keep',thread:'A',text:'ask @Miso '}]}));
+ assert.equal(f.getSession().drafts.A,'newer 日本語');assert.equal(f.disk.get('A'),'newer 日本語');
+ f.host.request('skill','@Miso');const other=f.sent.at(-1);f.host.request('select','B');f.host.request('draft','B own text');f.host.receive(f.reply());f.host.receive(f.reply(other,{cmds:[{type:'keep',thread:'A',text:'old completion'}]}));
+ assert.equal(f.getSession().sel,'B');assert.equal(f.getSession().drafts.B,'B own text');
 });

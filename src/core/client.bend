@@ -4026,10 +4026,15 @@ def Refs.fill(on: Bool, u: Ui) -> Ui:
     case False{} _:
       u
 
+# Derive reference rows after a thin view adopts its current local draft.
+# This only reads the authoritative catalog; it sends no command or Keep.
+def Refs.refresh(+u: Ui) -> Ui:
+  Refs.fill(RF.Refs.typing(Skills.token(Ui.draft_text(u))), u)
+
 def Refs.want(a: Act) -> Act:
   match a:
     case Act{+u, cs}:
-      Act{Refs.fill(RF.Refs.typing(Skills.token(Ui.draft_text(u))), u), cs}
+      Act{Refs.refresh(u), cs}
 
 # an edit of the draft opens a menu Esc shut again (the same text sent
 # again leaves it shut)

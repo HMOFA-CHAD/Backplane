@@ -142,15 +142,21 @@ def Actor.resolve(u: U.Ui, previous: String) -> U.Ui:
   # Resolve its retained, destination-bound want after installing that state.
   U.Ui.reselect(previous, U.Bots.wanted(u))
 
+# Rehydration is a presentation operation, not another draft action. Keep
+# Escape's dismissal for identical text, reopening only after an actual edit.
+def Actor.composer(+previous: U.Ui, +current: U.Ui) -> U.Ui:
+  U.Refs.refresh(U.Skills.reopen.k(Bool.and(String.eq(U.Ui.sel(previous), U.Ui.sel(current)),
+    String.eq(U.Ui.draft_text(previous), U.Ui.draft_text(current))), current))
+
 def Actor.refresh( +xs: List<&2, Actor>, +web: Bool, +st: M.State, +info: J.Json, +live: J.Json, +now: Nat, +p: J.Json, +view: String) -> Actor:
   match xs:
-    case Nil{}: Actor.make(V.Session.current(web, st, info, live, now, Actor.safe_input(st, p)), view, J.Json.get_obj(p, "target"))
+    case Nil{}: Actor.make(U.Refs.refresh(V.Session.current(web, st, info, live, now, Actor.safe_input(st, p))), view, J.Json.get_obj(p, "target"))
     case Actor{old, oldView, +target, pending, reads, dirty, _} <> _:
       +input = Actor.safe_input(st, p)
       +thread = V.Target.thread(st, J.Json.get_obj(p, "target"))
       +fresh = V.Session.current(web, st, info, live, now, input)
       +same = Bool.and(String.eq(oldView, view), W.Target.same(target, J.Json.get_obj(p, "target")))
-      Actor{V.Session.renderer(web, Actor.resolve(U.Ui.info_merge(Actor.merge(fresh, old, same, thread, Maybe.is_some(&2, J.Json, J.Json.get(J.Json.get_obj(J.Json.get_obj(input, "session"), "drafts"), thread))), info), thread), p),
+      Actor{Actor.composer(old, V.Session.renderer(web, Actor.resolve(U.Ui.info_merge(Actor.merge(fresh, old, same, thread, Maybe.is_some(&2, J.Json, J.Json.get(J.Json.get_obj(J.Json.get_obj(input, "session"), "drafts"), thread))), info), thread), p)),
         view, J.Json.get_obj(p, "target"), Bool.pick(Map<&2, String>, same, pending, Map.new(&2, String)), Bool.pick(List<&2, J.Json>, same, reads, Nil{}), dirty, Nil{}}
 
 # The hub's canonical projection is shared; each actor keeps its own pages,
