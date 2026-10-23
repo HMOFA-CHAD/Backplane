@@ -7150,6 +7150,12 @@ def Laws.life_duplicate_quiet():
 def Laws.life_manual_settle_held():
   {==}
 
+def Laws.life_message_wakes():
+  {==}
+
+def Laws.life_reply_held():
+  {==}
+
 def Laws.scratch_busy_kept(now, w, t, n):
   and_false_r(M.Scratch.expired(now, w, t))
 

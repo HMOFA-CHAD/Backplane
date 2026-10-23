@@ -5083,6 +5083,15 @@ law life_new_turn_wakes:
 law life_duplicate_quiet:
   {H.Shelve.step(H.Shelve.demo([M.TurnChanged{"t1", M.Completed{}, 5n}, M.ThreadSettled{"t1", False{}, 5n}]), [M.TurnChanged{"t1", M.Completed{}, 6n}]) == [] : List<&2, M.Change>}
 
+# a message for a running thread the person settled wakes it, in the
+# same second too: new input is new work
+law life_message_wakes:
+  {H.Shelve.step(H.Shelve.demo([M.ThreadSettled{"t1", True{}, 3n}]), [M.MessagePosted{"t1", "m2", M.User{}, "more", 3n}]) == [M.ThreadWoke{"t1", 3n}] : List<&2, M.Change>}
+
+# the agent's own reply is no new input: the settle holds
+law life_reply_held:
+  {H.Shelve.step(H.Shelve.demo([M.ThreadSettled{"t1", True{}, 3n}]), [M.MessagePosted{"t1", "m2", M.Assistant{}, "x", 4n}]) == [] : List<&2, M.Change>}
+
 # the person settled a running thread: its own events do not undo that
 law life_manual_settle_held:
   {H.Shelve.step(H.Shelve.demo([M.ThreadSettled{"t1", True{}, 3n}]), [M.TurnChanged{"t1", M.Running{}, 4n}]) == [] : List<&2, M.Change>}

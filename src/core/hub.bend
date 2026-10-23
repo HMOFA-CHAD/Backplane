@@ -6061,12 +6061,21 @@ def Shelve.watch(hit: Bool, +k: String, +at: Nat) -> List<&2, SvAt>:
     case False{}:
       Nil{}
 
+def Shelve.user(r: M.Role, +th: String, +at: Nat) -> List<&2, SvAt>:
+  match r:
+    case M.User{}:
+      [SvAt{th, at}]
+    case _:
+      Nil{}
+
 # the threads whose work a change can move (pre: the state before it, for
 # a task's parent)
 def Shelve.names(+pre: M.State, c: M.Change) -> List<&2, SvAt>:
   match c:
     case M.TurnChanged{+th, _, +at}:
       [SvAt{th, at}]
+    case M.MessagePosted{+th, _, r, _, +at}:
+      Shelve.user(r, th, at)
     case M.PendingChanged{+th, _, +at}:
       [SvAt{th, at}]
     case M.WorkSet{+th, _, _, +at}:
@@ -6117,6 +6126,26 @@ def Shelve.ats(cs: List<&2, M.Change>, +pre: M.State, +acc: List<&2, SvAt>) -> L
     case +c <> r:
       Shelve.ats(r, pre, Shelve.add(Shelve.names(pre, c), acc))
 
+def Shelve.fresh.u(r: M.Role, +t: String, +th: String) -> Bool:
+  match r:
+    case M.User{}:
+      String.eq(t, th)
+    case _:
+      False{}
+
+# whether the step brings the thread new input: a message for it (not the
+# agent's own) or one queued for it (Lifecycle.wake.fresh)
+def Shelve.fresh(cs: List<&2, M.Change>, +th: String) -> Bool:
+  match cs:
+    case Nil{}:
+      False{}
+    case M.MessagePosted{+t, _, r, _, _} <> rest:
+      Bool.or(Shelve.fresh.u(r, t, th), Shelve.fresh(rest, th))
+    case M.TurnQueued{+t, _, _, _} <> rest:
+      Bool.or(String.eq(t, th), Shelve.fresh(rest, th))
+    case _ <> rest:
+      Shelve.fresh(rest, th)
+
 def Shelve.one.k(wake: Bool, done: Bool, +th: String, +at: Nat, +t: M.Thread, rest: List<&2, M.Change>) -> List<&2, M.Change>:
   match wake done:
     case True{} _:
@@ -6126,30 +6155,34 @@ def Shelve.one.k(wake: Bool, done: Bool, +th: String, +at: Nat, +t: M.Thread, re
     case False{} False{}:
       rest
 
-def Shelve.wake(+pre: M.State, +post: M.State, +k0: Map<&2, Nat>, +k1: Map<&2, Nat>, +th: String) -> Bool:
-  M.Lifecycle.wake.k(M.Lifecycle.working(k0, pre, M.State.thread.get(pre, th)), M.Lifecycle.working(k1, post, M.State.thread.get(post, th)),
-    M.Shelf.of(M.State.thread.get(post, th)), M.Lifecycle.override(M.State.thread.get(post, th)))
+def Shelve.wake.k(+was: Bool, +now: Bool, fresh: Bool, +post: M.State, +th: String) -> Bool:
+  Bool.or(M.Lifecycle.wake.k(was, now, M.Shelf.of(M.State.thread.get(post, th)), M.Lifecycle.override(M.State.thread.get(post, th))),
+    M.Lifecycle.wake.fresh(fresh, now, M.Shelf.of(M.State.thread.get(post, th))))
 
-def Shelve.one(+pre: M.State, +post: M.State, +k0: Map<&2, Nat>, +k1: Map<&2, Nat>, +navs: Map<&2, M.Nav>, +th: String, +at: Nat, rest: List<&2, M.Change>) -> List<&2, M.Change>:
-  Shelve.one.k(Shelve.wake(pre, post, k0, k1, th), M.Lifecycle.done(k1, post, M.State.thread.get(post, th), M.Snooze.on(at, M.Nav.until(M.Nav.get(navs, th)))),
+# woken: it started working, or new input came while it works (fresh)
+def Shelve.wake(+pre: M.State, +post: M.State, +k0: Map<&2, Nat>, +k1: Map<&2, Nat>, +th: String, fresh: Bool) -> Bool:
+  Shelve.wake.k(M.Lifecycle.working(k0, pre, M.State.thread.get(pre, th)), M.Lifecycle.working(k1, post, M.State.thread.get(post, th)), fresh, post, th)
+
+def Shelve.one(+cs: List<&2, M.Change>, +pre: M.State, +post: M.State, +k0: Map<&2, Nat>, +k1: Map<&2, Nat>, +navs: Map<&2, M.Nav>, +th: String, +at: Nat, rest: List<&2, M.Change>) -> List<&2, M.Change>:
+  Shelve.one.k(Shelve.wake(pre, post, k0, k1, th, Shelve.fresh(cs, th)), M.Lifecycle.done(k1, post, M.State.thread.get(post, th), M.Snooze.on(at, M.Nav.until(M.Nav.get(navs, th)))),
     th, at, M.State.thread.get(post, th), rest)
 
-def Shelve.go(xs: List<&2, SvAt>, +pre: M.State, +post: M.State, +k0: Map<&2, Nat>, +k1: Map<&2, Nat>, +navs: Map<&2, M.Nav>) -> List<&2, M.Change>:
+def Shelve.go(xs: List<&2, SvAt>, +cs: List<&2, M.Change>, +pre: M.State, +post: M.State, +k0: Map<&2, Nat>, +k1: Map<&2, Nat>, +navs: Map<&2, M.Nav>) -> List<&2, M.Change>:
   match xs:
     case Nil{}:
       Nil{}
     case SvAt{+th, +at} <> r:
-      Shelve.one(pre, post, k0, k1, navs, th, at, Shelve.go(r, pre, post, k0, k1, navs))
+      Shelve.one(cs, pre, post, k0, k1, navs, th, at, Shelve.go(r, cs, pre, post, k0, k1, navs))
 
-def Shelve.step.post(xs: List<&2, SvAt>, +pre: M.State, +post: M.State) -> List<&2, M.Change>:
-  Shelve.go(xs, pre, post, M.Work.kids.map(pre), M.Work.kids.map(post), M.State.navs(post))
+def Shelve.step.post(xs: List<&2, SvAt>, +cs: List<&2, M.Change>, +pre: M.State, +post: M.State) -> List<&2, M.Change>:
+  Shelve.go(xs, cs, pre, post, M.Work.kids.map(pre), M.Work.kids.map(post), M.State.navs(post))
 
 def Shelve.step.k(xs: List<&2, SvAt>, +pre: M.State, +cs: List<&2, M.Change>) -> List<&2, M.Change>:
   match xs:
     case Nil{}:
       Nil{}
     case +x <> +r:
-      Shelve.step.post(x <> r, pre, M.State.replay(cs, pre))
+      Shelve.step.post(x <> r, cs, pre, M.State.replay(cs, pre))
 
 # the settles and wakes a step's changes call for (pre: the state before it)
 def Shelve.step(+pre: M.State, +cs: List<&2, M.Change>) -> List<&2, M.Change>:

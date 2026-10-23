@@ -3325,6 +3325,18 @@ def Lifecycle.wake.k(was: Bool, now: Bool, sh: Shelf, o: Override) -> Bool:
     case _ _ _ _:
       False{}
 
+# a step's wake by new input: a message for the thread (the person's, or
+# another thread's or bot's in its name) or one queued for it, while it
+# works and is settled. New input is new work even while a turn runs, so a
+# manual settle gives way to it, in the same second too; the turn's own
+# events (a repeated running state) are not input and leave the settle
+def Lifecycle.wake.fresh(fresh: Bool, now: Bool, sh: Shelf) -> Bool:
+  match fresh now sh:
+    case True{} True{} Settled{}:
+      True{}
+    case _ _ _:
+      False{}
+
 # whether a settle no longer holds against work: an auto-settle never
 # does, a manual one only once a message came after it (Thread.touched
 # moves unsettled_at past settled_at; a turn's own events never do)
