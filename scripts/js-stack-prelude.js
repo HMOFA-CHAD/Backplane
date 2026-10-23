@@ -8,7 +8,7 @@
 // bun reaches ~40k frames; with a 4 GiB soft limit and 4e9 ~31M (an
 // unlimited soft limit makes JSC bound itself small again). So when either
 // is short, the hub raises the soft limit to 4 GiB, sets the variable and
-// executes itself again, once (BACKPLANE_STACK_SET marks the second run).
+// executes itself again, once (BACKPLANE_STACK_SET names that process).
 // It is the first code in the binary: nothing (the hub lock, a socket, an
 // adopted agent) is open yet. With the limit and the variable already set
 // (the service's LimitSTACK, an exec in place) it does nothing; with only the
@@ -28,10 +28,14 @@
     if (process.platform !== "linux" && process.platform !== "darwin") {
       return;
     }
-    if (process.env.BACKPLANE_STACK_SET || !String(process.argv[1] ?? "").startsWith("/$bunfs/")) {
+    // A plot/review child inherits the hub's environment, but host_child_stack
+    // has lowered its stack again. Only this same process's re-exec may skip
+    // setup; an inherited parent marker (including the old "1") cannot.
+    const pid = String(process.pid);
+    if (process.env.BACKPLANE_STACK_SET === pid || !String(process.argv[1] ?? "").startsWith("/$bunfs/")) {
       return;
     }
-    process.env.BACKPLANE_STACK_SET = "1";
+    process.env.BACKPLANE_STACK_SET = pid;
     const ffi = require("bun:ffi");
     const lib = ffi.dlopen(process.platform === "darwin" ? "libSystem.dylib" : "libc.so.6", {
       getrlimit: { args: ["i32", "ptr"], returns: "i32" },

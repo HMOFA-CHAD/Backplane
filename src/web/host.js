@@ -14,9 +14,12 @@ import { installSubagentInspector } from "./subagent-inspector.js";
 installSubagentInspector();
 import { installViewerFeedback } from "./viewer-feedback.js";
 const viewerFeedback = installViewerFeedback();
+import { installWorkspaceHints } from "./workspace-hints.js";
 installWorkspaceKeys({ dispatch });
+installWorkspaceHints();
 installFloatingTerminal({ dispatch });
 import { ConnectionLog } from "./connection-log.js";
+import { frameSummary } from "./frame-summary.js";
 import { pairBrowser } from "./auth.js";
 
 // Consume the secret before the generic deeplink handler clears the fragment.
@@ -1745,7 +1748,7 @@ async function startThin(again = false, reason = "initial") {
           ui = App.unsync(App.presentation_handoff(ui, presentationJson(session)));
           document.documentElement.lang = App.lang(ui);
         }
-        later();
+        if (!detail?.inputOnly) later();
       },
       ack: (session, reply) => preservePresentationRoute(session, Wire.plain(App.presentation_reply(presentationJson(session), presentationJson(reply)))),
       decode: shown => App.presentation_node(presentationJson(shown)),
@@ -1810,7 +1813,10 @@ async function startThin(again = false, reason = "initial") {
       else if (o) Plot2d.got(o, at);
       return;
     }
-    if (bytes.byteLength > 262144) { disconnect("frame-limit");try { s.close(); } catch {}return; }
+    if (bytes.byteLength > 262144) {
+      diagnostic.note("error", { cause: "frame-limit", ...frameSummary(bytes, KEYS, WORDS) });
+      disconnect("frame-limit");try { s.close(); } catch {}return;
+    }
     try {
       const j = Wire.cbor(bytes, KEYS, WORDS), envelope = Wire.plain(j);
       if (envelope.t === "hb") { s.hb = true;diagnostic.heartbeat();return; }

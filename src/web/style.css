@@ -493,6 +493,8 @@ button.chip:hover { border-color: var(--bad); color: var(--bad); }
 .msg.sending { opacity: 0.6; } .msg .note { color: var(--faint); font-size: calc(11px * var(--text-scale, 100) / 100); }
 .link { align-self: flex-start; background: none; border: 0; border-left: 2px solid var(--accent); color: var(--accent); padding: 2px 8px; font-size: calc(12px * var(--text-scale, 100) / 100); max-width: 860px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .link.in { align-self: flex-end; border-left: 0; border-right: 2px solid var(--accent); }
+/* Outgoing timeline links keep their text height within the available width. */
+.timeline > button.link.out { flex-shrink: 0; max-width: min(860px, 100%); }
 
 .modal-back { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 20; }
 .picker { position: fixed; z-index: 21; top: 10vh; left: 50%; transform: translateX(-50%); width: min(640px, calc(100vw - 24px)); max-height: 76vh; display: flex; flex-direction: column; background: var(--raise); border: 1px solid var(--line); }
@@ -1046,3 +1048,9 @@ html:lang(ja) :is(.set-text, .set-ctl) { min-width: 0; }
 .subthreads-control { padding:4px 12px; display:flex; flex-wrap:wrap; gap:6px; border-bottom:1px solid var(--line); }
 .subthreads-control button { font-size:11px; padding:4px 8px; }
 @media (max-width:600px) { .thread-expander { min-height:40px; } .thread-create button { min-height:36px; } }
+
+/* Reserve a compact title slot before a modifier is held: no row movement. */
+.sidebar [data-shortcut-kind] { position:relative; padding-inline-end:22px; min-width:0; }
+.sidebar [data-shortcut-kind]::after { content:attr(data-shortcut-digit); position:absolute; inset-inline-end:2px; top:50%; transform:translateY(-50%); inline-size:16px; block-size:16px; box-sizing:border-box; border:1px solid var(--accent); border-radius:3px; background:var(--panel); color:var(--text); font:11px/14px var(--mono); text-align:center; letter-spacing:0; text-transform:none; opacity:0; pointer-events:none; }
+.sidebar[data-shortcut-hints="projects"] [data-shortcut-kind="projects"]::after,
+.sidebar[data-shortcut-hints="threads"] [data-shortcut-kind="threads"]::after { opacity:1; }

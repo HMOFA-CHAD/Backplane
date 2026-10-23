@@ -339,6 +339,32 @@ test('workspace actions adopt their choices before shell/background invalidation
  }
 });
 
+for (const queued of [false, true]) test('panel close survives background refresh while '+(queued?'queued':'active'),async()=>{
+ const f=await fixture({session:()=>({sel:'A',rid:1,drafts:{A:''},panel:true}),prepare:s=>s});f.open();
+ if(queued)f.host.request('noop','');
+ let accepted;f.host.request('panel','',yes=>accepted=yes);const count=f.sent.length;
+ f.host.update();
+ f.host.receive({t:'view.changed',version:1,generation:'7',epoch:'actual',viewId:'view-A',target:{kind:'thread',id:'A'},viewRevision:'2'});
+ assert.equal(f.sent.length,count,'a refresh cannot retire the close intention');
+ if(queued){f.host.receive(f.reply());assert.equal(f.sent.at(-1).p.action,'panel');}
+ f.host.receive(f.reply(undefined,{session:{...f.getSession(),panel:false},shown:{type:'text',text:'Closed viewer'}}));
+ assert.equal(accepted,true);assert.equal(f.getSession().panel,false);assert.equal(f.views.at(-1).n.text,'Closed viewer');
+ assert.equal(f.sent.at(-1).m,'view.update');assert.equal(f.sent.at(-1).p.session.panel,false);
+ f.host.receive(f.reply());assert.equal(f.getSession().panel,false);
+ assert.equal(f.sent.filter(r=>r.m==='view.action'&&r.p.action==='panel').length,1,'one click closes once');
+});
+
+test('panel close and reopen remain two ordered toggles',async()=>{
+ const f=await fixture({session:()=>({sel:'A',rid:1,drafts:{A:''},panel:true}),prepare:s=>s});f.open();
+ f.host.request('noop','');f.host.request('panel','');f.host.request('panel','');
+ assert.equal(f.host.actions.length,2,'panel toggles must not coalesce as destinations');
+ f.host.receive(f.reply());assert.equal(f.sent.at(-1).p.action,'panel');
+ f.host.receive(f.reply(undefined,{session:{...f.getSession(),panel:false}}));
+ assert.equal(f.sent.at(-1).p.action,'panel');assert.equal(f.sent.at(-1).p.session.panel,false);
+ f.host.receive(f.reply(undefined,{session:{...f.getSession(),panel:true}}));
+ assert.equal(f.getSession().panel,true);assert.equal(f.sent.filter(r=>r.m==='view.action'&&r.p.action==='panel').length,2);
+});
+
 for (const queued of [false, true]) test('legacy subthread picker defers refresh while '+(queued?'queued':'active'),async()=>{
  for (const mode of ['update','changed']) {
   const f=await fixture();f.open();if(queued)f.host.request('noop','');
