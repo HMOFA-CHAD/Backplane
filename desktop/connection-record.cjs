@@ -19,6 +19,8 @@ function sanitize(x) {
   if (typeof x.closeReason === 'string') r.closeReason = reasons.has(x.closeReason) ? x.closeReason : 'redacted';
   if (crashes.has(x.rendererReason)) r.rendererReason = x.rendererReason;
   if (['Error','TypeError','RangeError','SyntaxError','DOMException'].includes(x.errorKind)) r.errorKind = x.errorKind;
+  if (['reply','view','hb','view.changed','plot','term','shot','info','log','changes','delta','unknown'].includes(x.frameType)) r.frameType = x.frameType;
+  if (['view-reply','ordinary-reply','unknown-reply','notification','unknown'].includes(x.frameClass)) r.frameClass = x.frameClass;
   return r;
 }
 function retained(rows, now) {
