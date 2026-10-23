@@ -40,10 +40,34 @@ import { ThinMailDraft, mailReplyField } from "./mail-drafts.js";
 import { ThinViews, viewCapability } from "./thin.js";
 import * as Wire from "./wire.js";
 import { openDraw } from "./draw.js";
-import { ViewTransition, loadingShell } from "./view-transition.js";
+import { ViewTransition, loadingShell, withTheme } from "./view-transition.js";
 import { T, is, learnJson, learnDom } from "./wire.js";
 
 const CONNECTION_BUNDLE = bundleOf(import.meta.url);
+
+// The theme the newest authoritative frame painted (a hub view, or this
+// page's own synced log): the one authority for every picture shown before
+// the hub's next view, whichever thread it was retained for. Kept across
+// loads so the first paint already has it.
+const THEME = "backplane-theme";
+let themeNow = "";
+try { themeNow = localStorage.getItem(THEME) || ""; } catch {}
+// the desktop window keeps the same word for its cold start (desktop/main.cjs)
+let desktopTheme = window.backplaneDesktop?.theme || "";
+if (!themeNow) themeNow = desktopTheme;
+function themeDocument() {
+  document.documentElement.classList.toggle("light", themeNow === "light");
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", themeNow === "light" ? "#fafaf8" : "#111410");
+}
+themeDocument();
+function themeSeen(app) {
+  const theme = !app ? "" : app.classList.contains("light") ? "light" : "dark";
+  if (theme && theme !== desktopTheme && window.backplaneDesktop?.themeSeen) { desktopTheme = theme;window.backplaneDesktop.themeSeen(theme); }
+  if (!theme || theme === themeNow) return;
+  themeNow = theme;themeDocument();
+  try { localStorage.setItem(THEME, theme); } catch {}
+}
+const themed = shown => withTheme(shown, themeNow);
 
 // the constructors' tags as this bundle names them (wire.js)
 learnJson(App.json_tags());
@@ -336,8 +360,8 @@ function restoreTransition(target) {
   transitionPosition = transitionViews.position(transitionScope(target)) || {atEnd:true};
   const title = transitionTitleTarget === target.kind + ":" + target.id ? transitionTitle : target.id;
   const waiting = Wire.plain(App.presentation_view(App.presentation_wait(ui)));
-  transitionNode = shown ? App.presentation_node(presentationJson(shown)) : transitionShell
-    ? App.presentation_node(presentationJson(loadingShell(transitionShell, waiting, title || target.id))) : null;
+  transitionNode = shown ? App.presentation_node(presentationJson(themed(shown))) : transitionShell
+    ? App.presentation_node(presentationJson(themed(loadingShell(transitionShell, waiting, title || target.id)))) : null;
   return !!shown;
 }
 const focusedView = new FocusedView({
@@ -346,7 +370,7 @@ const focusedView = new FocusedView({
   view: record => {
     if (canonicalBoot || remoteReady) return;
     const shell = Wire.plain(App.presentation_view(App.presentation_wait(ui)));
-    focusedNode = App.presentation_node(presentationJson(mergeFocused(shell, record)));
+    focusedNode = App.presentation_node(presentationJson(themed(mergeFocused(shell, record))));
     focusedAtEnd = record.atEnd;
     trace("focused-view");later();
   },
@@ -518,10 +542,12 @@ function render() {
   const tl = document.getElementById("timeline");
   const t0 = PERF ? pnow() : 0;
   const page = frontendNode ? thinContinuations.project(App.presentation_overlay(frontendNode, presentationJson(modelFeedback.project(currentSession()))), expand)
-    : transitionNode ? App.presentation_overlay(transitionNode, presentationJson(currentSession())) : focusedNode || App.view(canonicalBoot ? ui : App.presentation_wait(ui));
+    : transitionNode ? App.presentation_overlay(transitionNode, presentationJson(currentSession())) : focusedNode
+    || (canonicalBoot ? App.view(ui) : App.presentation_node(presentationJson(themed(Wire.plain(App.presentation_view(App.presentation_wait(ui)))))));
   const t1 = PERF ? pnow() : 0;
   patch(root, { $: T.El, tag: "div", key: "", attrs: { $: "Nil" }, kids: { $: "Con", head: page, tail: { $: "Nil" } } });
   if (PERF) PERF.render.push([t1 - t0, pnow() - t1]);
+  if (frontendNode || canonicalBoot && App.synced(ui)) themeSeen(root.querySelector(".app"));
   if (canonicalBoot) {
     document.documentElement.dataset.backplaneReady = "true";
     document.documentElement.dataset.backplaneSeq = App.seq(ui);

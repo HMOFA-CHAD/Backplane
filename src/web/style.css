@@ -49,6 +49,8 @@
   background: var(--bg); color: var(--text);
 }
 html:has(.app.light), html:has(.app.light) body { background: #fafaf8; color: #1b1d21; }
+/* before the first frame: the theme the last one painted (host.js themeDocument) */
+html.light, html.light body { background: #fafaf8; color: #1b1d21; color-scheme: light; }
 
 * { box-sizing: border-box; border-radius: 0; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 13px/1.5 var(--sans); }
@@ -754,7 +756,11 @@ button.mic.starting, button.mic.stopping { border-color: var(--bad); color: var(
 
 /* The uberbot: its sidebar row and the Status tab (src/web/bots.bend) */
 .uber-row { border-bottom: 1px solid var(--line); padding: 8px 12px; }
-.uber-counts { color: var(--dim); font-size: calc(11px * var(--text-scale, 100) / 100); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.uber-row { cursor: default; }
+.uber-open { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; text-align: left; background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; }
+.uber-mood { color: var(--dim); font-size: calc(11px * var(--text-scale, 100) / 100); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.uber-counts { flex: 0 1 auto; min-width: 0; max-width: 55%; background: none; border: 0; padding: 2px 4px; color: var(--accent); font: inherit; font-size: calc(11px * var(--text-scale, 100) / 100); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.uber-open:focus-visible, .uber-counts:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .plane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .plane-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 24px; padding: 10px 16px; border-bottom: 1px solid var(--line); flex: none; }
 .plane-count { display: flex; align-items: baseline; gap: 6px; color: var(--faint); }
@@ -776,6 +782,8 @@ button.mic.starting, button.mic.stopping { border-color: var(--bad); color: var(
 .plane-row { display: flex; align-items: center; gap: 8px; height: 28px; box-sizing: border-box; padding: 0 16px; width: 100%; text-align: left; background: none; border: 0; color: var(--text); font: inherit; cursor: pointer; }
 .plane-row:hover { background: var(--raise); }
 .plane-row.away { color: var(--faint); }
+.plane-row .why { flex: none; font-size: calc(11px * var(--text-scale, 100) / 100); color: var(--dim); }
+.plane-row .why.approval, .plane-row .why.question { color: var(--accent); }
 .plane-row .title { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .plane-row .sub { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dim); font-size: calc(12px * var(--text-scale, 100) / 100); }
 .plane-row .mach { color: var(--faint); font-size: calc(11px * var(--text-scale, 100) / 100); white-space: nowrap; }

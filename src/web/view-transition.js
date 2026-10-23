@@ -50,3 +50,31 @@ export function loadingShell(previous, waiting, title) {
   };
   return walk(waiting);
 }
+
+// Light or dark is one fact for the whole page (the hub's ui.theme), never a
+// thread's. A retained picture keeps the app root's class it was drawn with,
+// so before one is shown again its root takes the theme of the newest
+// authoritative frame; everything else in it is left exactly as it was.
+const appRoot = (n, depth = 0) => n?.type !== 'element' || depth > 4 ? null
+  : n.key === 'app' ? n : n.kids.map(c => appRoot(c, depth + 1)).find(Boolean) || null;
+export function themeOf(shown) {
+  const app = appRoot(shown);
+  if (!app) return '';
+  return (app.attrs.find(a => a.name === 'class')?.value || '').split(/\s+/).includes('light') ? 'light' : 'dark';
+}
+export function withTheme(shown, theme) {
+  if (theme !== 'light' && theme !== 'dark') return shown;
+  const app = appRoot(shown);
+  if (!app || themeOf(shown) === theme) return shown;
+  const recolor = n => {
+    if (n?.type !== 'element') return n;
+    if (n !== app) return {...n, kids: n.kids.map(recolor)};
+    const words = (n.attrs.find(a => a.name === 'class')?.value || '').split(/\s+/).filter(w => w && w !== 'light');
+    // the hub writes "light" before the tour's words (view.bend's View.page.b.sidebar)
+    if (theme === 'light') { const at = words.findIndex(w => w.startsWith('tour')); words.splice(at < 0 ? words.length : at, 0, 'light'); }
+    const attrs = n.attrs.some(a => a.name === 'class') ? n.attrs.map(a => a.name === 'class' ? {...a, value: words.join(' ')} : a)
+      : [...n.attrs, {name: 'class', value: words.join(' ')}];
+    return {...n, attrs};
+  };
+  return recolor(shown);
+}

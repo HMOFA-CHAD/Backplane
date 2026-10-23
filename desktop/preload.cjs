@@ -26,7 +26,15 @@ const browser = process.argv.includes('--backplane-direct-browser=1') ? Object.f
     return () => ipcRenderer.removeListener('desktop:browser-focus-address', listener);
   },
 }) : null;
+// the theme main kept for this window, on <html> before anything paints
+// (startup.css, style.css's html.light); the page tells main when it changes
+const theme = ipcRenderer.sendSync('desktop:theme-now') === 'light' ? 'light' : 'dark';
+const paintTheme = () => document.documentElement.classList.toggle('light', theme === 'light');
+if (document.documentElement) paintTheme();
+else new MutationObserver((_, seen) => { if (document.documentElement) { seen.disconnect();paintTheme(); } }).observe(document, {childList:true});
 contextBridge.exposeInMainWorld('backplaneDesktop', Object.freeze({
+  theme,
+  themeSeen: value => { if (value === 'light' || value === 'dark') ipcRenderer.send('desktop:theme', value); },
   terminalFocus: active => ipcRenderer.send('desktop:terminal-focus', active === true),
   ...(browser ? {browser} : {}),
   chooseFolder: () => ipcRenderer.invoke('desktop:choose-folder'),

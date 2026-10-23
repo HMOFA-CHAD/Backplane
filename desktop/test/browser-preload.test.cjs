@@ -3,9 +3,10 @@ const {test}=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 function preload(enabled){
  const calls=[],listeners=new Map();let api;
- const ipcRenderer={invoke:(...args)=>{calls.push(args);return Promise.resolve({phase:'ready'});},on:(channel,fn)=>listeners.set(channel,fn),removeListener:(channel,fn)=>{if(listeners.get(channel)===fn)listeners.delete(channel);}};
+ const ipcRenderer={sendSync:()=>'dark',invoke:(...args)=>{calls.push(args);return Promise.resolve({phase:'ready'});},on:(channel,fn)=>listeners.set(channel,fn),removeListener:(channel,fn)=>{if(listeners.get(channel)===fn)listeners.delete(channel);}};
  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../preload.cjs'),'utf8'),{
   process:{argv:enabled?['--backplane-direct-browser=1']:[]},
+  document:{documentElement:{classList:{toggle(){}}}},
   require:name=>{assert.equal(name,'electron');return{contextBridge:{exposeInMainWorld:(name,value)=>{assert.equal(name,'backplaneDesktop');api=value;}},ipcRenderer};},
  });
  return{api,calls,listeners};
