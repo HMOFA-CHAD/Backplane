@@ -26,7 +26,9 @@ function createBrowserSurface({electron, window, manager, authorize, onTakeover,
   function cover(){
     if(!current||window.isDestroyed())return;
     shield.setBounds(current.bounds);
-    if(!covered)window.contentView.addChildView(shield);
+    // manager.present may have reattached the guest above the existing shield.
+    // Electron reorders an existing child when addChildView is called again.
+    if(!covered||window.contentView.children.at(-1)!==shield)window.contentView.addChildView(shield);
     shield.setVisible(true);covered=true;
   }
   function hide(){
@@ -89,7 +91,13 @@ function createBrowserSurface({electron, window, manager, authorize, onTakeover,
     if(disposed)return;hide();disposed=true;
     if(!shield.webContents.isDestroyed())shield.webContents.close({waitForBeforeUnload:false});
   }
+  function guards(target){
+    if(disposed||!covered||!current||window.isDestroyed()||shield.webContents.isDestroyed()||!shield.getVisible()||
+      window.contentView.children.at(-1)!==shield||['owner','tabId','generation'].some(k=>current.target[k]!==target[k]))return false;
+    const bounds=shield.getBounds();
+    return ['x','y','width','height'].every(k=>bounds[k]===current.bounds[k]);
+  }
   window.once('closed',dispose);
-  return Object.freeze({present,hide,refresh,dispose});
+  return Object.freeze({present,hide,refresh,dispose,guards});
 }
 module.exports={createBrowserSurface};

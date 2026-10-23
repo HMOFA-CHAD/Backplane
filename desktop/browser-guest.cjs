@@ -3,6 +3,7 @@
 const { randomUUID, randomBytes, createHash } = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const { consumeBrowserMouse, retireBrowserMouse } = require('./browser-dispatch.cjs');
 
 // Main-process component, never a renderer IPC handler. The caller must bind
 // authorize to the authenticated Bend owner/Teach state, not renderer claims.
@@ -163,10 +164,11 @@ function createBrowserGuestManager({
   prepareGuest = async () => {}, popupPolicy = () => false,
   commandTimeoutMs = 10000,
   recorder = null,
+  agentInputProtected = () => false,
 }) {
   if (!electron?.WebContentsView || !electron?.session || !window?.contentView ||
       !appSession || typeof authorize !== 'function' || typeof onEvent !== 'function' ||
-      typeof prepareGuest !== 'function' || typeof popupPolicy !== 'function') throw new TypeError('Missing guest integration');
+      typeof prepareGuest !== 'function' || typeof popupPolicy !== 'function' || typeof agentInputProtected !== 'function') throw new TypeError('Missing guest integration');
   if (!/^persist:backplane-browser-guests(?:[.-][a-zA-Z0-9_-]+)?$/.test(partition)) throw new TypeError('Invalid guest partition');
   if (!Array.isArray(trustedOrigins) || !trustedOrigins.length) throw new TypeError('App origins required');
   const blocked = new Set(trustedOrigins.map(value => {
@@ -387,6 +389,15 @@ function createBrowserGuestManager({
       tab.creation?.state !== 'outstanding' &&
       presented?.tab === tab && allowed('direct-input', tab) && tab.fileGuard === 'installed' && presented?.tab === tab;
   }
+  function dispatchedMouse(tab, event, input) {
+    if (event !== 'before-mouse-event' || disposed || tab.closed || !tab.ready || !fileGuardReady(tab) ||
+        (recorderConfig && !documentReady(tab)) || tab.creation?.state === 'outstanding') return false;
+    // Hidden guests cannot receive physical pointer input. A visible guest
+    // needs the actual main-owned native shield, not a renderer's claim.
+    let protectedFromHuman = presented?.tab !== tab;
+    try { protectedFromHuman ||= agentInputProtected(target(tab)) === true; } catch { return false; }
+    return consumeBrowserMouse(tab.mouseDispatch, target(tab), event, input, protectedFromHuman);
+  }
   function detach() {
     if (!presented) return;
     const old = presented; presented = null;
@@ -548,7 +559,7 @@ function createBrowserGuestManager({
     if (tab.wc.debugger.isAttached()) throw new Error('Guest debugger already owned');
     tab.wc.debugger.attach('1.3'); tab.debuggerOwned = true;
   }
-  async function send(tab, ref, method, parameters, initialization, fixedGuardSetup) {
+  async function send(tab, ref, method, parameters, initialization, fixedGuardSetup, mouseDispatch) {
     get(ref);
     if (initialization && !tab.preparing) throw refused('Guest preparation has ended');
     if ((!tab.ready || (recorderConfig && !documentReady(tab))) && !initialization) throw refused('Guest not ready');
@@ -571,14 +582,19 @@ function createBrowserGuestManager({
     get(ref);
     if (tab.fileGuard === 'lost') demandFileGuard(tab);
     attachDebugger(tab, initialization);
-    let timer;
-    const answer = await Promise.race([
-      tab.wc.debugger.sendCommand(method, params),
-      new Promise((_resolve, reject) => { timer = setTimeout(() => {
-        const error = new Error('Guest CDP timed out; command may have run');
-        error.code = 'GUEST_COMMAND_TIMEOUT'; error.dispatched = true; reject(error);
-      }, commandTimeoutMs); }),
-    ]).finally(() => clearTimeout(timer));
+    // Install only after all normal document/CDP authorization checks. It
+    // admits one matching native mouse event, not a general input window.
+    tab.mouseDispatch = method === 'Input.dispatchMouseEvent' ? mouseDispatch : null;
+    let timer, answer;
+    try {
+      answer = await Promise.race([
+        tab.wc.debugger.sendCommand(method, params),
+        new Promise((_resolve, reject) => { timer = setTimeout(() => {
+          const error = new Error('Guest CDP timed out; command may have run');
+          error.code = 'GUEST_COMMAND_TIMEOUT'; error.dispatched = true; reject(error);
+        }, commandTimeoutMs); }),
+      ]);
+    } finally { clearTimeout(timer); retireBrowserMouse(mouseDispatch); tab.mouseDispatch = null; }
     // A detach/reset while awaiting a response cannot re-establish protection.
     // Public command side effects may already have happened; never retry them.
     if (tab.fileGuard === 'lost' || !tab.debuggerOwned || !tab.wc.debugger.isAttached()) {
@@ -593,7 +609,7 @@ function createBrowserGuestManager({
     }
     return Object.freeze({ target: target(tab), result: answer });
   }
-  function enqueue(tab, ref, method, params, initialization = false, fixedGuardSetup = false) {
+  function enqueue(tab, ref, method, params, initialization = false, fixedGuardSetup = false, mouseDispatch = null) {
     // Snapshot caller-owned objects now, then recheck both lease and authorization
     // when this command reaches the guest. A failed command does not stall a lane.
     const lease = Object.freeze({ ...target(get(ref)) });
@@ -601,7 +617,7 @@ function createBrowserGuestManager({
     if ((!tab.ready || (recorderConfig && !documentReady(tab))) && !initialization) throw new Error('Guest not ready');
     if (!initialization) creationReady(tab);
     const parameters = jsonObject(params);
-    const result = tab.queue.then(() => send(tab, lease, method, parameters, initialization, fixedGuardSetup));
+    const result = tab.queue.then(() => send(tab, lease, method, parameters, initialization, fixedGuardSetup, mouseDispatch));
     tab.queue = result.catch(() => {});
     return result;
   }
@@ -661,7 +677,7 @@ function createBrowserGuestManager({
     wc.on('page-title-updated', (_event, title) => { if (!tab.closed) { tab.title = title; changed(tab); } });
     for (const name of ['did-start-loading', 'did-stop-loading', 'did-finish-load']) wc.on(name, () => observeLoad(tab, name));
     for (const name of ['before-input-event', 'before-mouse-event', 'context-menu']) wc.on(name, (event, input) => {
-      if (!currentInput(tab)) { event.preventDefault(); emit('input-blocked', tab, { inputType: input?.type ?? name }); }
+      if (!currentInput(tab) && !dispatchedMouse(tab, name, input)) { event.preventDefault(); emit('input-blocked', tab, { inputType: input?.type ?? name }); }
     });
     wc.on('focus', () => { if (!currentInput(tab)) window.webContents.focus(); });
     wc.on('render-process-gone', () => { loseFileGuard(tab, 'render-process-gone'); tab.documents.clear(); tab.ready = false; tab.generation++; emit('crashed', tab); if (presented?.tab === tab) detach(); });
@@ -903,7 +919,7 @@ function createBrowserGuestManager({
         enabled: documentReady(tab) && recordingEnabled(tab), popupPreloadVerified: recorderConfig?.popupPreloadVerified === true });
     },
     close(ref) { const tab = get(ref); demand('close', tab); retire(tab, true); },
-    command(ref, method, params = {}) { const tab = get(ref); return enqueue(tab, ref, method, params); },
+    command(ref, method, params = {}, mouseDispatch = null) { const tab = get(ref); return enqueue(tab, ref, method, params, false, false, mouseDispatch); },
     dispose,
   });
 }

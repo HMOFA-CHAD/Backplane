@@ -7,6 +7,29 @@ const {AsyncLocalStorage}=require('node:async_hooks');
 const {decodeBrowserMessage,encodeBrowserMessage,exactObject,targetKey}=require('./browser-wire.cjs');
 const OPERATIONS=new Set(['cdp','select','focus','navigate','history','reload','close']);
 const UNKNOWN_STATES=new WeakSet();
+// Opaque main-only, one-event permissions. A human/CDP source bit is not
+// exposed on Electron's before-mouse-event. The native shield must therefore
+// protect a visible guest as well as matching this exact authorized dispatch.
+const MOUSE_PERMITS=new WeakMap();
+const MOUSE_TYPES={mouseMoved:'mouseMove',mousePressed:'mouseDown',mouseReleased:'mouseUp'};
+function mousePermit(target,params,current){
+ if(!Object.hasOwn(MOUSE_TYPES,params.type)||!Number.isFinite(params.x)||!Number.isFinite(params.y))return null;
+ const token=Object.freeze({});
+ MOUSE_PERMITS.set(token,{target:Object.freeze({...target}),params:Object.freeze({...params}),current,consumed:false});return token;
+}
+function retireBrowserMouse(token){MOUSE_PERMITS.delete(token);}
+function consumeBrowserMouse(token,target,event,input,protectedFromHuman){
+ const permit=MOUSE_PERMITS.get(token);
+ try{
+  if(!permit||permit.consumed||protectedFromHuman!==true||event!=='before-mouse-event'||!input||
+    targetKey(permit.target)!==targetKey(target)||!permit.current())return false;
+  const p=permit.params;
+  if(input.type!==MOUSE_TYPES[p.type]||!Number.isFinite(input.x)||!Number.isFinite(input.y)||
+    Math.abs(input.x-p.x)>1/64||Math.abs(input.y-p.y)>1/64||input.button!==(p.button??'none')||
+    input.clickCount!==(p.clickCount??0))return false;
+  permit.consumed=true;return true;
+ }catch{return false;}
+}
 
 // Construct once for the selected service/window lifetime, then retain across
 // channel, manager and dispatch replacements. There is deliberately no reset:
@@ -76,9 +99,11 @@ function createBrowserDispatch({leases,manager,unknownState,onUnknown=()=>{}}){
   const result=prior.then(async()=>{
    if(closed||unknownState.has(owner)||!fence.current()){item.state='settled';throw failure('STALE_AUTHORITY',false);}
    item.state='running';
+   const mouse=request.operation==='cdp'&&request.method==='Input.dispatchMouseEvent'?
+    mousePermit(item.target,request.params,()=>!closed&&!unknownState.has(owner)&&item.state==='running'&&fence.current()):null;
    try{
     const value=await context.run(fence,()=>{
-     if(request.operation==='cdp')return manager.command(item.target,request.method,request.params);
+     if(request.operation==='cdp')return manager.command(item.target,request.method,request.params,mouse);
      if(request.operation==='navigate')return manager.navigate(item.target,request.params.url);
      if(request.operation==='history')return manager.navigateHistory(item.target,request.params.direction);
      if(request.operation==='reload')return manager.reload(item.target);
@@ -91,11 +116,11 @@ function createBrowserDispatch({leases,manager,unknownState,onUnknown=()=>{}}){
     // begin. A timeout/rejected opaque operation is never reported cancelled.
     if(error?.dispatched===false){item.state='settled';throw failure('GUEST_REFUSED',false);}
     unknown(item);throw failure('GUEST_OUTCOME_UNKNOWN',true);
-   }
+   }finally{retireBrowserMouse(mouse);}
   });
   const tail=result.catch(()=>{});lanes.set(owner,tail);void tail.then(()=>{if(lanes.get(owner)===tail)lanes.delete(owner);});
   return result;
  }
  return Object.freeze({authorize,invoke,barrier,retireSettled,close});
 }
-module.exports={createBrowserDispatch,createBrowserUnknownState};
+module.exports={createBrowserDispatch,createBrowserUnknownState,consumeBrowserMouse,retireBrowserMouse};

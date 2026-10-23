@@ -332,7 +332,7 @@ function createDesktopBrowserController({electron,window,appSession,origin,versi
   if(!identity){
    validateBrowserHello(message,{requestId:helloId,expectedVersion:version});serverSequence=message.serverSequence;
    identity={serviceEpoch:message.serviceEpoch,controllerLease:message.controllerLease};leases.establish(identity.serviceEpoch,identity.controllerLease);leases.receiveSequence(serverSequence);
-   manager=managerFactory({electron,window,appSession,trustedOrigins:[origin],recorder,popupPolicy:()=>false,prepareGuest,onEvent,authorize:value=>{
+   manager=managerFactory({electron,window,appSession,trustedOrigins:[origin],recorder,popupPolicy:()=>false,prepareGuest,onEvent,agentInputProtected:target=>surface?.guards(target)===true,authorize:value=>{
     const local=typeof value.tabId==='string'?tabs.get(tabKey(value)):null;
     if(local?.guardLost&&!['hide','close','list'].includes(value.operation))return false;
     if(value.initialization){
