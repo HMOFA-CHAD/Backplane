@@ -26,6 +26,13 @@
 # and the emit's peak RSS.
 set -eu
 cd "$(dirname "$0")/.."
+# This review must run even for --key and before a cached emit is accepted.
+# A new sidebar draft reader must not inherit the reduced private image key.
+if [ "${1:-}" = --key ]; then
+  python3 scripts/sidebar-draft-guard.py --entry "${2:?build-js.sh --key SRC}"
+else
+  python3 scripts/sidebar-draft-guard.py --entry "${1:?build-js.sh SRC OUT}"
+fi
 # the key the emit is kept under: only what bend reads for $src (its
 # imports, effects and headers), so a change elsewhere (the web client, a
 # script) reuses the last emit
