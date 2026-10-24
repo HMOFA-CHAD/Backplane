@@ -1289,27 +1289,40 @@ def Claude.tool_summary(+name: String, +input: J.Json) -> String:
 def Claude.uid(+uuid: String) -> String:
   Bool.pick(String, String.is_empty(uuid), "", ":" ++ String.take(uuid, 8n))
 
-def Claude.block.k(i: Nat, +thread: String, +msg: String, +n: Nat, +now: Nat, +seq: Nat, +uuid: String, +b: J.Json) -> List<&2, M.Change>:
+# Thinking (model.bend's Think): a finished thought is an act of tone
+# "thinking", logged only while the setting is on; an empty one (Claude
+# started without --thinking-display, or the setting just turned on) is not
+def Think.act(think: Bool, +thread: String, +id: String, +text: String, +now: Nat) -> List<&2, M.Change>:
+  Bool.pick(List<&2, M.Change>, Bool.and(think, Bool.not(String.is_empty(String.trim(text)))), [M.ActivityLogged{thread, id, M.Think.tone(), "thinking", text, now}], Nil{})
+
+# the item kinds a Codex-shaped item.completed is read for (a reasoning
+# item, Codex's summary or Pi's thought, is logged only while thinking is on)
+def Think.items() -> List<&2, String>:
+  ["agent_message", "command_execution", "file_change", "todo_list", "reasoning"]
+
+def Claude.block.k(i: Nat, +thread: String, +msg: String, +n: Nat, +now: Nat, +seq: Nat, +uuid: String, +b: J.Json, +think: Bool) -> List<&2, M.Change>:
   match i:
     case 0n:
       [M.MessagePosted{thread, msg ++ ":" ++ Nat.show(n) ++ Claude.uid(uuid), M.Assistant{}, J.Json.get_str(b, "text", ""), now}]
     case 1n:
       [M.ActivityLogged{thread, J.Json.get_str(b, "id", Hub.id("a", now, seq)), "tool", J.Json.get_str(b, "name", "tool"),
         Claude.tool_summary(J.Json.get_str(b, "name", "tool"), J.Json.get_obj(b, "input")), now}]
+    case 2n:
+      Think.act(think, thread, "think:" ++ msg ++ ":" ++ Nat.show(n) ++ Claude.uid(uuid), J.Json.get_str(b, "thinking", ""), now)
     case _:
       Nil{}
 
-def Claude.blocks(bs: List<&2, J.Json>, +thread: String, +msg: String, +n: Nat, +now: Nat, +seq: Nat, +uuid: String) -> List<&2, M.Change>:
+def Claude.blocks(bs: List<&2, J.Json>, +thread: String, +msg: String, +n: Nat, +now: Nat, +seq: Nat, +uuid: String, +think: Bool) -> List<&2, M.Change>:
   match bs:
     case Nil{}:
       Nil{}
     case +b <> t:
       List.append(&2, M.Change,
-        Claude.block.k(C.Codec.pos(["text", "tool_use"], J.Json.get_str(b, "type", "")), thread, msg, n, now, seq, uuid, b),
-        Claude.blocks(t, thread, msg, 1n+n, now, seq, uuid))
+        Claude.block.k(C.Codec.pos(["text", "tool_use", "thinking"], J.Json.get_str(b, "type", "")), thread, msg, n, now, seq, uuid, b, think),
+        Claude.blocks(t, thread, msg, 1n+n, now, seq, uuid, think))
 
-def Claude.assistant(+thread: String, +now: Nat, +seq: Nat, +m: J.Json, +uuid: String) -> Step:
-  Step{Claude.blocks(J.Json.elems(J.Json.get_obj(m, "content")), thread, J.Json.get_str(m, "id", "msg"), 0n, now, seq, uuid),
+def Claude.assistant(+thread: String, +now: Nat, +seq: Nat, +m: J.Json, +uuid: String, +think: Bool) -> Step:
+  Step{Claude.blocks(J.Json.elems(J.Json.get_obj(m, "content")), thread, J.Json.get_str(m, "id", "msg"), 0n, now, seq, uuid, think),
     [Broadcast{J.Json.show(J.Json.obj([J.KV{"t", J.Str{"delta_end"}}, J.KV{"thread", J.Str{thread}}]))}]}
 
 def Claude.result.k(err: Bool, +thread: String, +now: Nat, text: String) -> Step:
@@ -1742,7 +1755,7 @@ def Lim.claude(+s: M.State, +now: Nat, +o: J.Json) -> List<&2, M.Change>:
 
 # an assistant message and what its todo tools do to the thread's list
 def Claude.assistant.t(+s: M.State, +thread: String, +now: Nat, +m: J.Json, +uuid: String) -> Step:
-  Step.after(Step.after(Claude.assistant(thread, now, Hub.seq(s), m, uuid), Claude.todos(s, thread, now, J.Json.elems(J.Json.get_obj(m, "content")))), Usage.claude(s, thread, now, m))
+  Step.after(Step.after(Claude.assistant(thread, now, Hub.seq(s), m, uuid, M.Think.on(s)), Claude.todos(s, thread, now, J.Json.elems(J.Json.get_obj(m, "content")))), Usage.claude(s, thread, now, m))
 
 def Claude.result.text(+c: J.Json) -> String:
   J.Json.get_str(Maybe.default(&2, J.Json, List.head(&2, J.Json, J.Json.elems(c)), J.Null{}), "text", J.Json.as_str(Some{c}, ""))
@@ -3342,7 +3355,7 @@ def Wt.seed(id: String) -> Nat:
 # Codex (codex exec --json)
 # -------------------------
 
-def Codex.item.k(i: Nat, +thread: String, +now: Nat, +seq: Nat, +it: J.Json) -> Step:
+def Codex.item.k(i: Nat, +thread: String, +now: Nat, +seq: Nat, +it: J.Json, think: Bool) -> Step:
   match i:
     case 0n:
       Step{[M.MessagePosted{thread, J.Json.get_str(it, "id", Hub.id("c", now, seq)) ++ "-" ++ Nat.show(seq), M.Assistant{}, J.Json.get_str(it, "text", ""), now}], Nil{}}
@@ -3352,6 +3365,8 @@ def Codex.item.k(i: Nat, +thread: String, +now: Nat, +seq: Nat, +it: J.Json) -> 
       Step{[M.ActivityLogged{thread, Hub.id("f", now, seq), "tool", "edit", J.Json.show(J.Json.get_obj(it, "changes")), now}], Nil{}}
     case 3n:
       Step{[M.TodosSet{thread, TD.Todo.show(TD.Todo.codex(it)), now}], Nil{}}
+    case 4n:
+      Step{Think.act(think, thread, "think:" ++ J.Json.get_str(it, "id", Hub.id("r", now, seq)) ++ "-" ++ Nat.show(seq), J.Json.get_str(it, "text", ""), now), Nil{}}
     case _:
       Step.none()
 
@@ -3377,7 +3392,7 @@ def Codex.line.k(i: Nat, +s: M.State, +thread: String, +now: Nat, +o: J.Json) ->
       Step.after(Claude.init.k(Claude.init.same(Hub.thread(s, thread), J.Json.get_str(o, "thread_id", "")), thread, J.Json.get_str(o, "thread_id", ""), now),
         Turn.codex.start(Claude.init.same(Hub.thread(s, thread), J.Json.get_str(o, "thread_id", "")), thread, J.Json.get_str(o, "thread_id", ""), now))
     case 1n:
-      Codex.item.k(C.Codec.pos(["agent_message", "command_execution", "file_change", "todo_list"], J.Json.get_str(J.Json.get_obj(o, "item"), "type", "")), thread, now, Hub.seq(s), J.Json.get_obj(o, "item"))
+      Codex.item.k(C.Codec.pos(Think.items(), J.Json.get_str(J.Json.get_obj(o, "item"), "type", "")), thread, now, Hub.seq(s), J.Json.get_obj(o, "item"), M.Think.on(s))
     case 2n:
       Step{M.TurnChanged{thread, M.Completed{}, now} <> Turn.codex(s, thread, now, o), Nil{}}
     case 4n:

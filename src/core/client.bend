@@ -2713,6 +2713,13 @@ def Effort.known(m: Maybe<&2, J.Json>, +provider: String) -> List<&2, String>:
     case None{}:
       AG.Effort.levels(provider)
 
+# Thinking's opt-in (model.bend's Think), on Settings > Agents
+def Think.label() -> String:
+  "Show thinking"
+
+def Think.note() -> String:
+  "Ask agents for their thinking and show it in the thread, folded (Claude, Codex and Pi; a Claude session restarts to take it)"
+
 def Effort.name(+e: String) -> String:
   Bool.pick(String, String.is_empty(e), "auto", e)
 
@@ -9902,7 +9909,7 @@ def Settings.rows.of(i: Nat, +l: I.Loc) -> List<&2, String>:
   match i:
     case 0n: [MSG.T.settings.theme(l), MSG.T.settings.lang(l), MSG.T.settings.sidebar(l), MSG.T.settings.textsize(l)]
     case 1n: [MSG.T.settings.settle(l), MSG.T.settings.restart(l)]
-    case 2n: [MSG.T.settings.provider(l), MSG.T.settings.model(l)]
+    case 2n: [MSG.T.settings.provider(l), MSG.T.settings.model(l), Think.label()]
     case 3n: [MSG.T.settings.writing.provider(l)]
     case 4n: ["KiCad", "FreeCAD", "KiCad IPC"]
     case 5n: ["Tailscale", MSG.T.settings.pair(l), MSG.T.settings.channel(l)]
@@ -9916,7 +9923,7 @@ def Settings.words(i: Nat) -> String:
   match i:
     case 0n: "appearance dark light theme font text size zoom scale language sidebar"
     case 1n: "threads settle restart continue notifications alerts notify"
-    case 2n: "agents provider model claude codex grok opencode muse pi omp effort"
+    case 2n: "agents provider model claude codex grok opencode muse pi omp effort thinking reasoning chain of thought"
     case 3n: "writing titles summaries text model"
     case 4n: "cad kicad freecad ipc path schematic board"
     case 5n: "network tailscale tailnet pairing pair phone qr machines sync update channel nightly stable version"

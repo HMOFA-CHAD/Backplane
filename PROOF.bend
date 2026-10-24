@@ -10920,6 +10920,9 @@ def Laws.speed_unseen_untold():
 def Laws.speed_told_rise():
   {==}
 
+def Laws.think_off_nothing(text):
+  {==}
+
 def Laws.card_task_status_agrees():
   {==}
 

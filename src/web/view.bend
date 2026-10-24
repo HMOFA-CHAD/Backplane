@@ -102,7 +102,7 @@ def VLabel.option.k(+lc: I.Loc, known: Bool, +v: String) -> String:
     case False{}: Bool.pick(String, String.is_empty(v), MSG.T.common.default(lc), v)
 
 def VLabel.option(+lc: I.Loc, +key: String, v: String) -> String:
-  VLabel.option.k(lc, Bool.or(Bool.or(Bool.or(String.eq(key, "order.enabled"), String.eq(key, "order.estimates")), String.eq(key, "ui.tokstats")), Bool.or(String.eq(key, "restart.continue"), Bool.or(String.eq(key, "ui.theme"), Bool.or(String.eq(key, "sidebar.view"), Bool.or(String.eq(key, "update.channel"), Bool.or(String.eq(key, "kicad.ipc"), Bool.or(String.starts_with(key, "notify."), String.starts_with(key, "sync.")))))))), v)
+  VLabel.option.k(lc, Bool.or(Bool.or(Bool.or(String.eq(key, "order.enabled"), String.eq(key, "order.estimates")), Bool.or(String.eq(key, "ui.tokstats"), String.eq(key, "agent.thinking"))), Bool.or(String.eq(key, "restart.continue"), Bool.or(String.eq(key, "ui.theme"), Bool.or(String.eq(key, "sidebar.view"), Bool.or(String.eq(key, "update.channel"), Bool.or(String.eq(key, "kicad.ipc"), Bool.or(String.starts_with(key, "notify."), String.starts_with(key, "sync.")))))))), v)
 
 # Display labels only: metadata keys and submitted chip values stay unchanged.
 def VLabel.effort(+lc: I.Loc, +e: String) -> String:
@@ -1530,7 +1530,8 @@ def View.settings.rows.k(i: Nat, +lc: I.Loc, +u: U.Ui, +st: M.State, +nf: Map<&2
     case 2n: List.concat(&2, D.Node, [[View.setrow(MSG.T.settings.provider(lc), MSG.T.settings.agents.note(lc, Bool.pick(String, String.is_empty(U.Models.cli(U.Str.get(nf, "models"), prov)), MSG.T.settings.provider.missing(lc, prov), U.Models.cli(U.Str.get(nf, "models"), prov))), View.chips.loc(lc, ["claude", "codex", "grok", "muse", "antigravity", "opencode", "pi", "omp"], prov, "agent.provider"))],
       [View.setrow(MSG.T.settings.model(lc), Bool.pick(String, String.is_empty(M.Setting.get(st, "agent.model", "")), MSG.T.common.default(lc), M.Setting.get(st, "agent.model", "")) ++ ": " ++ U.Models.label_of(U.Models.of(nf, prov), prov, M.Setting.get(st, "agent.model", "")),
         D.Dom.cat(View.menu.find(lc, U.Models.search(U.Models.menu(U.Models.of(nf, prov), prov)), U.Ui.scratch(u, "@f.mq")),
-          View.chips.loc(lc, U.Models.settings(U.Models.of(nf, prov), prov, U.Ui.scratch(u, "@f.mq"), M.Setting.get(st, "agent.model", "")), M.Setting.get(st, "agent.model", ""), "agent.model")))]])
+          View.chips.loc(lc, U.Models.settings(U.Models.of(nf, prov), prov, U.Ui.scratch(u, "@f.mq"), M.Setting.get(st, "agent.model", "")), M.Setting.get(st, "agent.model", ""), "agent.model")))],
+      [View.setrow(U.Think.label(), U.Think.note(), View.chips.loc(lc, ["on", "off"], Bool.pick(String, M.Think.on(st), "on", "off"), M.Think.key()))]])
     case 3n: List.concat(&2, D.Node, [[View.setrow(MSG.T.settings.writing.provider(lc), MSG.T.web.settings.writing.note(lc), View.chips.loc(lc, ["claude", "codex", "grok", "muse"], U.TextGen.provider(st), "text.provider"))],
       [View.setrow(MSG.T.web.settings.writing.model(lc), Bool.pick(String, String.is_empty(U.TextGen.model(st)), MSG.T.common.default(lc), U.TextGen.model(st)) ++ ": " ++ U.Models.label_of(U.Str.get(nf, "models"), U.TextGen.provider(st), U.TextGen.model(st)),
         View.chips.loc(lc, U.Models.menu(U.Str.get(nf, "models"), U.TextGen.provider(st)), U.TextGen.model(st), "text.model"))]])
@@ -1870,12 +1871,35 @@ def View.act.g.loc(+lc: I.Loc, rem: Bool, +id: String, +tone: String, +kind: Str
 def View.act.g(rem: Bool, +id: String, +tone: String, +kind: String, +summary: String, +at: Nat, +st: M.State) -> D.Node:
   View.act.g.loc(I.En{}, rem, id, tone, kind, summary, at, st)
 
+# A thought (model.bend's Think): folded under "Thinking" and its first
+# line, the whole of it (Markdown) when opened; while the setting is off it
+# is not shown at all
+def View.think.clean(+l: String) -> String:
+  String.take(String.trim(String.join(String.split(String.join(String.split(l, '*'), ""), '#'), "")), 160n)
+
+def View.think.head(ls: List<&2, String>, +acc: String) -> String:
+  match ls:
+    case Nil{}:
+      acc
+    case +l <> t:
+      View.think.head(t, Bool.pick(String, String.is_empty(acc), View.think.clean(l), acc))
+
+def View.think.loc(+lc: I.Loc, on: Bool, +id: String, +text: String) -> D.Node:
+  match on:
+    case True{}:
+      D.El{"details", id, [D.At{"class", "act thinking"}, D.At{"data-id", id}], [
+        D.El{"summary", "", Nil{}, [D.Dom.span("kind", "Thinking"), D.Dom.span("summary", View.think.head(String.split(text, '\n'), ""))]},
+        D.El{"div", "", [D.At{"class", "body"}], D.Md.render.loc(lc, text)}]}
+    case False{}:
+      D.El{"div", id, [D.At{"class", "act thinking"}, D.At{"data-id", id}, D.At{"hidden", ""}], Nil{}}
+
 def View.act.t.loc(+lc: I.Loc, term: Bool, e: M.Entry, +st: M.State, +ec: U.Ec) -> D.Node:
   match term e:
     case True{} M.Act{+id, +th, tone, kind, sum, +at}:
       View.emb.loc(lc, ec, st, M.Act{id, th, tone, kind, sum, at}, th)
     case _ M.Act{+id, _, +tone, +kind, +summary, +at}:
-      View.act.g.loc(lc, String.eq(tone, "remind"), id, tone, kind, summary, at, st)
+      Bool.pick(D.Node, String.eq(tone, M.Think.tone()), View.think.loc(lc, M.Think.on(st), id, summary),
+        View.act.g.loc(lc, String.eq(tone, "remind"), id, tone, kind, summary, at, st))
     case _ M.Msg{+id, _, _, text, _}:
       D.El{"div", id, [D.At{"class", "act"}, D.At{"data-id", id}], [D.Dom.span("summary", text)]}
 

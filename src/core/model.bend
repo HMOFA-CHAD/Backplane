@@ -1350,6 +1350,20 @@ def Setting.keys.pre(s: State, +pre: String) -> List<&2, String>:
     case State{_, _, _, _, _, sg, _, _, _, _, _}:
       Pfx.keys(sg, pre)
 
+# Thinking (opt-in, the setting agent.thinking, off unless "on"): the
+# agents are asked for their thinking (Claude's --thinking-display
+# summarized, Codex's reasoning summaries) and the hub logs each finished
+# thought as an act of tone "thinking" (hub.bend's Think); the clients show
+# them, folded, only while it is on
+def Think.key() -> String:
+  "agent.thinking"
+
+def Think.on(+s: State) -> Bool:
+  String.eq(Setting.get(s, Think.key(), "off"), "on")
+
+def Think.tone() -> String:
+  "thinking"
+
 # The "restart.continue" setting: after a restart, a turn the restart cut
 # short goes on by itself (on unless "off"; hub.bend's Carry)
 def Carry.on(+s: State) -> Bool:

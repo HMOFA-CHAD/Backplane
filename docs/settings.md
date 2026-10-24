@@ -24,3 +24,19 @@ background refresh. `test/tools/settings_review.mjs` runs the emitted production
 `settings_fixture.bend` in an isolated browser: fourteen categories, icons,
 search/Enter, Japanese labels and a 390 px layout. It does not write live
 settings or claim live hub/device validation. Native phone UI was not changed.
+
+## Show thinking
+
+Settings → Agents → Show thinking (`agent.thinking`, off until turned on)
+asks agents for their thinking and shows it in the thread, folded under
+"Thinking" and its first line. Claude is started with
+`--thinking-display summarized` (without it its thinking blocks come with
+no text); turning the setting either way restarts a thread's Claude
+process at its next turn (the setting is part of `Agent.key`). Codex runs
+with `model_reasoning_summary="detailed"` and its `reasoning` items are
+kept. Pi's `thinking_end` carries a whole thought. Each finished thought is
+an `ActivityLogged` of tone `thinking`, logged only while the setting is on;
+turning it off hides the ones already logged (web and phones). Thoughts
+arrive whole, after the model finishes thinking, not streamed. The ACP
+agents (OpenCode, Grok, Oh My Pi, Antigravity) send thinking as chunks that
+are not collected yet, and Muse's reasoning is not read.

@@ -617,6 +617,14 @@ def Mob.entry.r(+lc: I.Loc, rem: Bool, +e: M.Entry, +st: M.State, +dr: Map<&2, S
     case False{}:
       [Mob.own(lc, e, dr, sp)]
 
+# a thought (model.bend's Think) shows only while the setting is on
+def Mob.think.hide(e: M.Entry, +st: M.State) -> Bool:
+  match e:
+    case M.Act{_, _, +tone, _, _, _}:
+      Bool.and(String.eq(tone, M.Think.tone()), Bool.not(M.Think.on(st)))
+    case _:
+      False{}
+
 # what an entry shows as, as the web's View.entry.k: this thread's own
 # (headed by the thread that sent it), or a message it sent to another
 def Mob.entry.k(+lc: I.Loc, mine: Bool, +e: M.Entry, +st: M.State, +dr: Map<&2, String>, +sp: STP.Stamps) -> List<&2, J.Json>:
@@ -624,7 +632,7 @@ def Mob.entry.k(+lc: I.Loc, mine: Bool, +e: M.Entry, +st: M.State, +dr: Map<&2, 
     case True{} M.Msg{+id, t, r, x, at}:
       List.append(&2, J.Json, Mob.from(String.is_empty(M.Link.from(id)), id, M.Link.from(id), st), [Mob.own(lc, M.Msg{id, t, r, x, at}, dr, sp)])
     case True{} _:
-      Mob.entry.r(lc, Mob.remind.is(e), e, st, dr, sp)
+      Bool.pick(List<&2, J.Json>, Mob.think.hide(e, st), Nil{}, Mob.entry.r(lc, Mob.remind.is(e), e, st, dr, sp))
     case False{} M.Msg{+id, +t, _, x, _}:
       [Mob.link(id, "→ " ++ U.Tasks.title(st, t) ++ ": " ++ DF.Diff.first(x), t)]
     case False{} _:

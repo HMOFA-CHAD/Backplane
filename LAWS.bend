@@ -5831,7 +5831,7 @@ law alive_due:
 # every id already stored, keep "msg:n"
 law claude_text_ids_distinct:
   for b: J.Json
-  {[H.Claude.block.k(0n, "t", "m", 0n, 1n, 0n, "aaaaaaaa-1111", b), H.Claude.block.k(0n, "t", "m", 0n, 1n, 0n, "bbbbbbbb-2222", b), H.Claude.block.k(0n, "t", "m", 0n, 1n, 0n, "", b)]
+  {[H.Claude.block.k(0n, "t", "m", 0n, 1n, 0n, "aaaaaaaa-1111", b, False{}), H.Claude.block.k(0n, "t", "m", 0n, 1n, 0n, "bbbbbbbb-2222", b, False{}), H.Claude.block.k(0n, "t", "m", 0n, 1n, 0n, "", b, False{})]
     == [[M.MessagePosted{"t", "m:0:aaaaaaaa", M.Assistant{}, J.Json.get_str(b, "text", ""), 1n}], [M.MessagePosted{"t", "m:0:bbbbbbbb", M.Assistant{}, J.Json.get_str(b, "text", ""), 1n}], [M.MessagePosted{"t", "m:0", M.Assistant{}, J.Json.get_str(b, "text", ""), 1n}]] : List<&2, List<&2, M.Change>>}
 
 # a bot request sent again (the client's outbox after a dropped link, the
@@ -8991,6 +8991,11 @@ law tokstats_off_by_default:
 # running totals are only the baseline
 law speed_unseen_untold:
   {H.Speed.value("", 5n, 3n, 1n, 1n) == "5/3/0/0/1/0/0/1" : String}
+
+# a thought is logged only while thinking is on (opt-in)
+law think_off_nothing:
+  for +text: String
+  {H.Think.act(False{}, "t", "i", text, 1n) == [] : List<&2, M.Change>}
 
 # a turn's speed is its share of the running totals
 law speed_told_rise:
