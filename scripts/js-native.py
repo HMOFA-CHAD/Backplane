@@ -38,12 +38,14 @@ TextEncoder would replace them and is deliberately not used. The original
 Enc.head writes the length, so header limits and byte order stay unchanged.
 No decoder, dictionary, wire format, cache, client or action state changes.
 
-Server-only `Json.parse(s)`: remembered for a few large texts (16 KB or
-more, the last 8). The hub's views parse the same models info (every
+Server-only `Json.parse(s)`: remembered for repeated texts of 1 KB or
+more (the last 8). The hub's views parse the same models info (every
 provider's models, opencode's hundreds) several times a render, every
 render: measured 2026-10-24 on a long thread, most of a render's time. A
 parse is pure and its value never changes, so the same text gives the same
-value; smaller texts (agent lines, requests) are parsed as before.
+value; smaller texts (short agent lines and requests) are parsed as before.
+The 1 KB cutoff includes the measured 10.5 KB catalog and 3.2 KB shown-row
+catalog that were each parsed repeatedly below the old 16 KB cutoff.
 
 Server-only `Json.show(j)`: an iterative compact serializer preserving the
 pure encoder's exact escapes, raw number text, field order and duplicate
@@ -121,7 +123,7 @@ PARSE = re.compile(
     r'function (' + I + r'\$058Json\$parse\$)\((' + I + r')\)\{(?=return ' + I + r'\$058Parse\$fin\$\()'
 )
 PARSE_HELPER = (
-    "const __bpParseMemo=new Map();function __bpParsed(s,f){if(typeof s!==\"string\"||s.length<16384)return f(s);"
+    "const __bpParseMemo=new Map();function __bpParsed(s,f){if(typeof s!==\"string\"||s.length<1024)return f(s);"
     "let v=__bpParseMemo.get(s);if(v===undefined){v=f(s);if(__bpParseMemo.size>=8)__bpParseMemo.delete(__bpParseMemo.keys().next().value);"
     "__bpParseMemo.set(s,v)}return v}\n"
 )
