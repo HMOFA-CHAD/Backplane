@@ -13171,3 +13171,8 @@ import ./test/sidebar_full_branch_test.bend as FULLBRANCH
 def Laws.sidebar_full_branch_identity(shown): {==}
 def Laws.sidebar_full_branch_exact(reuse, shown):
   FULLBRANCH.shown_exact(reuse, shown)
+
+# Exact still-picture authority branches; cache dependency fields stay complete.
+def Laws.still_picture_disabled(key, res): {==}
+def Laws.still_picture_miss(res): {==}
+def Laws.still_picture_exact(res): {==}

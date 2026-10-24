@@ -1829,13 +1829,10 @@ def Hub.info(c: Cfg) -> J.Json:
     case Cfg{+home, _, host, port, _, _, _, +net, +tcfg, +views}:
       J.Json.obj(List.append(&2, J.KV, [J.KV{"telemetry.channel", J.Str{TI.Tio.channel(tcfg)}}, J.KV{"telemetry.id", J.Str{TI.Tio.id(tcfg)}}, J.KV{"telemetry.live", J.Str{Bool.pick(String, TI.Tio.can(tcfg, 0n), "1", "")}}, J.KV{"os", J.Str{TI.Tio.platform(tcfg, False{})}}, J.KV{"arch", J.Str{TI.Tio.platform(tcfg, True{})}}, J.KV{"home", J.Str{home}}, J.KV{"listen", J.Str{host ++ ":" ++ U32.show(port)}}], List.append(&2, J.KV, Info.net(net), Info.tch(net))))
 
-# the info as a render's memo key holds it (thin-actor.bend's Memo.key): all
-# of it but the models, told by their length (their text, every provider's
-# models, escaped into the key on every render was a tenth of its time).
-# A memo is kept a second at most, for a view.update that changed only the
-# live row, so models that change to the same length are seen at the next.
+# Complete current info is part of the exact picture key. Equal-length
+# catalog changes cannot grant no-stream picture reuse.
 def Hub.info.key(+c: Cfg) -> String:
-  J.Json.show(TA.Actor.lean(Hub.info(c))) ++ "|models:" ++ Nat.show(String.length(J.Json.get_str(Hub.info(c), "models", "")))
+  J.Json.show(Hub.info(c))
 
 # the pairing link (the tailnet address and the token) and its QR code: not
 # in the info every client hears, but told only to clients that came with
@@ -11340,7 +11337,7 @@ def Hub.thin.render.page(+pg: TSTO.Page, h: Hub, +client: U32, +o: J.Json, +c: C
       +stream = TLIVE.Stream.get(Cfg.thin.streams(cfg), TV.Target.thread(st, J.Json.get_obj(p, "target")))
       +actor = TA.Actor.mail_cache(TA.Actor.refresh(ThinContext.actors(context), web, st, Hub.info(cfg),
         J.Json.obj([J.KV{"t", J.Str{"live"}}, J.KV{"items", J.Json.arr(Nil{})}]), now, p, ThinContext.view(context)), ThinContext.actors(context), Cfg.thin.mail(cfg))
-      Hub.thin.rendered(TA.Rendered.remember(TA.Actor.render.revision(actor, web, st, TSTO.Page.index(pg), p, Cfg.thin.epoch(cfg), now, TSTO.Page.ids(pg), stream, Cfg.thin.signal_seq(cfg)), key, ms, stream),
+      Hub.thin.rendered(TA.Rendered.remember.clock(TA.Actor.render.revision(actor, web, st, TSTO.Page.index(pg), p, Cfg.thin.epoch(cfg), now, TSTO.Page.ids(pg), stream, Cfg.thin.signal_seq(cfg)), key, ms, now, stream, web, p),
         Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, c, now, context)
 
 def Hub.thin.render.full(h: Hub, +client: U32, +o: J.Json, +c: Client, +now: Nat, +context: ThinContext, +anchor: Nat, +p: J.Json, +key: String, +ms: Nat) -> IO(Hub):
@@ -11367,7 +11364,7 @@ def Hub.thin.render.at(h: Hub, +client: U32, +o: J.Json, +c: Client, +now: Nat, 
       +web = String.eq(Client.thin.mode(c), "view-web")
       +thread = TV.Target.thread(st, J.Json.get_obj(p, "target"))
       +key = TA.Memo.key(M.State.seq(st), Hub.info.key(cfg), p, anchor, ThinContext.view(context), web, thread)
-      Hub.thin.render.memo(TA.Memo.reply(TA.Actor.memos(ThinContext.actors(context)), String.eq(J.Json.get_str(o, "m", ""), "view.update"), key, ms, web,
+      Hub.thin.render.memo(TA.Memo.reply.clock(TA.Actor.memos(ThinContext.actors(context)), String.eq(J.Json.get_str(o, "m", ""), "view.update"), key, ms, now, web,
         TLIVE.Stream.get(Cfg.thin.streams(cfg), thread), thread, Cfg.thin.epoch(cfg), J.Json.get_obj(p, "target"), TA.Actor.loc(ThinContext.actors(context))),
         Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, c, now, context, anchor, p, key, ms)
 

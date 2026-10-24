@@ -17,6 +17,7 @@ import ../web/app.bend as A
 import ../web/mail-actions.bend as MA
 import ../mobile/hubs.bend as H
 import ./thin-splice.bend as S
+import ./thin-still-picture.bend as ST
 import ../core/i18n.bend as I
 import ../core/emb.bend as E
 
@@ -35,6 +36,7 @@ type Memo is Data:
   SideIndex{cache: SIXV.IndexCache}
   SignalText{cache: SGT.SignalTextCache}
   SidebarSent{scope: String, token: String, node: J.Json}
+  Still{picture: ST.Picture}
 
 type Actor is Data:
   Actor{ui: U.Ui, view: String, target: J.Json, pending: Map<&2, String>, reads: List<&2, J.Json>, dirty: Bool, memo: List<&2, Memo>}
@@ -715,6 +717,7 @@ def Memo.reply(ms: List<&2, Memo>, +update: Bool, +key: String, +clock: Nat, +we
     case SignalText{_} <> rest: Memo.reply(rest, update, key, clock, web, stream, thread, epoch, target, lc)
     case SidebarImage{_, _} <> rest: Memo.reply(rest, update, key, clock, web, stream, thread, epoch, target, lc)
     case SidebarSent{_, _, _} <> rest: Memo.reply(rest, update, key, clock, web, stream, thread, epoch, target, lc)
+    case Still{_} <> rest: Memo.reply(rest, update, key, clock, web, stream, thread, epoch, target, lc)
     case Memo{+k, +at, +partial, +res} <> _:
       Memo.reply.k(Bool.and(update, Bool.and(String.eq(k, key), Bool.and(Nat.is_ge(clock, at), Bool.and(Nat.is_lt(Nat.sub(clock, at), 1000n),
         Bool.and(Nat.is_gt(TL.Stream.size(stream), 0n), Bool.or(Bool.and(partial, S.Splice.partial(stream)), Bool.and(Bool.not(partial), Bool.not(S.Splice.partial(stream))))))))), res, web, stream, thread, epoch, target, lc)
@@ -728,3 +731,24 @@ def Rendered.remember.picture(menu: Bool, +a: Actor, +res: J.Json, +key: String,
 def Rendered.remember(r: Rendered, +key: String, +clock: Nat, +stream: TL.Stream) -> Rendered:
   match r:
     case Rendered{+a, +res}: Rendered.remember.picture(J.Json.get_bool(res, "modelMenuInput", False{}), a, res, key, clock, stream)
+
+# No-stream reads use an exact render clock and the complete input key.
+# The existing live splice path retains its independent lifetime and guards.
+def Memo.reply.clock(ms: List<&2, Memo>, +update: Bool, +key: String, +clock: Nat, +now: Nat, +web: Bool,
+    +stream: TL.Stream, +thread: String, +epoch: String, +target: J.Json, +lc: I.Loc) -> Maybe<&2, J.Json>:
+  match ms:
+    case Nil{}: None{}
+    case Still{picture} <> _: ST.Picture.read(update, picture, key, now, stream)
+    case Memo{k, at, part, res} <> rest:
+      Memo.reply(Memo{k, at, part, res} <> rest, update, key, clock, web, stream, thread, epoch, target, lc)
+    case _ <> rest: Memo.reply.clock(rest, update, key, clock, now, web, stream, thread, epoch, target, lc)
+
+def Rendered.remember.still(valid: Bool, r: Rendered, +key: String, +clock: Nat, +now: Nat, +stream: TL.Stream) -> Rendered:
+  match valid r:
+    case True{} Rendered{a, +res}: Rendered{Actor.remember(a, Still{ST.Picture{key, now, res}}), res}
+    case False{} _: Rendered.remember(r, key, clock, stream)
+
+def Rendered.remember.clock(+r: Rendered, +key: String, clock: Nat, now: Nat, +stream: TL.Stream, web: Bool, p: J.Json) -> Rendered:
+  match r:
+    case Rendered{a, +res}:
+      Rendered.remember.still(ST.Picture.allowed(web, p, res, stream, key), Rendered{a, res}, key, clock, now, stream)
