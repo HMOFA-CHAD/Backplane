@@ -34,6 +34,7 @@ type Memo is Data:
   Signals{cache: SGV.SignalCache}
   SideIndex{cache: SIXV.IndexCache}
   SignalText{cache: SGT.SignalTextCache}
+  SidebarSent{scope: String, token: String, node: J.Json}
 
 type Actor is Data:
   Actor{ui: U.Ui, view: String, target: J.Json, pending: Map<&2, String>, reads: List<&2, J.Json>, dirty: Bool, memo: List<&2, Memo>}
@@ -153,6 +154,14 @@ def SidebarWire.keep(ms: List<&2, Memo>) -> List<&2, Memo>:
     case SidebarWire{key, token} <> _: [SidebarWire{key, token}]
     case _ <> rest: SidebarWire.keep(rest)
 
+# One actual sidebar last sent to this surviving actor, distinct from the
+# render-image key. Only the transport may compare/rebind this receipt.
+def SidebarSent.keep(ms: List<&2, Memo>) -> List<&2, Memo>:
+  match ms:
+    case Nil{}: Nil{}
+    case SidebarSent{scope, token, node} <> _: [SidebarSent{scope, token, node}]
+    case _ <> rest: SidebarSent.keep(rest)
+
 # One exact metadata-only sidebar projection, private to this actor. Its
 # key is never used by the transport. The picture and wire keys stay separate.
 def SidebarImage.keep(ms: List<&2, Memo>) -> List<&2, Memo>:
@@ -209,7 +218,7 @@ def Sidebar.base(ms: List<&2, Memo>) -> List<&2, Memo>:
     case _ <> rest: Sidebar.base(rest)
 
 def Sidebar.keep(+ms: List<&2, Memo>) -> List<&2, Memo>:
-  List.append(&2, Memo, Sidebar.base(ms), SidebarImage.keep(ms))
+  List.append(&2, Memo, Sidebar.base(ms), List.append(&2, Memo, SidebarImage.keep(ms), SidebarSent.keep(ms)))
 
 def Signals.keep(ms: List<&2, Memo>) -> List<&2, Memo>:
   match ms:
@@ -277,8 +286,8 @@ def Sidebar.get(ms: List<&2, Memo>, +key: String) -> J.Json:
 
 def Sidebar.save(valid: Bool, a: Actor, key: String, node: J.Json) -> Actor:
   match valid a:
-    case True{} Actor{u, view, target, pending, reads, dirty, ms}:
-      Actor{u, view, target, pending, reads, dirty, Sidebar{key, node} <> SidebarWire.keep(ms)}
+    case True{} Actor{u, view, target, pending, reads, dirty, +ms}:
+      Actor{u, view, target, pending, reads, dirty, Sidebar{key, node} <> List.append(&2, Memo, SidebarWire.keep(ms), SidebarSent.keep(ms))}
     case False{} Actor{u, view, target, pending, reads, dirty, _}:
       Actor{u, view, target, pending, reads, dirty, Nil{}}
 
@@ -599,12 +608,15 @@ def Actor.reply(+a: Actor, +web: Bool, +key: String, +o: J.Json) -> Actor:
       Actor.reply_if(Bool.and(String.eq(J.Json.get_str(o, "t", ""), "reply"), String.eq(Actor.pending_scope(pending, id), Actor.scope(target))),
         Actor{u, view, target, Map.del(&2, String, pending, id), reads, dirty, memo}, web, key, o)
 
+# A sent receipt is not a render cache: keep only its bounded value so a
+# future ordinary read can compare its freshly rendered sidebar. Render and
+# derived memos still clear here; actions and scope boundaries still discard it.
 # Targeted job info belongs to this connection's server-owned Ui. It does
 # not settle a request, enqueue commands or become client-supplied state.
 def Actor.info(a: Actor, o: J.Json) -> Actor:
   match a:
-    case Actor{u, view, target, pending, reads, _, _}:
-      Actor{U.Ui.info_merge(u, J.Json.get_obj(o, "info")), view, target, pending, reads, True{}, Nil{}}
+    case Actor{u, view, target, pending, reads, _, memo}:
+      Actor{U.Ui.info_merge(u, J.Json.get_obj(o, "info")), view, target, pending, reads, True{}, SidebarSent.keep(memo)}
 
 # A thin socket receives rendered views, not raw info notifications or a
 # schematic's sheets. The server folds those privately and sends its
@@ -617,8 +629,8 @@ def Message.on_wire(+o: J.Json) -> Bool:
 # rendered viewer lists and navigates them (client.bend's Sch).
 def Actor.sheets(a: Actor, +o: J.Json) -> Actor:
   match a:
-    case Actor{u, view, target, pending, reads, _, _}:
-      Actor{U.Sch.got(u, o), view, target, pending, reads, True{}, Nil{}}
+    case Actor{u, view, target, pending, reads, _, memo}:
+      Actor{U.Sch.got(u, o), view, target, pending, reads, True{}, SidebarSent.keep(memo)}
 
 def Actor.message.kind(kind: String, a: Actor, web: Bool, key: String, o: J.Json) -> Actor:
   match kind:
@@ -702,6 +714,7 @@ def Memo.reply(ms: List<&2, Memo>, +update: Bool, +key: String, +clock: Nat, +we
     case SideIndex{_} <> rest: Memo.reply(rest, update, key, clock, web, stream, thread, epoch, target, lc)
     case SignalText{_} <> rest: Memo.reply(rest, update, key, clock, web, stream, thread, epoch, target, lc)
     case SidebarImage{_, _} <> rest: Memo.reply(rest, update, key, clock, web, stream, thread, epoch, target, lc)
+    case SidebarSent{_, _, _} <> rest: Memo.reply(rest, update, key, clock, web, stream, thread, epoch, target, lc)
     case Memo{+k, +at, +partial, +res} <> _:
       Memo.reply.k(Bool.and(update, Bool.and(String.eq(k, key), Bool.and(Nat.is_ge(clock, at), Bool.and(Nat.is_lt(Nat.sub(clock, at), 1000n),
         Bool.and(Nat.is_gt(TL.Stream.size(stream), 0n), Bool.or(Bool.and(partial, S.Splice.partial(stream)), Bool.and(Bool.not(partial), Bool.not(S.Splice.partial(stream))))))))), res, web, stream, thread, epoch, target, lc)
