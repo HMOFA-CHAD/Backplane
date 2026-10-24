@@ -44,8 +44,8 @@ concurrency:
 
 env:
   BACKPLANE_FROZEN_COMMIT: ${{ inputs.ref }}
-  BACKPLANE_VERSION: v0.12.2
-  BACKPLANE_VERSION_STAMP: '0.12.2'
+  BACKPLANE_VERSION: v0.12.3
+  BACKPLANE_VERSION_STAMP: '0.12.3'
   BACKPLANE_TELEMETRY_CHANNEL: release
 
 jobs:
@@ -156,7 +156,7 @@ jobs:
           chmod 755 "$SERVICE"  # artifacts drop file modes
           v=$("$SERVICE" --version)
           echo "$v"
-          [ "$v" = "backplane 0.12.2" ]
+          [ "$v" = "backplane 0.12.3" ]
       - name: Measure matching-host system ABI and assemble genuine service component
         shell: bash
         env:
@@ -175,7 +175,7 @@ jobs:
             mkdir -p "$RUNNER_TEMP/winrt" && (cd "$RUNNER_TEMP" && tar -xzf winrt.tar.gz -C winrt)
             set -- --windows-runtime "$RUNNER_TEMP/winrt"
           fi
-          "$py" build/bootstrap-tools/scripts/service-runtime.py "$@" --source-root "$GITHUB_WORKSPACE" --build "$GITHUB_WORKSPACE/build/bootstrap-js" --producer "$GITHUB_WORKSPACE/build/bootstrap-tools/scripts/service-release.py" --producer-sha256 d449e04f8ae132447212b8bc7b7972f9b3822e7922b5e17873f201a0d4a108df --out "$GITHUB_WORKSPACE/build/bootstrap-service"
+          "$py" build/bootstrap-tools/scripts/service-runtime.py "$@" --source-root "$GITHUB_WORKSPACE" --build "$GITHUB_WORKSPACE/build/bootstrap-js" --producer "$GITHUB_WORKSPACE/build/bootstrap-tools/scripts/service-release.py" --producer-sha256 d2f87b26f3a01d0aab80d2bdbf7cad1d9a1504dc48c67d4d7406df555464a3dc --out "$GITHUB_WORKSPACE/build/bootstrap-service"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
