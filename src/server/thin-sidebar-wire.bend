@@ -51,9 +51,16 @@ def Region.replace.go(o: J.Json, hit: Bool) -> J.Json:
       J.Item{Region.replace.go(head, S.Slot.is(head, "aside")), Region.replace.go(tail, False{})}
     case _ _: o
 
+# Bool.pick evaluates both arguments in emitted JavaScript. Full frames
+# need no reference rewrite; only an acknowledged reference walks the tree.
+def Region.shown(reuse: Bool, +shown: J.Json) -> J.Json:
+  match reuse:
+    case False{}: shown
+    case True{}: Region.replace.go(shown, S.Slot.is(shown, "aside"))
+
 def Region.result(+reuse: Bool, +res: J.Json, +token: String) -> J.Json:
   +shown = J.Json.get_obj(res, "shown")
-  V.Obj.put(V.Obj.put(res, "shown", Bool.pick(J.Json, reuse, Region.replace.go(shown, S.Slot.is(shown, "aside")), shown)),
+  V.Obj.put(V.Obj.put(res, "shown", Region.shown(reuse, shown)),
     "sidebarRegion", J.Json.obj([J.KV{"version", J.Num{"1"}}, J.KV{"token", J.Str{token}}, J.KV{"base", J.Str{Bool.pick(String, reuse, token, "")}}]))
 
 def Region.can_reuse(+previous: String, +ack: String) -> Bool:

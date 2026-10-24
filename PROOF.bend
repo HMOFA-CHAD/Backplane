@@ -13165,3 +13165,9 @@ def Laws.sidebar_content_exact_sound(a, b, h):
 
 def Laws.sidebar_content_wrong_scope(old, node): {==}
 def Laws.sidebar_sent_no_picture_authority(scope, token, node, rest): {==}
+
+# Full sidebar branch: identical expression, explicit evaluation guard.
+import ./test/sidebar_full_branch_test.bend as FULLBRANCH
+def Laws.sidebar_full_branch_identity(shown): {==}
+def Laws.sidebar_full_branch_exact(reuse, shown):
+  FULLBRANCH.shown_exact(reuse, shown)
