@@ -13156,3 +13156,12 @@ def Laws.sidebar_shared_key_different(u, epoch, view, revision, picture, h):
 
 def Laws.sidebar_shared_key_settings(u, epoch, view, revision, picture):
   {==}
+
+# Exact actual-sidebar comparison and separate receipt ownership.
+import ./test/sidebar_content_proof.bend as CONTENTPROOF
+
+def Laws.sidebar_content_exact_sound(a, b, h):
+  CONTENTPROOF.exact_sound(a, b, h)
+
+def Laws.sidebar_content_wrong_scope(old, node): {==}
+def Laws.sidebar_sent_no_picture_authority(scope, token, node, rest): {==}

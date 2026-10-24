@@ -52,6 +52,10 @@ pure encoder's exact escapes, raw number text, field order and duplicate
 keys. The original body remains the fallback for non-ASCII raw numbers.
 No memo or protocol/client changes; scripts/js-json-show.js holds the helper.
 
+Server-only ContentEq.same compares actual JSON constructors and fields, with
+an identity fast path for immutable values. It does not compare dependency
+keys or hashes. The pure wrapper, callee and source hash fence the rewrite.
+
 Each is found by its shape and must be found exactly once, else the build
 stops (a new Bend that emits them otherwise needs this looked at again).
 With --server (scripts/build-js.sh: one bundle) that holds for every def;
@@ -63,6 +67,7 @@ them).
   scripts/js-native.py dist/web/chunk-*.js
 """
 import re
+import hashlib
 import sys
 from pathlib import Path
 
@@ -135,6 +140,14 @@ SHOW = re.compile(
     r'return (' + I + r'\$058Json\$emit\$)\(\2,!0,""\)\}'
 )
 
+# The exact, one-call pure structural-comparison wrapper. Its source hash
+# also fences the recursive comparator whose answer this helper implements.
+CONTENT_EQ = re.compile(
+    r'function (' + I + r'\$058ContentEq\$same\$)\((' + I + r'),(' + I + r')\)\{'
+    r'return (' + I + r'\$058ContentEq\$go\$)\(\2,\3\)\}'
+)
+CONTENT_EQ_SOURCE_SHA256 = "054cdf42cc59907d5c860754a1566b90831384cd1d9cd97918f455aa47ee653a"
+
 args = sys.argv[1:]
 server = "--server" in args
 files = [a for a in args if a != "--server"]
@@ -150,6 +163,11 @@ for name, rx, required in (("String.cmp", CMP, True), ("Map.bit.go", BIT, True),
 found["Cbor.Enc.text"] = sum(len(CBOR_TEXT.findall(s)) for s in srcs.values()) if server else 0
 found["Json.parse"] = sum(len(PARSE.findall(s)) for s in srcs.values()) if server else 0
 found["Json.show"] = sum(len(SHOW.findall(s)) for s in srcs.values()) if server else 0
+found["ContentEq.same"] = sum(len(CONTENT_EQ.findall(s)) for s in srcs.values()) if server else 0
+if server and found["ContentEq.same"] != 1:
+    sys.exit(f"js-native: ContentEq.same found {found['ContentEq.same']} times, not once")
+if server and hashlib.sha256(Path(__file__).parent.parent.joinpath("src/server/thin-content-eq.bend").read_bytes()).hexdigest() != CONTENT_EQ_SOURCE_SHA256:
+    sys.exit("js-native: ContentEq.same pure source changed")
 if server and found["Json.show"] != 1:
     sys.exit(f"js-native: Json.show found {found['Json.show']} times, not once")
 if server and found["Json.parse"] != 1:
@@ -158,6 +176,10 @@ if server and found["Cbor.Enc.text"] != 1:
     sys.exit(f"js-native: Cbor.Enc.text found {found['Cbor.Enc.text']} times, not once")
 if server:
     for s in srcs.values():
+        for match in CONTENT_EQ.finditer(s):
+            go = match.group(1).replace("$058ContentEq$same$", "$058ContentEq$go$")
+            if match.group(4) != go or len(re.findall(r"function " + re.escape(go) + r"\(", s)) != 1:
+                sys.exit("js-native: ContentEq.same needs its exact ContentEq.go once")
         for match in SHOW.finditer(s):
             emit = match.group(1).replace("$058Json$show$", "$058Json$emit$")
             if match.group(3) != emit or len(re.findall(r"function " + re.escape(emit) + r"\(", s)) != 1:
@@ -188,6 +210,10 @@ for f, s in srcs.items():
         s = SHOW.sub(lambda m: 'function %s(%s){return __bpJsonShow(%s,%s$raw)}function %s$raw(%s){return %s(%s,!0,"")}' %
             (m.group(1), m.group(2), m.group(2), m.group(1), m.group(1), m.group(2), m.group(3), m.group(2)), s)
         s = Path(__file__).with_name("js-json-show.js").read_text(encoding="utf-8") + "\n" + s
+    if server and CONTENT_EQ.search(s):
+        s = CONTENT_EQ.sub(lambda m: 'function %s(%s,%s){return __bpContentEq(%s,%s,%s)}' %
+            (m.group(1), m.group(2), m.group(3), m.group(2), m.group(3), m.group(4)), s)
+        s = Path(__file__).with_name("js-content-eq.js").read_text(encoding="utf-8") + "\n" + s
     # (a module's imports may come after it: they are hoisted)
     s = HELPERS + s
     open(f, "w", encoding="utf-8").write(s)
@@ -198,7 +224,7 @@ for name, call in (("String.cmp", "snd:{$:__bpOrd("), ("Map.bit.go", "snd:__bpBi
                    ("String.split", "return __bpSplit("), ("List.length", 'x.$!=="Nil";x=x.tail)n++;return '),
                    ("String.starts_with", "return __bpPre("), ("String.contains", "return __bpHas("),
                    ("Cbor.Enc.text", "return __bpCborText("), ("Json.parse", "){return __bpParsed("),
-                   ("Json.show", "){return __bpJsonShow(")):
+                   ("Json.show", "){return __bpJsonShow("), ("ContentEq.same", "){return __bpContentEq(")):
     n = outs.count(call)
     if n != found[name]:
         sys.exit(f"js-native: {name}'s native body is in the output {n} times, not {found[name]}")

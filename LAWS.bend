@@ -12123,3 +12123,23 @@ law sidebar_shared_key_settings:
   for revision: Nat
   for picture: String
   {CHATSIDE.SidebarImage.key.shared(True{}, u, epoch, view, revision, picture) == "" : String}
+
+# Exact actual-sidebar comparison is independent of metadata/image keys.
+import ./src/server/thin-content-eq.bend as CONTENTEQ
+law sidebar_content_exact_sound:
+  for a: J.Json
+  for b: J.Json
+  for +h: {CONTENTEQ.ContentEq.same(a, b) == True{} : Bool}
+  {a == b : J.Json}
+
+law sidebar_content_wrong_scope:
+  for old: J.Json
+  for node: J.Json
+  {SWR.Content.equal(False{}, old, node) == False{} : Bool}
+
+law sidebar_sent_no_picture_authority:
+  for scope: String
+  for token: String
+  for node: J.Json
+  for +rest: List<&2, CHATSIDE.Memo>
+  {SWR.Region.key(CHATSIDE.SidebarSent{scope, token, node} <> rest) == SWR.Region.key(rest) : String}

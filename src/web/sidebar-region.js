@@ -5,7 +5,7 @@ const token = x => typeof x === 'string' && /^[1-9][0-9]{0,9}$/.test(x) && Numbe
 const region = (n, tag) => object(n) && n.type === 'element' && n.tag === tag && n.key === 'sidebar';
 const fields = (o, names) => object(o) && Object.keys(o).length === names.length && names.every(n => Object.hasOwn(o, n));
 
-export function sidebarOffer(cache) { return { version: 1, token: cache?.token || '' }; }
+export function sidebarOffer(cache) { return { version: 1, token: cache?.token || '', exactContent: true }; }
 
 export function sidebarPicture(result, input, base) {
   if (!Object.hasOwn(result, 'sidebarRegion')) return { result, cache: null };
