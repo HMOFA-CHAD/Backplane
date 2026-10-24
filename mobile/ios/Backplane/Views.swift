@@ -197,6 +197,10 @@ struct HubsView: View {
     // host:port · version · changes held · when it last said anything
     static func detail(_ h: HubRow, _ c: HubConn, _ traffic: HubTraffic, _ tag: String) -> String {
         var parts = [h.key]
+        if let failure = c.failure, c.phase == .offline || c.phase == .connecting {
+            parts.append(NativeMessages.native_hub_failure(tag, failure.reason, failure.code))
+            return parts.joined(separator: " · ")
+        }
         if let v = h.version, !v.isEmpty { parts.append(v) }
         if c.phase == .syncing, traffic.bytes > 0 {
             parts.append(NativeMessages.native_hub_catchup(tag, ByteCountFormatter.string(fromByteCount: Int64(traffic.bytes), countStyle: .file)))
@@ -437,7 +441,9 @@ struct ProjectsView: View {
                 if let h = screen.hubs.first(where: { (model.conn[$0.key]?.phase ?? .connecting) != .online }), !screen.online {
                     VStack(spacing: 12) {
                         ProgressView()
-                        Text(NativeMessages.native_hub_connection(screen.locale ?? "en", HubDot.word(model.conn[h.key]?.phase ?? .connecting, screen.locale ?? "en"), h.name)).foregroundStyle(.secondary)
+                        Text(model.conn[h.key]?.failure.map { NativeMessages.native_hub_failure(lang, $0.reason, $0.code) }
+                             ?? NativeMessages.native_hub_connection(lang, HubDot.word(model.conn[h.key]?.phase ?? .connecting, lang), h.name))
+                            .foregroundStyle(.secondary).multilineTextAlignment(.center)
                     }
                 } else {
                     ContentUnavailableView(screen.empty, systemImage: "folder")
@@ -953,10 +959,11 @@ struct ThreadScreen: View {
                 }
                 // the link is down, or coming back after it was up (a reconnect,
                 // not the first connect): say so, not "loading"
-                if let status = model.conn[model.screen?.hub ?? ""], status.phase == .offline || (status.phase == .connecting && status.epoch > 1) {
+                if let status = model.conn[model.screen?.hub ?? ""], status.phase == .offline {
                     HStack(spacing: 4) {
                         HubDot(phase: .offline)
-                        Text(HubDot.word(.offline, lang)).lineLimit(1)
+                        Text(status.failure.map { NativeMessages.native_hub_failure(lang, $0.reason, $0.code) }
+                             ?? HubDot.word(.offline, lang)).lineLimit(2)
                     }
                     .font(.caption2).foregroundStyle(.secondary)
                     .accessibilityIdentifier("thread.reconnecting")

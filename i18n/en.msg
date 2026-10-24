@@ -1097,6 +1097,7 @@ native.hub.changes = {count} changes
 native.hub.heard = heard {when}
 native.hub.connection = {state} to {name}
 native.hub.accessibility = {name}: {state}
+native.hub.failure = {reason, select, timeout {Hub response timed out; retrying} network {Cannot reach hub; check Tailscale and network access} dns {Hub address not found; check Tailscale} tls {Secure connection failed; check the hub certificate} authentication {Hub rejected credentials; check the pairing link} address {Invalid hub address; check the pairing link} response {Invalid hub response; retrying} view {Hub view unavailable; reconnecting} http {Hub returned HTTP {code}; retrying} other {Connection lost; retrying}}
 
 # Native file, review, task and space controls.
 native.viewer.source = Source

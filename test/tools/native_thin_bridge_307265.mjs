@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 if(!process.env.BP_NATIVE_THIN_SOURCE_ROOT&&!fs.existsSync(path.join(process.cwd(),'build/phone-cache/native-thin-bridge-proposal-01')))process.env.BP_NATIVE_THIN_SOURCE_ROOT=process.cwd();
 const root=process.cwd(), packet=path.join(root,'build/phone-cache/native-thin-bridge-proposal-01');
 const stage=fs.mkdtempSync(path.join(os.tmpdir(),'bp-native-thin-js-307265-'));
-for(const n of ['src/web/thin.js','src/web/thin-results.js','src/web/startup.js','src/web/mail-drafts.js']) {const q=path.join(stage,n);fs.mkdirSync(path.dirname(q),{recursive:true});fs.copyFileSync((process.env.BP_NATIVE_THIN_SOURCE_ROOT ? path.join(process.env.BP_NATIVE_THIN_SOURCE_ROOT,n) : path.join(packet,fs.existsSync(path.join(packet,'qualified-dependencies'))?'qualified-dependencies':'dependencies',n)),q);}
+for(const n of ['src/web/thin.js','src/web/thin-results.js','src/web/startup.js','src/web/mail-drafts.js','src/web/terminal-input.js','src/web/model-menu-input.js','src/web/sidebar-region.js']) {const q=path.join(stage,n);fs.mkdirSync(path.dirname(q),{recursive:true});fs.copyFileSync((process.env.BP_NATIVE_THIN_SOURCE_ROOT ? path.join(process.env.BP_NATIVE_THIN_SOURCE_ROOT,n) : path.join(packet,fs.existsSync(path.join(packet,'qualified-dependencies'))?'qualified-dependencies':'dependencies',n)),q);}
 fs.mkdirSync(path.join(stage,'src/mobile'),{recursive:true});
 fs.copyFileSync(process.env.BP_NATIVE_THIN_HELPER_SOURCE||path.join(root,'src/mobile/thin-native-host-307265.js'),path.join(stage,'src/mobile/thin-native-host-307265.js'));
 fs.writeFileSync(path.join(stage,'package.json'),'{"type":"module"}');
@@ -72,6 +72,22 @@ check('old Keep cannot clear newer local draft',()=>{const x=harness();x.open();
 check('all command validation precedes first descriptor conversion',()=>{const x=harness();x.open();x.h.request('h','send','');const id=x.h.drain().cmds[0].request.id;const out=x.answer(id,{cmds:[{type:'send',text:JSON.stringify({id:42,m:'turn.start',p:{}})},{type:'send',text:'invalid'}]});assert.equal(x.calls.command,0);assert.deepEqual(out.cmds,[]);});
 check('wrong native overlay owner rejects valid-looking commands atomically',()=>{const x=harness();x.open();x.h.request('h','send','');const id=x.h.drain().cmds[0].request.id;const out=x.answer(id,{overlay:{key:'foreign',name:'x',j:x.screen()},cmds:[{type:'send',text:JSON.stringify({id:42,m:'turn.start',p:{}})}]});assert.equal(x.calls.command,0);assert.deepEqual(out.cmds,[]);});
 check('timeout never resends unknown action or downloads history',()=>{const x=harness();x.open();x.h.request('h','send','');x.h.drain();x.advance(5001);x.h.expire();const out=x.h.drain();assert.deepEqual(out.cmds,[]);assert.equal(out.sync[0].phase,'failed');x.h.expire();assert.deepEqual(x.h.drain().cmds,[]);});
+check('timed-out initial presentation stays failed despite heartbeats until session replacement',()=>{
+ const x=harness();x.h.hubs(['h']);x.h.connection('h','1','view-v1');const first=x.greeting().cmds[0].request;
+ x.advance(5001);x.h.expire();const failed=x.h.drain();assert.equal(failed.sync[0].phase,'failed');assert.equal(failed.cmds.length,0);
+ for(let i=0;i<6;i++){x.advance(15000);x.h.receive('h',{t:'hb'},'1');x.h.expire();assert.deepEqual(x.h.drain(),{cmds:[],sync:[],deadline:null});}
+ assert.equal(x.h.states.get('h').ready,false);
+ x.h.connection('h','2','view-v1');const retry=x.greeting('h','2');assert.equal(retry.cmds.length,1);assert.equal(retry.cmds[0].request.m,'view.open');
+ assert.notEqual(retry.cmds[0].request.id,first.id);x.answer(retry.cmds[0].request.id);assert.equal(x.h.states.get('h').ready,true);
+});
+check('replacement after ambiguous action timeout reopens read view without replaying actions',()=>{
+ const x=harness();x.open();x.h.request('h','pin','');const issued=x.h.drain().cmds[0].request;assert.equal(issued.m,'view.action');
+ x.h.request('h','stop','');x.advance(5001);x.h.expire();assert.equal(x.h.drain().sync[0].phase,'failed');
+ x.h.connection('h','2','view-v1');const retry=x.greeting('h','2');assert.equal(retry.cmds.length,1);assert.equal(retry.cmds[0].request.m,'view.open');
+ x.answer(retry.cmds[0].request.id);assert.deepEqual(x.h.drain().cmds,[]);assert.equal(x.h.states.get('h').ready,true);
+ assert.equal(x.h.receive('h',{t:'reply',id:issued.id,ok:true,result:{}},'1'),false);
+ assert.equal(x.calls.command,0);
+});
 check('disconnect drops unstarted intentions and never resends',()=>{const x=harness();x.open();x.h.request('h','send','');x.h.drain();x.h.connection('h','2','view-v1');assert.deepEqual(x.h.drain().cmds,[]);const out=x.greeting('h','2');assert.equal(out.cmds.length,1);assert.equal(out.cmds[0].request.m,'view.open');});
 check('partial message chunks require explicit gesture and assemble from the beginning',()=>{const x=harness();x.h.hubs(['h']);x.h.connection('h','1','view-v1');const initial=x.greeting();const id=initial.cmds[0].request.id;const shown=x.screen();shown.thread.id='h|a';shown.thread.entries[0].partial={version:'1',cursor:'c1',hasMore:true,complete:false};x.answer(id,{shown,overlay:{key:'h',name:'h',j:clone(shown)},window:{ids:['e'],older:'',hasMore:false,anchor:{id:'e',offset:0},partial:[{id:'e',version:'1',cursor:'c1',reason:'byte-limit',hasMore:true,complete:false}]}});assert.equal(x.h.client.calls.size,0);x.h.request('h','thin-message-more',JSON.stringify({entryId:'e',cursor:'c1'}));const out=x.h.drain();assert.deepEqual(out.sync,[]);x.answer(out.cmds[0].request.id,{message:{id:'e',thread:'a',version:'1',text:'🚀 suffix',cursor:'',hasMore:false,complete:true}});assert.equal(x.calls.message,1);assert.equal(x.h.states.get('h').shown.chunk.complete,true);assert.equal(x.h.client.calls.size,0);});
 check('request counters are scoped by hub for ordinary ACK',()=>{const x=harness();x.open('a');x.open('b');for(const hub of ['a','b']){x.h.request(hub,'send','');const id=x.h.drain().cmds[0].request.id;x.answer(id,{cmds:[{type:'send',text:JSON.stringify({id:42,m:'turn.start',p:{}})}]},hub);}assert.equal(x.h.ordinary.size,2);x.h.receive('a',{t:'reply',id:42,ok:true,clear:'a'},'1');assert.equal(x.h.ordinary.size,1);assert.equal([...x.h.ordinary.values()][0].hub,'b');});

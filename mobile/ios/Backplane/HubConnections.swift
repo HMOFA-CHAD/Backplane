@@ -9,6 +9,7 @@ struct HubConn: Equatable {
     var phase: Phase = .connecting
     var stage = ""
     var detail: String?
+    var failure: ConnectionFailure?
     var epoch: UInt64 = 0
 }
 

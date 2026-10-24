@@ -1117,6 +1117,7 @@ native.hub.changes = {count}件の変更
 native.hub.heard = 最終受信：{when}
 native.hub.connection = {name}：{state}
 native.hub.accessibility = {name}：{state}
+native.hub.failure = {reason, select, timeout {ハブの応答がタイムアウトしました・再接続中} network {ハブに接続できません。Tailscaleとネットワークへのアクセスを確認してください} dns {ハブのアドレスが見つかりません。Tailscaleを確認してください} tls {安全な接続に失敗しました。ハブの証明書を確認してください} authentication {ハブが認証情報を拒否しました。ペアリングリンクを確認してください} address {ハブのアドレスが無効です。ペアリングリンクを確認してください} response {ハブの応答が無効です・再接続中} view {ハブの画面を読み込めません・再接続中} http {ハブがHTTP {code}を返しました・再接続中} other {接続が切れました・再接続中}}
 
 # Native file, review, task and space controls.
 native.viewer.source = 表示元

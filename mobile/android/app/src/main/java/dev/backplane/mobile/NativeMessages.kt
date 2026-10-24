@@ -428,6 +428,10 @@ object NativeMessages {
   fun native_hub_connection(tag: String, arg0: String, arg1: String): String =
     if (tag == "ja") (arg1 + "：" + arg0) else (arg0 + " to " + arg1)
 
+  // native.hub.failure
+  fun native_hub_failure(tag: String, arg0: String, arg1: String): String =
+    if (tag == "ja") ((if (arg0 == "timeout") "ハブの応答がタイムアウトしました・再接続中" else (if (arg0 == "network") "ハブに接続できません。Tailscaleとネットワークへのアクセスを確認してください" else (if (arg0 == "dns") "ハブのアドレスが見つかりません。Tailscaleを確認してください" else (if (arg0 == "tls") "安全な接続に失敗しました。ハブの証明書を確認してください" else (if (arg0 == "authentication") "ハブが認証情報を拒否しました。ペアリングリンクを確認してください" else (if (arg0 == "address") "ハブのアドレスが無効です。ペアリングリンクを確認してください" else (if (arg0 == "response") "ハブの応答が無効です・再接続中" else (if (arg0 == "view") "ハブの画面を読み込めません・再接続中" else (if (arg0 == "http") "ハブがHTTP " + arg1 + "を返しました・再接続中" else "接続が切れました・再接続中")))))))))) else ((if (arg0 == "timeout") "Hub response timed out; retrying" else (if (arg0 == "network") "Cannot reach hub; check Tailscale and network access" else (if (arg0 == "dns") "Hub address not found; check Tailscale" else (if (arg0 == "tls") "Secure connection failed; check the hub certificate" else (if (arg0 == "authentication") "Hub rejected credentials; check the pairing link" else (if (arg0 == "address") "Invalid hub address; check the pairing link" else (if (arg0 == "response") "Invalid hub response; retrying" else (if (arg0 == "view") "Hub view unavailable; reconnecting" else (if (arg0 == "http") "Hub returned HTTP " + arg1 + "; retrying" else "Connection lost; retrying"))))))))))
+
   // native.hub.heard
   fun native_hub_heard(tag: String, arg0: String): String =
     if (tag == "ja") ("最終受信：" + arg0) else ("heard " + arg0)

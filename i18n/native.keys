@@ -68,6 +68,7 @@ native.hub.changes
 native.hub.heard
 native.hub.connection
 native.hub.accessibility
+native.hub.failure
 settings.pair
 tour.done
 tour.back
