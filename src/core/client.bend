@@ -3641,6 +3641,11 @@ def Side.busies.ix(ts: List<&2, M.Thread>, +kids: Map<&2, Nat>, +st: M.State) ->
 def Active.rows.ix(+st: M.State, +ix: SIx, +now: Nat, +q: String) -> List<&2, ARow>:
   Active.find.tree(Active.all(Active.gather.ix(Side.rows.ix(st, ix, now), st, ix, now, AParts{Nil{}, Nil{}})), st, q)
 
+# Reuse this frame's fresh project/shelf rows. The caller still supplies
+# the phase index independently: display signals never choose key targets.
+def Active.rows.given(+st: M.State, +ix: SIx, +now: Nat, +q: String, rows: List<&2, SRow>) -> List<&2, ARow>:
+  Active.find.tree(Active.all(Active.gather.ix(rows, st, ix, now, AParts{Nil{}, Nil{}})), st, q)
+
 def Active.ids(rs: List<&2, ARow>) -> List<&2, String>:
   match rs:
     case Nil{}:

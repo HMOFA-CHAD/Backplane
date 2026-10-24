@@ -13037,3 +13037,9 @@ def Laws.pi_effort_unknown_default(): {==}
 
 def Laws.sidebar_wire_unissued(): {==}
 def Laws.sidebar_wire_wrong_ack(): {==}
+
+def Laws.active_rows_given_eq(st, ix, now, q):
+  {==}
+
+def Laws.side_mine_work_independent(by, asks, kids, a, b, pid):
+  {==}

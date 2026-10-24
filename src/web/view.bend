@@ -586,40 +586,47 @@ def View.sidebar.keys(n: D.Node, projects: List<&2, String>, threads: List<&2, S
          D.At{"data-shortcut-threads", J.Json.show(J.Json.arr(U.Side.strs(List.take(&2, String, threads, 9n))))}]), kids}
     case D.Txt{text}: D.Txt{text}
 
-# One project/shelf projection per frame. SIx signal decoration changes only
-# work metadata; Side.shown.ix reads the unchanged project-thread index.
-# Keep the original helpers above as the independent rendering oracle.
-def View.list.projected(+lc: I.Loc, active: Bool, +rows: List<&2, U.SRow>, +q: String, +open: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String) -> List<&2, D.Node>:
+# Share fresh, unfiltered project/shelf rows within this frame, including
+# Active mode. Filtering and phase decoration remain separate for display
+# and shortcut destinations. The old helpers above remain the oracle.
+def View.list.projected(+lc: I.Loc, active: Bool, +rows: List<&2, U.SRow>, raw: List<&2, U.SRow>, +q: String, +open: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String) -> List<&2, D.Node>:
   match active:
-    case True{}: View.list(lc, True{}, q, open, ix, st, sel, now, look, rm)
+    case True{}:
+      List.append(&2, D.Node, View.active(lc, U.Active.rows.given(st, ix, now, q, raw), q, open, ix, st, sel), View.history(lc, q, open, ix, st, sel, now))
     case False{}:
       List.append(&2, D.Node, View.groups(lc, U.Side.groups(rows, now), q, open, ix, st, sel, now, look, rm), View.history(lc, q, open, ix, st, sel, now))
 
-def View.sidebar.projected(+lc: I.Loc, bots: List<&2, D.Node>, uber: List<&2, D.Node>, ms: List<&2, U.MRow>, mi: List<&2, U.MItem>, +ix: U.SIx, u: U.Ui, rows: List<&2, U.SRow>) -> D.Node:
+def View.sidebar.projected(+lc: I.Loc, bots: List<&2, D.Node>, uber: List<&2, D.Node>, ms: List<&2, U.MRow>, mi: List<&2, U.MItem>, +ix: U.SIx, u: U.Ui, rows: List<&2, U.SRow>, raw: List<&2, U.SRow>) -> D.Node:
   match u:
     case U.Ui{+st, +sel, +d, _, +open, +on, +now, +adding, _, +v, _, _, _, _, _, _, _}:
       View.sidebar.body(lc, ms, ix, st, sel, open, on, now, adding, v, U.Str.get(d, "@look"), U.Str.get(d, "@rm"), U.Find.q(open, d), mi, bots, uber,
-        View.list.projected(lc, String.eq(U.Side.view(st), "active"), rows, U.Find.q(open, d), open, ix, st, sel, now, U.Str.get(d, "@look"), U.Str.get(d, "@rm")))
+        View.list.projected(lc, String.eq(U.Side.view(st), "active"), rows, raw, U.Find.q(open, d), open, ix, st, sel, now, U.Str.get(d, "@look"), U.Str.get(d, "@rm")))
 
-def View.sidebar.threads.kind(active: Bool, +u: U.Ui, ix: U.SIx, rows: List<&2, U.SRow>) -> List<&2, String>:
+def View.sidebar.threads.kind(active: Bool, +u: U.Ui, ix: U.SIx, rows: List<&2, U.SRow>, raw: List<&2, U.SRow>) -> List<&2, String>:
   match active:
-    case True{}: U.Side.here.kind(True{}, u, ix, U.Side.cur(u))
+    case True{}:
+      +q = U.Ui.scratch(u, "@f.pq")
+      ST.Tree.row_ids(ST.Tree.rows_search(U.Ui.state(u), U.Active.root_threads(U.Side.active.project(
+        U.Active.folded(U.Active.open(U.Side.open(u), q), U.Active.parts(U.Active.rows.given(U.Ui.state(u), ix, U.Side.now(u), q, raw))), U.Side.cur(u))), U.Ui.sel(u), q))
     case False{}: U.Side.visible.tree(U.Side.only(rows, U.Side.cur(u)), U.Side.open(u), U.Ui.state(u), U.Ui.sel(u))
 
-def View.sidebar.threads(+u: U.Ui, ix: U.SIx, rows: List<&2, U.SRow>) -> List<&2, String>:
-  List.append(&2, String, View.sidebar.threads.kind(String.eq(U.Side.view(U.Ui.state(u)), "active"), u, ix, rows),
+def View.sidebar.threads(+u: U.Ui, ix: U.SIx, rows: List<&2, U.SRow>, raw: List<&2, U.SRow>) -> List<&2, String>:
+  List.append(&2, String, View.sidebar.threads.kind(String.eq(U.Side.view(U.Ui.state(u)), "active"), u, ix, rows, raw),
     U.Side.in_project(U.Side.when(Bool.or(U.Ui.flag(u, "conversation-history"), Bool.not(String.is_empty(U.Ui.scratch(u, "@f.pq")))),
       U.Side.legacy.ids(ST.Legacy.threads(U.Ui.state(u)), U.Ui.scratch(u, "@f.pq"))), U.Ui.state(u), U.Side.cur(u)))
 
-def View.sidebar.frame.rows(+lc: I.Loc, bots: List<&2, D.Node>, +u: U.Ui, +plain: U.SIx, +signals: U.SIx, +rows: List<&2, U.SRow>, +unfolded: List<&2, U.SRow>) -> D.Node:
-  View.sidebar.keys(View.sidebar.projected(lc, bots, WB.WB.uber(lc, u, signals), U.Machines.rows.loc(lc, u), U.Menu.items.loc(lc, u, True{}), signals, u, rows),
-    U.Side.pids(unfolded), View.sidebar.threads(u, plain, unfolded))
+def View.sidebar.frame.rows(+lc: I.Loc, bots: List<&2, D.Node>, +u: U.Ui, +plain: U.SIx, +signals: U.SIx, +rows: List<&2, U.SRow>, +unfolded: List<&2, U.SRow>, +raw: List<&2, U.SRow>) -> D.Node:
+  View.sidebar.keys(View.sidebar.projected(lc, bots, WB.WB.uber(lc, u, signals), U.Machines.rows.loc(lc, u), U.Menu.items.loc(lc, u, True{}), signals, u, rows, raw),
+    U.Side.pids(unfolded), View.sidebar.threads(u, plain, unfolded, raw))
 
-def View.sidebar.frame.shown(+lc: I.Loc, bots: List<&2, D.Node>, +u: U.Ui, +plain: U.SIx, signals: U.SIx, +rows: List<&2, U.SRow>) -> D.Node:
-  View.sidebar.frame.rows(lc, bots, u, plain, signals, rows, U.Side.unfolded(rows, U.Side.open(u), U.Ui.scratch(u, "@f.pq"), U.Side.now(u)))
+def View.sidebar.frame.shown(+lc: I.Loc, bots: List<&2, D.Node>, +u: U.Ui, +plain: U.SIx, signals: U.SIx, +rows: List<&2, U.SRow>, raw: List<&2, U.SRow>) -> D.Node:
+  View.sidebar.frame.rows(lc, bots, u, plain, signals, rows, U.Side.unfolded(rows, U.Side.open(u), U.Ui.scratch(u, "@f.pq"), U.Side.now(u)), raw)
+
+def View.sidebar.frame.raw(+lc: I.Loc, bots: List<&2, D.Node>, +u: U.Ui, +plain: U.SIx, signals: U.SIx, +raw: List<&2, U.SRow>) -> D.Node:
+  View.sidebar.frame.shown(lc, bots, u, plain, signals, U.Find.rows(raw, U.Ui.scratch(u, "@f.pq")), raw)
 
 def View.sidebar.frame(+lc: I.Loc, bots: List<&2, D.Node>, +u: U.Ui, +plain: U.SIx, signals: U.SIx) -> D.Node:
-  View.sidebar.frame.shown(lc, bots, u, plain, signals, U.Side.shown.ix(U.Ui.state(u), plain, U.Side.now(u), U.Ui.scratch(u, "@f.pq")))
+  View.sidebar.frame.raw(lc, bots, u, plain, signals, U.Side.rows.ix(U.Ui.state(u), plain, U.Side.now(u)))
 
 def View.sidebar.x(+lc: I.Loc, bots: List<&2, D.Node>, +u: U.Ui, +ix: U.SIx) -> D.Node:
   View.sidebar.frame(lc, bots, u, ix, U.Side.signals.ix(ix, u))
