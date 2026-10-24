@@ -212,6 +212,14 @@ def SidebarImage.key.shared(settings: Bool, +u: U.Ui, epoch: String, view: Strin
     case True{}: ""
     case False{}: SidebarImage.key.same(Nat.is_eq(M.State.seq(U.Ui.state(u)), revision), picture, u, epoch, view, revision)
 
+# Ordinary composer edits need no sidebar reconstruction when every actual
+# sidebar input is unchanged. Keep all scratch fields and all other guards;
+# complete picture and wire keys above retain every conversation draft.
+def SidebarImage.key.input(settings: Bool, u: U.Ui, epoch: String, view: String, revision: Nat) -> String:
+  match settings:
+    case True{}: ""
+    case False{}: SC.Sidebar.key.image(u, epoch, view, revision)
+
 def Sidebar.base(ms: List<&2, Memo>) -> List<&2, Memo>:
   match ms:
     case Nil{}: Nil{}
@@ -512,7 +520,7 @@ def Actor.render.web.indexed(+updated: Actor, +action: V.ActResult, +st: M.State
   +text = SGT.SignalTextCache.obtain(epoch, revision, U.Side.signals.online(prepared), SGV.SignalCache.signals(signals), SignalText.get(Sidebar.memos(updated)))
   +settings = SC.Sidebar.request(p, u)
   +key = SC.Sidebar.key.for(settings, prepared, epoch, Sidebar.view(updated), revision)
-  +image = SidebarImage.key.shared(settings, prepared, epoch, Sidebar.view(updated), revision, key)
+  +image = SidebarImage.key.input(settings, prepared, epoch, Sidebar.view(updated), revision)
   +cached = SidebarImage.cached(settings, Sidebar.memos(updated), key, image)
   +window = V.Render.window(stream, index, V.Target.thread(st, J.Json.get_obj(p, "target")), p, epoch, rows)
   +res = V.Obj.put(V.Render.web.prepared.materialized(action, prepared, window, cached, SGV.SignalCache.signals(signals), SIXV.IndexCache.index(metadata), SGT.SignalTextCache.values(text)), "mailDraftContext", Actor.mail_context(u))

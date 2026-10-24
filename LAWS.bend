@@ -12166,3 +12166,26 @@ law still_picture_miss:
 law still_picture_exact:
   for +res: J.Json
   {STILLPICTURE.Picture.select(True{}, res) == Some{res} : Maybe<&2, J.Json>}
+
+import ./src/core/sidebar-drafts.bend as SIDEDRAFTS
+# Only the private sidebar-image input excludes non-scratch draft bodies.
+# These filter laws preserve arbitrary ordered tails and all @ values.
+# Full picture/transport keys and the current main Ui retain every draft.
+law sidebar_draft_body_not_input:
+  for +key: String
+  for value: String
+  for +rest: List<&2, Sigma<&2, &2, String, _ => String>>
+  for h: {String.starts_with(key, "@") == False{} : Bool}
+  {SIDEDRAFTS.Input.filter((key, value) <> rest) == SIDEDRAFTS.Input.filter(rest) : List<&2, Sigma<&2, &2, String, _ => String>>}
+law sidebar_draft_scratch_input:
+  for +key: String
+  for +value: String
+  for +rest: List<&2, Sigma<&2, &2, String, _ => String>>
+  for h: {String.starts_with(key, "@") == True{} : Bool}
+  {SIDEDRAFTS.Input.filter((key, value) <> rest) == (key, value) <> SIDEDRAFTS.Input.filter(rest) : List<&2, Sigma<&2, &2, String, _ => String>>}
+law sidebar_draft_settings_separate:
+  for u: U.Ui
+  for epoch: String
+  for view: String
+  for revision: Nat
+  {CHATSIDE.SidebarImage.key.input(True{}, u, epoch, view, revision) == "" : String}
