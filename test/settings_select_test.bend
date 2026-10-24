@@ -37,7 +37,7 @@ def main() -> IO(Unit):
     C.Check.str("action: another thread leaves Settings", Bool.show(U.Ui.flag(t_act(U.Ui.act(opened(), "select", "other")), "settings")), "False")
     C.Check.str("action: another thread is shown", U.Ui.sel(t_act(U.Ui.act(opened(), "select", "other"))), "other")
     C.Check.str("action: the same thread leaves Settings", Bool.show(U.Ui.flag(t_act(U.Ui.act(opened(), "select", "current")), "settings")), "False")
-    C.Check.str("action: the same thread stays shown", U.Ui.sel(t_act(U.Ui.act(opened(), "select", "current")), "current")
+    C.Check.str("action: the same thread stays shown", U.Ui.sel(t_act(U.Ui.act(opened(), "select", "current"))), "current")
     C.Check.str("action: drafts kept", U.Ui.scratch(t_act(U.Ui.act(opened(), "select", "other")), "current"), "DRAFT_CURRENT")
     C.Check.str("session: Settings open before", t_flag(A.presentation(opened()), "settings"), "True")
     C.Check.str("session: another thread leaves Settings", t_flag(t_picked("other"), "settings"), "False")
