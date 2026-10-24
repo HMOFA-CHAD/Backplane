@@ -18,14 +18,17 @@ def Cache.one.k(nl: Bool, +c: Char, rest: String) -> String:
     case False{}:
       SCon{c, rest}
 
-# the text on one line (line breaks dropped; JSON as the hub writes it
-# has none)
-def Cache.one(s: String) -> String:
+def Cache.one.go(s: String, acc: String) -> String:
   match s:
     case SNil{}:
-      SNil{}
+      String.reverse(acc)
     case SCon{+c, t}:
-      Cache.one.k(Char.is_eq(c, Cache.nl()), c, Cache.one(t))
+      Cache.one.go(t, Cache.one.k(Char.is_eq(c, Cache.nl()), c, acc))
+
+# the text on one line (line breaks dropped; JSON as the hub writes it
+# has none). Accumulate backwards so a long cache uses no growing stack.
+def Cache.one(s: String) -> String:
+  Cache.one.go(s, SNil{})
 
 def Cache.show(ms: String, mt: String) -> String:
   String.append(ms, SCon{Cache.nl(), mt})
@@ -34,35 +37,31 @@ def Cache.show(ms: String, mt: String) -> String:
 def Cache.of(ms: String, mt: String) -> String:
   Cache.show(Cache.one(ms), mt)
 
-def Cache.json.k(nl: Bool, +c: Char, rest: String) -> String:
-  match nl:
-    case True{}:
-      SNil{}
-    case False{}:
-      SCon{c, rest}
+def Cache.json.go(s: String, nl: Bool, acc: String) -> String:
+  match s nl:
+    case rest True{}:
+      String.reverse(acc)
+    case SNil{} False{}:
+      String.reverse(acc)
+    case SCon{+c, t} False{}:
+      Cache.json.go(t, Char.is_eq(c, Cache.nl()), Cache.one.k(Char.is_eq(c, Cache.nl()), c, acc))
 
 # the first line
 def Cache.json(s: String) -> String:
-  match s:
-    case SNil{}:
-      SNil{}
-    case SCon{+c, t}:
-      Cache.json.k(Char.is_eq(c, Cache.nl()), c, Cache.json(t))
+  Cache.json.go(s, False{}, SNil{})
 
-def Cache.text.k(nl: Bool, after: String, rest: String) -> String:
-  match nl:
-    case True{}:
-      after
-    case False{}:
+def Cache.text.go(s: String, nl: Bool) -> String:
+  match s nl:
+    case rest True{}:
       rest
+    case SNil{} False{}:
+      SNil{}
+    case SCon{c, t} False{}:
+      Cache.text.go(t, Char.is_eq(c, Cache.nl()))
 
 # what follows the first line
 def Cache.text(s: String) -> String:
-  match s:
-    case SNil{}:
-      SNil{}
-    case SCon{+c, +t}:
-      Cache.text.k(Char.is_eq(c, Cache.nl()), t, Cache.text(t))
+  Cache.text.go(s, False{})
 
 # a probe's list is news (sent to clients, cached) only when it differs
 # from the one they have

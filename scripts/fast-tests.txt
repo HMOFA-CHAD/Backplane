@@ -7,3 +7,4 @@ test/maildisposition_routing_test.bend
 test/mailcontinuity_test.bend
 test/mailboot_test.bend
 test/r1_copy_test.bend
+test/models_cache_test.bend
