@@ -13176,3 +13176,11 @@ def Laws.sidebar_full_branch_exact(reuse, shown):
 def Laws.still_picture_disabled(key, res): {==}
 def Laws.still_picture_miss(res): {==}
 def Laws.still_picture_exact(res): {==}
+
+import ./test/sidebar_draft_image_test.bend as SIDEDRAFTPROOF
+def Laws.sidebar_draft_body_not_input(key, value, rest, h):
+  SIDEDRAFTPROOF.body_drop(key, value, rest, h)
+def Laws.sidebar_draft_scratch_input(key, value, rest, h):
+  SIDEDRAFTPROOF.scratch_keep(key, value, rest, h)
+def Laws.sidebar_draft_settings_separate(u, epoch, view, revision):
+  SIDEDRAFTPROOF.settings_separate(u, epoch, view, revision)
