@@ -14,3 +14,6 @@ test/sidebar_fresh_projection_test.bend
 # Durable store checkpoints and bounded native folded-shelf transport.
 test/store_checkpoint_test.bend
 test/folded_actions_test.bend
+test/hotboot_thread_decode_law_test.bend
+test/storedb_test.bend
+test/hotboot_test.bend

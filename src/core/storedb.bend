@@ -38,9 +38,11 @@ type RK is Data:
 # ------
 
 # bumped on any change to the tables or to a record's columns or json
-# (a different number in meta.codec: the store is made again)
+# (a different number in meta.codec: the store is made again).
+# Version 5 also repairs TurnUsage record coverage: daily dimensions,
+# their first accepted turn, and the thread's last turn must survive boot.
 def Sdb.codec() -> Nat:
-  4n
+  5n
 
 def Sdb.schema() -> String:
   String.join([
@@ -652,9 +654,13 @@ def K.tokens(+pre: M.State, +th: String, +pv: String, +mo: String, +at: Nat) -> 
   +x = M.Tok.pre(pre)
   +pm = pv ++ "|" ++ Bool.pick(String, String.is_empty(mo), "default", mo)
   +mon = M.Tok.month(at)
+  +day = M.Tok.day(at)
+  +pj = M.Tok.project(M.State.thread.get(pre, th))
+  +provider = Maybe.default(&2, String, List.head(&2, String, String.split(pm, '|')), "")
   [K.set(x ++ "t." ++ th), K.set(x ++ "d." ++ M.Tok.day(at)), K.set(x ++ "m." ++ mon), K.set(x ++ "mm." ++ mon ++ "|" ++ pm),
-   K.set(x ++ "p." ++ M.Tok.project(M.State.thread.get(pre, th)) ++ "|" ++ mon), K.set(x ++ "ml." ++ mon), K.set(x ++ "since"),
-   K.set("tok.key." ++ th), K.set("tok.basis." ++ th)]
+   K.set(x ++ "p." ++ pj ++ "|" ++ mon), K.set(x ++ "ml." ++ mon), K.set(x ++ "since"),
+   K.set(x ++ "dv." ++ day ++ "|" ++ provider), K.set(x ++ "dp." ++ day ++ "|" ++ pj), K.set(x ++ "daily.since"),
+   K.set("tok.key." ++ th), K.set("tok.basis." ++ th), K.set(M.Tok.last.key(th))]
 
 def K.uber.nop(ps: List<&2, String>, +uid: String) -> List<&2, RK>:
   match ps:
