@@ -293,7 +293,8 @@ def Signal.island.threads(ts: List<&2, M.Thread>, info: Map<&2, String>) -> List
 
 # Only these recorded history changes leave every Signal.index input alone.
 # New/unknown events invalidate by default; user messages touch the shelf.
-# This revision never controls timeline, rendered-sidebar or transport reuse.
+# The server also uses this revision for its explicit metadata-only sidebar,
+# with exact clock/UI/info/owner fences. Timeline and commands stay current.
 def SignalRevision.affects(c: M.Change) -> Bool:
   match c:
     case M.ActivityLogged{_, _, _, _, _, _}: False{}

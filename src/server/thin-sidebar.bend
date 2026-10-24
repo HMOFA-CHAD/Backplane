@@ -5,8 +5,8 @@ import ../core/json.bend as J
 import ../core/presentation.bend as P
 import ../core/thin-wire.bend as W
 
-# Private, per-connection sidebar identity. Canonical sequence, all recipient
-# info/live data, clock, scope and every transient UI input are retained.
+# Private, per-connection sidebar identity. All recipient info/live data,
+# exact clock, scope and every transient UI input are retained.
 # Only request/model-rehydration counters and five main-panel-only fields are omitted.
 # No key or draft value is included in a response or diagnostic.
 def Sidebar.omit(+key: String) -> Bool:
@@ -33,15 +33,22 @@ def Sidebar.info(xs: List<&2, Sigma<&2, &2, String, _ => String>>) -> List<&2, J
     case (+k, v) <> rest:
       List.append(&2, J.KV, Bool.pick(List<&2, J.KV>, String.eq(k, "models.v"), Nil{}, [J.KV{k, J.Str{v}}]), Sidebar.info(rest))
 
-def Sidebar.key(u: U.Ui, epoch: String, view: String) -> String:
+# The trusted hub revision can replace the full sequence only for the
+# metadata-only server sidebar. It excludes exactly the three history-only
+# events proved for sidebar-read.Input. Clock/UI/info/scope fences stay exact.
+# The legacy entry below keeps its full-sequence independent oracle.
+def Sidebar.key.revision(u: U.Ui, epoch: String, view: String, revision: Nat) -> String:
   match u:
-    case U.Ui{st, sel, dr, live, op, on, now, ad, pa, version, _, want, error, note, nf, outbox, _}:
-      J.Json.show(J.Json.obj([J.KV{"epoch", J.Str{epoch}}, J.KV{"view", J.Str{view}}, J.KV{"seq", J.Json.nat(M.State.seq(st))},
+    case U.Ui{_, sel, dr, live, op, on, now, ad, pa, version, _, want, error, note, nf, outbox, _}:
+      J.Json.show(J.Json.obj([J.KV{"epoch", J.Str{epoch}}, J.KV{"view", J.Str{view}}, J.KV{"seq", J.Json.nat(revision)},
         J.KV{"sel", J.Str{sel}}, J.KV{"drafts", J.Json.obj(Sidebar.drafts(Map.to_list(&2, String, dr)))},
         J.KV{"live", J.Json.obj(P.Session.strings(Map.to_list(&2, String, live)))}, J.KV{"open", J.Json.obj(Sidebar.flags(Map.to_list(&2, Bool, op)))},
         J.KV{"online", J.Flag{on}}, J.KV{"clock", J.Json.nat(now)}, J.KV{"adding", J.Flag{ad}}, J.KV{"panel", J.Flag{pa}}, J.KV{"version", J.Str{version}},
         J.KV{"want", J.Flag{want}}, J.KV{"error", J.Str{error}}, J.KV{"note", J.Str{note}},
         J.KV{"info", J.Json.obj(Sidebar.info(Map.to_list(&2, String, nf)))}, J.KV{"outbox", J.Json.obj(P.Session.strings(Map.to_list(&2, String, outbox)))}]))
+
+def Sidebar.key(+u: U.Ui, epoch: String, view: String) -> String:
+  Sidebar.key.revision(u, epoch, view, M.State.seq(U.Ui.state(u)))
 
 def Sidebar.bounded(+key: String) -> Bool:
   W.Wire.within(key, 32768n)
