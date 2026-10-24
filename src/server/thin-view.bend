@@ -19,6 +19,7 @@ import ../core/mail.bend as ML
 import ../web/app.bend as A
 import ../mobile/session.bend as MS
 import ../mobile/hubs.bend as H
+import ../mobile/folded-actions.bend as FA
 
 # Pure server projection. The authoritative state is used for normal action
 # decisions; only the bounded selected entry window reaches a renderer.
@@ -450,7 +451,7 @@ def Render.native_thread( +th: J.Json, +window: J.Json) -> J.Json:
     case +t: Obj.put(t, "earlier", J.Json.nat(J.Json.get_nat(window, "remaining", 0n)))
 
 def Render.native_screen( +screen: J.Json, +window: J.Json) -> J.Json:
-  +partial = MT.Partial.screen(screen, window)
+  +partial = FA.Folded.screen(MT.Partial.screen(screen, window))
   Obj.put(partial, "thread", Render.native_thread(J.Json.get_obj(partial, "thread"), window))
 
 def Render.display( +web: Bool, +u: U.Ui, +p: J.Json, +now: Nat, +window: J.Json) -> J.Json:

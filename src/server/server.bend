@@ -80,6 +80,7 @@ import ../core/sha1.bend as SH
 import ../core/boot.bend as BT
 import ../core/store.bend as ST
 import ./hotboot.bend as HB
+import ./storeio.bend as STO
 import ./botnet.bend as BN
 import ../core/far.bend as FR
 import ../core/fview.bend as FV
@@ -6562,7 +6563,7 @@ def Hub.cut.ok(r: P.Ran) -> Bool:
       U32.is_eq(c, 0)
 
 def Hub.cut(+len: String, +cfg: Cfg) -> IO(Bool):
-  IO.bind(P.Ran, Bool, P.Proc.run("truncate", ST.Store.trunc.args(len, Store.path(Cfg.home(cfg))), "/"), r => IO.pure(Bool, Hub.cut.ok(r)))
+  STO.Disk.cut(Store.path(Cfg.home(cfg)), len)
 
 def Hub.held(+hold: String, st: M.State, f: File, ls: List<&2, String>, cl: List<&2, Client>,
     as: List<&2, Agent>, inbox: Chan(Msg), +cfg: Cfg, note: String) -> Hub & Wrote:
@@ -6583,14 +6584,36 @@ def Cfg.telemetry.privacy_committed(cs: List<&2, M.Change>, cfg: Cfg) -> Cfg:
     case Cfg{h, w, ho, p, pr, ds, v, nt, tm, views}:
       Cfg{h, w, ho, p, pr, ds, v, nt, TUI.Privacy.committed(cs, tm), views}
 
-def Hub.commit.done(r: File & Result<&1, &1, U32 & String, Unit>, +disk: List<&2, String>, +len: String, +cs: List<&2, M.Change>, st: M.State, ls: List<&2, String>, cl: List<&2, Client>,
+def Hub.fold.state(fd: Folded, st: M.State) -> Folded:
+  match fd:
+    case Folded{_, ls, fr}: Folded{st, ls, fr}
+
+def Hub.commit.stored.result(ok: Bool, post: M.State, +result: String, +disk: List<&2, String>, +len: String, +cs: List<&2, M.Change>, +st: M.State, f: File, ls: List<&2, String>, cl: List<&2, Client>,
+    as: List<&2, Agent>, +inbox: Chan(Msg), +cfg: Cfg, note: String) -> IO(Hub & Wrote):
+  match ok:
+    case True{}:
+      do IO<Hub & Wrote>:
+        Bot.dir.changed.all(cs, inbox)
+        return Hub.commit.k(Hub.fold.state(Hub.fold(cs, disk, Folded{st, ls, Nil{}}), post), cs, f, cl, as, inbox, Cfg.telemetry.privacy_committed(cs, Live.with(cfg, LV.Live.ends(cs, Live.of(cfg)))), note)
+    case False{}:
+      do IO<Hub & Wrote>:
+        cut : Bool <- Hub.cut(len, cfg)
+        Hub.commit.failed(cut, len, result, st, f, ls, cl, as, inbox, cfg, note)
+
+def Hub.commit.stored(updated: STO.Updated, disk: List<&2, String>, len: String, cs: List<&2, M.Change>, st: M.State, f: File, ls: List<&2, String>, cl: List<&2, Client>,
+    as: List<&2, Agent>, inbox: Chan(Msg), cfg: Cfg, note: String) -> IO(Hub & Wrote):
+  match updated:
+    case STO.Updated{post, +result}:
+      Hub.commit.stored.result(String.starts_with(result, "ok"), post, result, disk, len, cs, st, f, ls, cl, as, inbox, cfg, note)
+
+def Hub.commit.done(r: File & Result<&1, &1, U32 & String, Unit>, +disk: List<&2, String>, +len: String, +cs: List<&2, M.Change>, +st: M.State, ls: List<&2, String>, cl: List<&2, Client>,
     as: List<&2, Agent>, +inbox: Chan(Msg), +cfg: Cfg, note: String) -> IO(Hub & Wrote):
   (f, res) = r
   match res:
     case Done{_}:
       do IO<Hub & Wrote>:
-        Bot.dir.changed.all(cs, inbox)
-        return Hub.commit.k(Hub.fold(cs, disk, Folded{st, ls, Nil{}}), cs, f, cl, as, inbox, Cfg.telemetry.privacy_committed(cs, Live.with(cfg, LV.Live.ends(cs, Live.of(cfg)))), note)
+        updated : STO.Updated <- STO.Sto.commit(Cfg.thin.store(cfg), Cfg.home(cfg), st, disk, Maybe.default(&2, Nat, Nat.read(len), 0n))
+        Hub.commit.stored(updated, disk, len, cs, st, f, ls, cl, as, inbox, cfg, note)
     case Fail{e}:
       do IO<Hub & Wrote>:
         cut : Bool <- Hub.cut(len, cfg)
@@ -10736,9 +10759,19 @@ def Hub.tch.ticks(h: Hub, +now: Nat) -> IO(Hub):
     case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
       Hub.tch.tick(TE.Teach.st.bots(Cfg.tch(cfg)), Hub{st, f, ls, cl, as, inbox, cfg, note}, now)
 
+# A refused write also completes its RPC with an error. A socket may remain
+# alive through a storage failure; dropping the success reply alone left the
+# requesting client waiting indefinitely.
+def Hub.rpc.recorded(pair: Hub & Bool, client: U32, id: String) -> IO(Hub):
+  (h, ok) = pair
+  match ok:
+    case True{}: IO.pure(Hub, h)
+    case False{}: Hub.out(h, B.Reply.err(client, id, "Backplane could not confirm this write; check the current state before retrying"))
+
 def Hub.rpc.k(p: M.State & Hub, +client: U32, +text: String, +now: Nat) -> IO(Hub):
   (st, h) = p
-  Hub.step(h, Bot.request(J.Json.parse(text), st, now, client, text))
+  IO.bind(Hub & Bool, Hub, Hub.step.ok(h, Bot.request(J.Json.parse(text), st, now, client, text)),
+    pair => Hub.rpc.recorded(pair, client, J.Json.as_raw(J.Json.get(Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{}), "id"), "null")))
 
 def Hub.rpc.here(h: Hub, +client: U32, +text: String, +now: Nat) -> IO(Hub):
   Hub.rpc.k(Hub.state(h), client, text, now)
@@ -16412,15 +16445,17 @@ def Main.boot(cfg: Cfg, need: Bool, front: Chan(Msg) -> IO(Unit)) -> IO(Unit):
         H.Env.put("BACKPLANE_HOME", home)
         Agents.only(home)
         t0 : U32 <- PS.Perf.us()
+        +store : String <- STO.Sto.open(home)
+        ts : U32 <- PS.Perf.span("boot.store", t0)
         # store.db's records and the log's tail (hotboot.bend), or the
         # whole log replayed when there is no usable store
         +bt : HB.Hot <- Boot.state(home)
-        t2 : U32 <- PS.Perf.span("boot.replay", t0)
+        t2 : U32 <- PS.Perf.span("boot.replay", ts)
         +torn : String = HB.Hot.torn(bt)
         +st : M.State = HB.Hot.st(bt)
         +ls : List<&2, String> = HB.Hot.ls(bt)
         Log.info(Nat.show(ST.Store.size(ls)) ++ " lines, state seq " ++ Nat.show(M.State.seq(st)) ++ " from " ++ Store.path(home))
-        # S1: Sto.boot here
+        # The store checkpoint is current before any state or view is writable.
         GT.Git.step.migrate(home, HistReg.roots(st))
         f0 : Result<&1, &1, U32 & String, File> <- File.open(Store.path(home), "a")
         f : Result<&1, &1, U32 & String, File> <- Main.torn(f0, torn)
@@ -16439,11 +16474,12 @@ def Main.boot(cfg: Cfg, need: Bool, front: Chan(Msg) -> IO(Unit)) -> IO(Unit):
         +cfg1 : Cfg = LogCount.init(finalCfg, ls)
         Log.info("log count " ++ Nat.show(LogCount.n(cfg1)))
         t5 : U32 <- PS.Perf.span("boot.cfg", t4)
-        +ti : THIN.Lazy = THIN.Lazy.of(st)
+        +ti : THIN.Lazy = THIN.Built{THIN.Index.empty()}
         t6 : U32 <- PS.Perf.span("boot.thin", t5)
-        +tmc : TMAIL.Lazy = TMAIL.Lazy.of(st)
+        +tmc : TMAIL.Lazy = TMAIL.Built{TMAIL.Cache.of(st)}
         t7 : U32 <- PS.Perf.span("boot.mail", t6)
         +org : String = Bool.pick(String, List.is_empty(&2, String, ls), "", Hub.origin(ls))
         Log.info("origin " ++ org)
         t8 : U32 <- PS.Perf.span("boot.origin", t7)
-        Main.opened(f, st, ls, Cfg.with_thin_cache(cfg1, ThinCache{ti, org, 1n, Map.new(&2, TLIVE.Stream), tmc, Nil{}, TPACE.Notes.empty(), "", M.State.seq(st)}), need, front, t8)
+        cfg2 : Cfg <- Thin.store.open(Cfg.with_thin_cache(cfg1, ThinCache{ti, org, 1n, Map.new(&2, TLIVE.Stream), tmc, Nil{}, TPACE.Notes.empty(), "", M.State.seq(st)}), st, store)
+        Main.opened(f, st, ls, cfg2, need, front, t8)

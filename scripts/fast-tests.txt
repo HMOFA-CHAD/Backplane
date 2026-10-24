@@ -10,3 +10,7 @@ test/r1_copy_test.bend
 test/models_cache_test.bend
 test/glb_stack_test.bend
 test/sidebar_fresh_projection_test.bend
+
+# Durable store checkpoints and bounded native folded-shelf transport.
+test/store_checkpoint_test.bend
+test/folded_actions_test.bend
