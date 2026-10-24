@@ -12153,3 +12153,16 @@ law sidebar_full_branch_exact:
   for +reuse: Bool
   for +shown: J.Json
   {SWR.Region.shown(reuse, shown) == Bool.pick(J.Json, reuse, SWR.Region.replace.go(shown, FULLSLOT.Slot.is(shown, "aside")), shown) : J.Json}
+
+import ./src/server/thin-still-picture.bend as STILLPICTURE
+# A still picture is private, exact-input/clock reuse; disabled work has no authority.
+law still_picture_disabled:
+  for key: String
+  for res: J.Json
+  {STILLPICTURE.Picture.bounds(False{}, key, res) == False{} : Bool}
+law still_picture_miss:
+  for res: J.Json
+  {STILLPICTURE.Picture.select(False{}, res) == None{} : Maybe<&2, J.Json>}
+law still_picture_exact:
+  for +res: J.Json
+  {STILLPICTURE.Picture.select(True{}, res) == Some{res} : Maybe<&2, J.Json>}
