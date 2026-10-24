@@ -222,3 +222,10 @@ Headless UI checks go through the web client and the phones (`bun test/tools/web
 - The UI is dumb: every decision (order, settle state, fade alpha, what's visible) comes from a Bend def with a law behind it where possible.
 - Square corners, minimal copy, no decorative headings.
 - Before pushing, verify the GitHub account (`i2cjak`), the remote, and the branch.
+
+## Links
+
+- A link you give the person to something served on a machine (a dev server, preview, review page, dashboard) must open from their other machines on the tailnet: `localhost` and `127.0.0.1` open only on the machine that serves it. Your own probes (`curl 127.0.0.1:3788`) stay on loopback.
+- Name the machine by its MagicDNS name, `<machine>.<tailnet>.ts.net` (the serving machine's own is `Self.DNSName` in `tailscale status --json`, minus the trailing dot). `<machine>` and `<tailnet>` are placeholders: give a link only with the real names filled in, never an example name.
+- Keep the server on `127.0.0.1` and share it with Tailscale Serve: `tailscale serve --bg --https=<free port> http://127.0.0.1:<port>`, then give `https://<machine>.<tailnet>.ts.net:<free port>/`. Serve is tailnet-only, over HTTPS, under the tailnet's access rules; `--bg` keeps it across reboots, so ask the person first, and turn it off when done (`tailscale serve --https=<free port> off`). Leave port 443 alone (the hub's `--tailscale-https` serves there) and never run `tailscale serve reset`, which drops the hub's too.
+- Never bind a server to `0.0.0.0` to make a link work, never use `tailscale funnel` (it publishes to the internet), and never turn off a server's sign-in or TLS for a link.
