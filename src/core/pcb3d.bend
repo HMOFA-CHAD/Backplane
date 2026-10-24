@@ -241,7 +241,10 @@ def Text.draw(+s: String, +at: B.Pt, +a: F32, +x: S.Sx, +up: Bool, +layer: U32, 
       +th = S.Sx.f(S.Sx.get(font, "thickness"), 0n)
       +pen = Bool.pick(F32, F32.is_gt(th, 0.0), th, F32.div(h, 8.0))
       +na = Deg.norm(a)
-      +turn = Bool.and(up, Up.flip(na))
+      # KiCad's `unlocked` disables footprint text's keep-upright rule.
+      # Mirroring remains the text item's own justify setting on either side.
+      +unlock = Bool.or(Sx.flag(x, "unlocked"), Sx.flag(S.Sx.get(x, "at"), "unlocked"))
+      +turn = Bool.and(Bool.and(up, Bool.not(unlock)), Up.flip(na))
       Text.strokes(ST.Stroke.text.full(s, px, py, h, w, pen, Deg.rad(Bool.pick(F32, turn, F32.add(na, 180.0), na)),
           Bool.pick(U32, turn, Up.swap(Just.h(j)), Just.h(j)), Bool.pick(U32, turn, Up.swap(Just.v(j)), Just.v(j)),
           Sx.flag(j, "mirror"), Sx.flag(font, "italic")),
