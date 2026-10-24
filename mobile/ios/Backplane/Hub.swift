@@ -45,16 +45,62 @@ enum Pairing {
             s = q
         }
         if !s.contains("://") { s = "http://" + s }
-        guard let u = URLComponents(string: s), let host = u.host else { return nil }
-        let rest = (u.fragment ?? "") + "&" + (u.query ?? "")
-        let token = rest.range(of: "token=[0-9a-f]+", options: .regularExpression).map { String(rest[$0].dropFirst(6)) }
+        guard let u = URLComponents(string: s), let host = u.host, !host.isEmpty,
+              let scheme = u.scheme?.lowercased(), ["http", "https", "ws", "wss"].contains(scheme) else { return nil }
+        let fragment = URLComponents(string: "?" + (u.fragment ?? ""))?.queryItems ?? []
+        let token = (fragment + (u.queryItems ?? [])).first { $0.name == "token" }?.value
         var w = URLComponents()
-        w.scheme = u.scheme == "https" ? "wss" : "ws"
+        w.scheme = scheme == "https" || scheme == "wss" ? "wss" : "ws"
         w.host = host
         w.port = u.port
         w.path = "/ws"
         if let token { w.queryItems = [URLQueryItem(name: "token", value: token)] }
         return w.url
+    }
+}
+
+// Only typed, secret-free causes cross into the UI. Foundation error text and
+// userInfo can contain the full socket URL (and its pairing credential).
+enum ConnectionFailure: Equatable {
+    case timeout, network, dns, tls, authentication, connection, invalidAddress, invalidResponse, view
+    case http(Int)
+
+    var reason: String {
+        switch self {
+        case .timeout: "timeout"
+        case .network: "network"
+        case .dns: "dns"
+        case .tls: "tls"
+        case .authentication: "authentication"
+        case .connection: "connection"
+        case .invalidAddress: "address"
+        case .invalidResponse: "response"
+        case .view: "view"
+        case .http: "http"
+        }
+    }
+
+    var code: String { if case .http(let code) = self { return String(code) }; return "" }
+
+    static func classify(_ error: Error) -> ConnectionFailure {
+        let e = error as NSError
+        guard e.domain == NSURLErrorDomain else { return .connection }
+        switch e.code {
+        case NSURLErrorTimedOut: return .timeout
+        case NSURLErrorCannotFindHost, NSURLErrorDNSLookupFailed: return .dns
+        case NSURLErrorNotConnectedToInternet, NSURLErrorCannotConnectToHost, NSURLErrorNetworkConnectionLost,
+             NSURLErrorDataNotAllowed, NSURLErrorInternationalRoamingOff: return .network
+        case NSURLErrorSecureConnectionFailed, NSURLErrorServerCertificateHasBadDate,
+             NSURLErrorServerCertificateUntrusted, NSURLErrorServerCertificateHasUnknownRoot,
+             NSURLErrorServerCertificateNotYetValid, NSURLErrorClientCertificateRejected,
+             NSURLErrorClientCertificateRequired, NSURLErrorAppTransportSecurityRequiresSecureConnection: return .tls
+        case NSURLErrorUserAuthenticationRequired: return .authentication
+        default: return .connection
+        }
+    }
+
+    static func response(_ status: Int) -> ConnectionFailure {
+        status == 401 || status == 403 ? .authentication : .http(status)
     }
 }
 
@@ -64,12 +110,12 @@ final class Hub {
     // What to do on each (re)connect: open this address (it carries
     // since/origin, so the hub sends only what this app has not seen), try
     // again after the backoff (the hub is down or restarting), or stop.
-    enum Next { case go(URL), later, stop }
+    enum Next { case go(URL), later(ConnectionFailure), stop }
     private let url: () async -> Next
     private let onConnecting: () -> Void
     private let onOpen: () -> Void
     private let onMessage: (Data) -> Void
-    private let onClose: () -> Void
+    private let onClose: (ConnectionFailure) -> Void
     private var task: URLSessionWebSocketTask?
     private var backoff: Double = 0.25
     private var retry: DispatchWorkItem?
@@ -84,7 +130,7 @@ final class Hub {
     private var watch: Timer?
 
     init(url: @escaping () async -> Next, onConnecting: @escaping () -> Void, onOpen: @escaping () -> Void, onMessage: @escaping (Data) -> Void,
-         onClose: @escaping () -> Void) {
+         onClose: @escaping (ConnectionFailure) -> Void) {
         self.url = url
         self.onConnecting = onConnecting
         self.onOpen = onOpen
@@ -105,7 +151,7 @@ final class Hub {
     private func check() {
         guard !stopped, let t = task, Date().timeIntervalSince(heard) > Hub.aliveLimit else { return }
         t.cancel(with: .goingAway, reason: nil)
-        lost()
+        lost(.timeout)
     }
 
     // Try now rather than after the backoff: the network came back or the
@@ -119,7 +165,7 @@ final class Hub {
             t.cancel(with: .goingAway, reason: nil)
             task = nil
             generation += 1
-            onClose()
+            onClose(.connection)
             connect()
         } else if let r = retry {
             r.cancel()
@@ -139,6 +185,20 @@ final class Hub {
         task = nil
     }
 
+    // A presentation can time out while heartbeats keep TCP healthy. Replace
+    // that session through the normal backoff rather than waiting forever for
+    // the silence watchdog. The bridge drops old pending actions on reconnect;
+    // only the selected view is opened again.
+    func reconnect(_ failure: ConnectionFailure) {
+        guard !stopped, let t = task else { return }
+        t.cancel(with: .goingAway, reason: nil)
+        lost(failure)
+    }
+
+    // A greeting proves transport, not that the selected view can load. Keep
+    // backing off across rejected views; reset only after the app accepts one.
+    func ready() { backoff = 0.25 }
+
     // every frame is binary CBOR, both ways
     func send(_ data: Data) {
         task?.send(.data(data)) { _ in }
@@ -157,7 +217,7 @@ final class Hub {
             let u: URL
             switch next {
             case .go(let to): u = to
-            case .later: lost(); return
+            case .later(let failure): lost(failure); return
             case .stop: return
             }
             let t = URLSession.shared.webSocketTask(with: u)
@@ -180,22 +240,22 @@ final class Hub {
                 case .success(let m):
                     self.heard = Date()
                     if first {
-                        self.backoff = 0.25
                         self.onOpen()
                     }
                     if case .data(let d) = m { self.onMessage(d) }
                     self.read(t, gen, first: false)
-                case .failure:
-                    self.lost()
+                case .failure(let error):
+                    let status = (t.response as? HTTPURLResponse)?.statusCode
+                    self.lost(status.map { $0 == 101 ? ConnectionFailure.classify(error) : .response($0) } ?? .classify(error))
                 }
             }
         }
     }
 
-    private func lost() {
+    private func lost(_ failure: ConnectionFailure) {
         task = nil
         generation += 1
-        onClose()
+        onClose(failure)
         guard !stopped else { return }
         // equal jitter: after a deploy the phones spread out, none at zero
         let wait = backoff / 2 + Double.random(in: 0...(backoff / 2))

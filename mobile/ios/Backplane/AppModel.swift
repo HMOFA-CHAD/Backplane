@@ -357,9 +357,10 @@ final class AppModel {
                 guard self.links.contains(link), self.conn[key]?.epoch == UInt64(epoch) else { return .stop }
                 // a hub that is down or restarting is asked again after the
                 // backoff; only a hub that answers without views parks
-                if found == .unreachable { return .later }
+                if case .retry(let failure) = found { return .later(failure) }
                 guard found == .supported else {
                     self.startup[key] = .compatibilityRequired
+                    self.conn[key, default: HubConn()].failure = nil
                     self.conn[key, default: HubConn()].phase = .offline
                     NSLog("Backplane view capability_required")
                     return .stop
@@ -381,6 +382,7 @@ final class AppModel {
                 self?.conn[key, default: HubConn()].epoch += 1
             },
             onOpen: { [weak self] in
+                self?.conn[key, default: HubConn()].failure = nil
                 if self?.shownHub == key { self?.plots.reset() }
                 self?.conn[key, default: HubConn()].phase = .syncing
                 let epoch = String(self?.conn[key]?.epoch ?? 0)
@@ -397,7 +399,11 @@ final class AppModel {
                     self?.received(key, d)
                 }
             },
-            onClose: { [weak self] in
+            onClose: { [weak self] failure in
+                if self?.conn[key]?.failure != failure {
+                    NSLog("Backplane connection retry cause=%@ http=%@", failure.reason, failure.code)
+                }
+                self?.conn[key, default: HubConn()].failure = failure
                 self?.cachedReadiness.retire(key)
                 self?.thinReady[key] = nil
                 self?.conn[key, default: HubConn()].phase = .offline
@@ -1031,6 +1037,10 @@ final class AppModel {
             else if update.phase == "failed" { status.phase = .offline }
             else { status.phase = .syncing }
             if conn[update.hub] != status { conn[update.hub] = status }
+            if status.phase == .online { hubs[update.hub]?.ready() }
+            if startup[update.hub] == .thin, update.phase == "failed" {
+                hubs[update.hub]?.reconnect(.view)
+            }
         }
         if requestDeadline != o.deadline {
             requestDeadline = o.deadline

@@ -539,6 +539,11 @@ enum NativeMessages {
     tag == "ja" ? (arg1 + "：" + arg0) : (arg0 + " to " + arg1)
   }
 
+  // native.hub.failure
+  static func native_hub_failure(_ tag: String, _ arg0: String, _ arg1: String) -> String {
+    tag == "ja" ? ((arg0 == "timeout" ? "ハブの応答がタイムアウトしました・再接続中" : (arg0 == "network" ? "ハブに接続できません。Tailscaleとネットワークへのアクセスを確認してください" : (arg0 == "dns" ? "ハブのアドレスが見つかりません。Tailscaleを確認してください" : (arg0 == "tls" ? "安全な接続に失敗しました。ハブの証明書を確認してください" : (arg0 == "authentication" ? "ハブが認証情報を拒否しました。ペアリングリンクを確認してください" : (arg0 == "address" ? "ハブのアドレスが無効です。ペアリングリンクを確認してください" : (arg0 == "response" ? "ハブの応答が無効です・再接続中" : (arg0 == "view" ? "ハブの画面を読み込めません・再接続中" : (arg0 == "http" ? "ハブがHTTP " + arg1 + "を返しました・再接続中" : "接続が切れました・再接続中")))))))))) : ((arg0 == "timeout" ? "Hub response timed out; retrying" : (arg0 == "network" ? "Cannot reach hub; check Tailscale and network access" : (arg0 == "dns" ? "Hub address not found; check Tailscale" : (arg0 == "tls" ? "Secure connection failed; check the hub certificate" : (arg0 == "authentication" ? "Hub rejected credentials; check the pairing link" : (arg0 == "address" ? "Invalid hub address; check the pairing link" : (arg0 == "response" ? "Invalid hub response; retrying" : (arg0 == "view" ? "Hub view unavailable; reconnecting" : (arg0 == "http" ? "Hub returned HTTP " + arg1 + "; retrying" : "Connection lost; retrying"))))))))))
+  }
+
   // native.hub.heard
   static func native_hub_heard(_ tag: String, _ arg0: String) -> String {
     tag == "ja" ? ("最終受信：" + arg0) : ("heard " + arg0)
