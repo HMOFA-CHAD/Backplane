@@ -371,10 +371,22 @@ def Info.put.m(j: Maybe<&2, J.Json>, +m: Map<&2, String>, +v: String) -> Map<&2,
     case _:
       Map.set(&2, String, m, "models", v)
 
+# The models info (every provider's models, opencode's hundreds) is parsed
+# and cut down only when it changed: the hub's views merge the info on
+# every render, and parsing it again each time was most of a render's time
+# (measured 2026-10-24: ~60% of the hub's CPU while a long thread scrolled).
+# "models.raw" keeps the text the cut-down parts came from.
+def Info.put.same(same: Bool, +m: Map<&2, String>, +v: String) -> Map<&2, String>:
+  match same:
+    case True{}:
+      m
+    case False{}:
+      Map.set(&2, String, Info.put.m(J.Json.parse(v), m, v), "models.raw", v)
+
 def Info.put.k(models: Bool, +m: Map<&2, String>, +k: String, +v: String) -> Map<&2, String>:
   match models:
     case True{}:
-      Info.put.m(J.Json.parse(v), m, v)
+      Info.put.same(String.eq(Str.get(m, "models.raw"), v), m, v)
     case False{}:
       Map.set(&2, String, m, k, v)
 

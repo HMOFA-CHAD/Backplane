@@ -38,6 +38,13 @@ TextEncoder would replace them and is deliberately not used. The original
 Enc.head writes the length, so header limits and byte order stay unchanged.
 No decoder, dictionary, wire format, cache, client or action state changes.
 
+Server-only `Json.parse(s)`: remembered for a few large texts (16 KB or
+more, the last 8). The hub's views parse the same models info (every
+provider's models, opencode's hundreds) several times a render, every
+render: measured 2026-10-24 on a long thread, most of a render's time. A
+parse is pure and its value never changes, so the same text gives the same
+value; smaller texts (agent lines, requests) are parsed as before.
+
 Each is found by its shape and must be found exactly once, else the build
 stops (a new Bend that emits them otherwise needs this looked at again).
 With --server (scripts/build-js.sh: one bundle) that holds for every def;
@@ -104,6 +111,16 @@ CBOR_TEXT = re.compile(
     r'(?=return ' + I + r'\$058Enc\$text\$k\$\(' + I + r'\$058Enc\$u8\$\(\2,\{\$:"[^"\n]+\.U8",n:0,rev:\{\$:"Nil"\}\}\),\3\)\})'
 )
 
+# Json.parse: function F(s){return ...$058Parse$fin$(...$058Parse$go$(...$058Json$lex$(s),...
+PARSE = re.compile(
+    r'function (' + I + r'\$058Json\$parse\$)\((' + I + r')\)\{(?=return ' + I + r'\$058Parse\$fin\$\()'
+)
+PARSE_HELPER = (
+    "const __bpParseMemo=new Map();function __bpParsed(s,f){if(typeof s!==\"string\"||s.length<16384)return f(s);"
+    "let v=__bpParseMemo.get(s);if(v===undefined){v=f(s);if(__bpParseMemo.size>=8)__bpParseMemo.delete(__bpParseMemo.keys().next().value);"
+    "__bpParseMemo.set(s,v)}return v}\n"
+)
+
 args = sys.argv[1:]
 server = "--server" in args
 files = [a for a in args if a != "--server"]
@@ -117,6 +134,9 @@ for name, rx, required in (("String.cmp", CMP, True), ("Map.bit.go", BIT, True),
         sys.exit(f"js-native: {name} found {n} times, not once")
     found[name] = n
 found["Cbor.Enc.text"] = sum(len(CBOR_TEXT.findall(s)) for s in srcs.values()) if server else 0
+found["Json.parse"] = sum(len(PARSE.findall(s)) for s in srcs.values()) if server else 0
+if server and found["Json.parse"] != 1:
+    sys.exit(f"js-native: Json.parse found {found['Json.parse']} times, not once")
 if server and found["Cbor.Enc.text"] != 1:
     sys.exit(f"js-native: Cbor.Enc.text found {found['Cbor.Enc.text']} times, not once")
 if server:
@@ -140,6 +160,9 @@ for f, s in srcs.items():
         s = CBOR_TEXT.sub(lambda m: m.group(0) + 'return __bpCborText(%s,%s,%s);' %
             (m.group(2), m.group(3), m.group(1).replace("$058Enc$text$", "$058Enc$head$")), s)
         s = Path(__file__).with_name("js-cbor-text.js").read_text(encoding="utf-8") + "\n" + s
+    if server and PARSE.search(s):
+        s = PARSE.sub(lambda m: 'function %s(%s){return __bpParsed(%s,%s$raw)}function %s$raw(%s){' % (m.group(1), m.group(2), m.group(2), m.group(1), m.group(1), m.group(2)), s)
+        s = PARSE_HELPER + s
     # (a module's imports may come after it: they are hoisted)
     s = HELPERS + s
     open(f, "w", encoding="utf-8").write(s)
@@ -149,7 +172,7 @@ outs = "".join(open(f, encoding="utf-8").read() for f in files)
 for name, call in (("String.cmp", "snd:{$:__bpOrd("), ("Map.bit.go", "snd:__bpBit("),
                    ("String.split", "return __bpSplit("), ("List.length", 'x.$!=="Nil";x=x.tail)n++;return '),
                    ("String.starts_with", "return __bpPre("), ("String.contains", "return __bpHas("),
-                   ("Cbor.Enc.text", "return __bpCborText(")):
+                   ("Cbor.Enc.text", "return __bpCborText("), ("Json.parse", "){return __bpParsed(")):
     n = outs.count(call)
     if n != found[name]:
         sys.exit(f"js-native: {name}'s native body is in the output {n} times, not {found[name]}")

@@ -186,13 +186,31 @@ def Actor.composer(+previous: U.Ui, +current: U.Ui) -> U.Ui:
   U.Refs.refresh(U.Skills.reopen.k(Bool.and(String.eq(U.Ui.sel(previous), U.Ui.sel(current)),
     String.eq(U.Ui.draft_text(previous), U.Ui.draft_text(current))), current))
 
+# the info without its models (the largest part, kept by the actor)
+def Actor.lean.kv(drop: Bool, +k: String, +v: J.Json, +acc: List<&2, J.KV>) -> List<&2, J.KV>:
+  match drop:
+    case True{}: acc
+    case False{}: J.KV{k, v} <> acc
+
+def Actor.lean.go(+fs: J.Json, +acc: List<&2, J.KV>) -> List<&2, J.KV>:
+  match fs:
+    case J.Field{+k, +v, +t}: Actor.lean.go(t, Actor.lean.kv(String.eq(k, "models"), k, v, acc))
+    case _: acc
+
+def Actor.lean(+info: J.Json) -> J.Json:
+  match info:
+    case J.Obj{+fs}: J.Json.obj(List.reverse(&2, J.KV, Actor.lean.go(fs, Nil{})))
+    case _: info
+
 def Actor.refresh( +xs: List<&2, Actor>, +web: Bool, +st: M.State, +info: J.Json, +live: J.Json, +now: Nat, +p: J.Json, +view: String) -> Actor:
   match xs:
     case Nil{}: Actor.make(U.Refs.refresh(V.Session.current(web, st, info, live, now, Actor.safe_input(st, p))), view, J.Json.get_obj(p, "target"))
     case Actor{old, oldView, +target, pending, reads, dirty, +memo} <> _:
       +input = Actor.safe_input(st, p)
       +thread = V.Target.thread(st, J.Json.get_obj(p, "target"))
-      +fresh = V.Session.current(web, st, info, live, now, input)
+      # the fresh Ui gives only its preferences (Actor.merge): the info,
+      # models and all, is merged once, over the actor's own (Actor.lean)
+      +fresh = V.Session.current(web, st, Actor.lean(info), live, now, input)
       +same = Bool.and(String.eq(oldView, view), W.Target.same(target, J.Json.get_obj(p, "target")))
       Actor{Actor.composer(old, V.Session.renderer(web, Actor.resolve(U.Ui.info_merge(Actor.merge(fresh, old, same, thread, Maybe.is_some(&2, J.Json, J.Json.get(J.Json.get_obj(J.Json.get_obj(input, "session"), "drafts"), thread))), info), thread), p)),
         view, J.Json.get_obj(p, "target"), Bool.pick(Map<&2, String>, same, pending, Map.new(&2, String)), Bool.pick(List<&2, J.Json>, same, reads, Nil{}), dirty, Bool.pick(List<&2, Memo>, same, Sidebar.keep(memo), Nil{})}
