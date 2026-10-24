@@ -483,7 +483,9 @@ function holdRead(tl) {
   }
   heldSize = size;
   fixedAt = -1;
-  held = holdEnd(tl) ? null : anchorOf(tl);
+  // on an earlier page (thin-host's page/newer) the page's end is not the
+  // thread's: it holds like anywhere else, and newer rows come by scrolling
+  held = holdEnd(tl) && !(thin && thin.atNewest?.() === false) ? null : anchorOf(tl);
   holdSay(held ? App.sel(ui) : "");
 }
 const holdSizes = typeof ResizeObserver === "function" ? new ResizeObserver(() => holdFix(document.getElementById("timeline"))) : null;
@@ -595,6 +597,8 @@ function render() {
   Solid.mount(document.getElementById("solid"));
   Plot2d.mount(document.getElementById("plot"));
   earlierAsked = false;
+  laterAsked = false;
+  if (tl2 && thin?.atNewest?.() === false && tl2.scrollHeight - tl2.scrollTop - tl2.clientHeight <= tl2.clientHeight * 2) requestAnimationFrame(() => laterCheck(document.getElementById("timeline")));
   // a page of entries the timeline does not draw (todo steps, a fold's
   // calls) moves nothing and, at the very top, no scroll comes to ask for
   // the next: still near the top after a render, it is asked for
@@ -1398,22 +1402,41 @@ function earlierCheck(tl) {
   dispatch("earlier", mark.getAttribute("data-earlier") ?? "");
 }
 document.addEventListener("scroll", (e) => earlierCheck(e.target), true);
+// and back down: on an earlier page, within two screens of its bottom after
+// a downward gesture, the next newer page (thin-host's newer, retracing the
+// pages that led here to the newest)
+let laterAsked = false, newerGestureUntil = 0;
+function laterCheck(tl) {
+  if (viewMode === "compatibility" || !thin || thin.atNewest?.() !== false) return;
+  if (!newerGestureUntil || performance.now() > newerGestureUntil) return;
+  if (laterAsked || !(tl instanceof Element) || tl.id !== "timeline") return;
+  if (tl.scrollHeight - tl.scrollTop - tl.clientHeight > tl.clientHeight * 2) return;
+  laterAsked = true;
+  newerGestureUntil = 0;
+  thin.newer();
+}
+document.addEventListener("scroll", (e) => laterCheck(e.target), true);
 let olderGestureUntil = 0, olderTouchY = null;
 function noteOlderGesture(e) {
   if (!e.isTrusted) return;
   const tl = e.target.closest?.("#timeline");
   if (!tl && !(e.type === "keydown" && e.target === document.body)) return;
-  let older = false;
-  if (e.type === "wheel") older = e.deltaY < 0 && !e.ctrlKey;
+  let older = false, newer = false;
+  if (e.type === "wheel") { older = e.deltaY < 0 && !e.ctrlKey; newer = e.deltaY > 0 && !e.ctrlKey; }
   else if (e.type === "touchstart") olderTouchY = e.touches[0]?.clientY ?? null;
   else if (e.type === "touchmove") {
     const y = e.touches[0]?.clientY;
     older = typeof y === "number" && typeof olderTouchY === "number" && y > olderTouchY;
+    newer = typeof y === "number" && typeof olderTouchY === "number" && y < olderTouchY;
     olderTouchY = y ?? null;
   } else if (e.type === "pointerdown") {
-    older = e.button === 0 && tl.scrollHeight > tl.clientHeight && e.clientX >= tl.getBoundingClientRect().right - 16;
-  } else if (e.type === "keydown") older = ["PageUp", "Home", "ArrowUp"].includes(e.key) && !e.target.isContentEditable;
+    older = newer = e.button === 0 && tl.scrollHeight > tl.clientHeight && e.clientX >= tl.getBoundingClientRect().right - 16;
+  } else if (e.type === "keydown") {
+    older = ["PageUp", "Home", "ArrowUp"].includes(e.key) && !e.target.isContentEditable;
+    newer = ["PageDown", "End", "ArrowDown", " "].includes(e.key) && !e.target.isContentEditable;
+  }
   if (older) olderGestureUntil = performance.now() + 1200;
+  if (newer) newerGestureUntil = performance.now() + 1200;
 }
 for (const event of ["wheel", "touchstart", "touchmove", "pointerdown", "keydown"]) document.addEventListener(event, noteOlderGesture, { capture: true, passive: true });
 

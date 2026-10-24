@@ -276,10 +276,18 @@ def Anchor.safe_if( +valid: Bool, +a: J.Json) -> J.Json:
 def Anchor.safe(+a: J.Json) -> J.Json:
   Anchor.safe_if(Bool.and(W.Wire.within(J.Json.get_str(a, "id", ""), 1024n), Maybe.is_some(&2, Nat, W.Wire.nat(a, "offset", 4294967295n))), a)
 
+# The next older page starts halfway up this one (Page.mid): the two share
+# half their rows, so the rows a reader is looking at stay on the page
+# while the earlier half comes in above them, and the view holds still
+# (host.js's holdFix keeps the entry at the top where it was). A page is
+# never more than 32 rows, however long the thread.
+def Page.mid(+ids: List<&2, String>, +last: String) -> String:
+  Maybe.default(&2, String, List.head(&2, String, List.drop(&2, String, ids, 15n)), last)
+
 def Page.window(+index: T.Index, +th: String, +p: J.Json, +epoch: String, +ids: List<&2, String>) -> J.Json:
   +last = Page.last(ids, "")
   +older = Page.older(Bool.not(List.is_empty(&2, String, ids)), index, th, Page.number(last))
-  J.Json.obj([J.KV{"ids", J.Json.arr(Ids.json(ids))}, J.KV{"anchor", Anchor.safe(J.Json.get_obj(p, "anchor"))}, J.KV{"older", J.Str{Bool.pick(String, List.is_empty(&2, String, older), "", W.Cursor.write(epoch, J.Json.get_obj(p, "target"), "", Page.number(last)))}}, J.KV{"hasMore", J.Flag{Bool.not(List.is_empty(&2, String, older))}}, J.KV{"remaining", J.Json.nat(Bool.pick(Nat, List.is_empty(&2, String, ids), 0n, T.Index.remaining(index, th, Page.number(last))))}, J.KV{"partial", J.Json.arr(Partial.rows(ids, index, epoch, J.Json.get_obj(p, "target"), Nil{}))}])
+  J.Json.obj([J.KV{"ids", J.Json.arr(Ids.json(ids))}, J.KV{"anchor", Anchor.safe(J.Json.get_obj(p, "anchor"))}, J.KV{"older", J.Str{Bool.pick(String, List.is_empty(&2, String, older), "", W.Cursor.write(epoch, J.Json.get_obj(p, "target"), "", Page.number(Page.mid(ids, last))))}}, J.KV{"hasMore", J.Flag{Bool.not(List.is_empty(&2, String, older))}}, J.KV{"remaining", J.Json.nat(Bool.pick(Nat, List.is_empty(&2, String, ids), 0n, T.Index.remaining(index, th, Page.number(last))))}, J.KV{"partial", J.Json.arr(Partial.rows(ids, index, epoch, J.Json.get_obj(p, "target"), Nil{}))}])
 
 type ActResult is Data:
   ActResult{ui: U.Ui, commands: List<&2, J.Json>}
@@ -317,10 +325,13 @@ def Partial.buttons( +parts: List<&2, J.Json>, +u: U.Ui) -> List<&2, D.Node>:
       D.Dom.button("thin-message-more", "thin-message-more", J.Json.show(J.Json.obj([J.KV{"entryId", J.Str{J.Json.get_str(part, "id", "")}}, J.KV{"cursor", J.Str{""}}])),
         MSG.T.common.more(U.Lang.loc(u)), MSG.T.common.more(U.Lang.loc(u))) <> Partial.buttons(tail, u)
 
+# Earlier rows come in as the reader scrolls up (no button): the mark at
+# the timeline's top is what host.js's earlierCheck looks for when the view
+# is within two screens of it
 def Render.older( +more: Bool, +u: U.Ui) -> List<&2, D.Node>:
   match more:
     case False{}: Nil{}
-    case True{}: [D.Dom.button("earlier", "view-page", "", MSG.T.common.more(U.Lang.loc(u)), MSG.T.common.more(U.Lang.loc(u)))]
+    case True{}: [D.El{"div", "earlier", [D.At{"class", "earlier"}, D.At{"data-earlier", "1"}], Nil{}}]
 
 # Keep the normal app root and its percentage-height chain. Paging and
 # continuation controls belong inside the existing scrollable timeline.

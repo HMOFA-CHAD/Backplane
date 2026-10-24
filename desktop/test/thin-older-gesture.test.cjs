@@ -17,3 +17,12 @@ test('downward scrolling and ordinary text clicks do not trigger older download'
 test('a finger movement toward older messages qualifies; a downward-reading gesture does not',()=>{
  const f=fixture();f.event('touchstart',{touches:[{clientY:100}]});f.event('touchmove',{touches:[{clientY:80}]});f.ctx.earlierCheck(f.tl);assert.equal(f.sent.length,0);f.event('touchmove',{touches:[{clientY:120}]});f.ctx.earlierCheck(f.tl);assert.equal(f.sent.length,1);
 });
+test('on an earlier page a downward gesture near its bottom asks for the newer page, once a render',()=>{
+ const f=fixture(),asked=[];f.ctx.thin={atNewest:()=>false,newer:()=>asked.push(1)};f.tl.scrollTop=1200;
+ f.ctx.laterCheck(f.tl);assert.equal(asked.length,0,'no gesture, no page');
+ f.event('wheel',{deltaY:40});f.ctx.laterCheck(f.tl);f.ctx.laterCheck(f.tl);assert.equal(asked.length,1);
+ f.ctx.laterAsked=false;f.event('wheel',{deltaY:-40});f.ctx.laterCheck(f.tl);assert.equal(asked.length,1,'an upward gesture does not page down');
+});
+test('at the newest there is nothing below to ask for',()=>{
+ const f=fixture(),asked=[];f.ctx.thin={atNewest:()=>true,newer:()=>asked.push(1)};f.tl.scrollTop=1200;f.event('wheel',{deltaY:40});f.ctx.laterCheck(f.tl);assert.equal(asked.length,0);
+});

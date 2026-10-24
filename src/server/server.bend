@@ -11420,13 +11420,23 @@ def Hub.thin.message(h: Hub, +client: U32, +o: J.Json, +c: Client, +now: Nat) ->
       +thread = TV.Target.thread(st, ThinContext.target(Client.thin.context(c)))
       Hub.thin.message_kind(String.eq(J.Json.get_str(J.Json.get_obj(o, "p"), "entryId", ""), TLIVE.Stream.id(thread)), Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, c, now, thread)
 
+# a message sent from an earlier page goes back to the newest (the reader
+# sees what was sent); any other action keeps the page
+def Hub.thin.sends(+action: String) -> Bool:
+  Bool.or(String.eq(action, "send"), String.eq(action, "send-alt"))
+
+def Hub.thin.act(send: Bool, h: Hub, +client: U32, +o: J.Json, +c: Client, +now: Nat) -> IO(Hub):
+  match send:
+    case True{}: Hub.thin.render(h, client, o, c, now, Hub.thin.context.for(False{}, J.Json.get_obj(o, "p"), c, "", 0n), 0n)
+    case False{}: Hub.thin.render(h, client, o, c, now, Client.thin.context(c), ThinContext.anchor(Client.thin.context(c)))
+
 def Hub.thin.dispatch(+kind: Nat, h: Hub, +client: U32, +o: J.Json, +c: Client, +now: Nat) -> IO(Hub):
   match kind h:
     case 0n _: Hub.thin.render(h, client, o, c, now, Hub.thin.context.for(True{}, J.Json.get_obj(o, "p"), c, J.Json.as_raw(J.Json.get(o, "id"), "0"), 0n), 0n)
     case 1n Hub{st, f, ls, cl, as, inbox, +cfg, note}: Hub.thin.page(Hub.thin.cursor(J.Json.get_obj(o, "p"), Cfg.thin.epoch(cfg), ""), Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, c, now)
     case 2n Hub{st, f, ls, cl, as, inbox, +cfg, note}: Hub.thin.search.valid(Hub.thin.query.valid(J.Json.get_obj(o, "p")), Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, c, now, Client.thin.context(c), Hub.thin.cursor(J.Json.get_obj(o, "p"), Cfg.thin.epoch(cfg), J.Json.get_str(J.Json.get_obj(o, "p"), "query", "")))
     case 3n _: Hub.thin.render(h, client, TV.Obj.put(o, "p", TV.Obj.put(J.Json.get_obj(o, "p"), "action", J.Str{""})), c, now, Client.thin.context(c), ThinContext.anchor(Client.thin.context(c)))
-    case 4n _: Hub.thin.render(h, client, o, c, now, Client.thin.context(c), ThinContext.anchor(Client.thin.context(c)))
+    case 4n _: Hub.thin.act(Hub.thin.sends(J.Json.get_str(J.Json.get_obj(o, "p"), "action", "")), h, client, o, c, now)
     case 5n _: Hub.thin.message(h, client, o, c, now)
     case 6n _: Hub.thin.respond(h, client, o, J.Json.obj([J.KV{"remoteReady", J.Flag{False{}}}, J.KV{"cmds", J.Json.arr(Nil{})}, J.KV{"cancelled", J.Flag{False{}}}]), c, Client.thin.context(c), now)
     case _ _: Hub.thin.error(h, client, o, "INVALID_REQUEST")
