@@ -1,5 +1,6 @@
 import ./src/core/sidebar-read.bend as SIDEREAD
 import Base
+import ./src/server/thin-sidebar.bend as CHATDERIVED
 import ./test/sidebar_input_proof.bend as SIDEINPUTPROOF
 import ./src/core/thin.bend as THINL # S3 lazy thin index
 import ./src/server/thin-mail.bend as TMAILL # S3 lazy mail cache
@@ -13125,4 +13126,10 @@ def Laws.signal_text_overlay_fresh(text):
   {==}
 
 def Laws.model_labels_given(info, provider, model):
+  {==}
+
+def Laws.chat_derived_read(u):
+  {==}
+
+def Laws.chat_picture_full_sequence(u, epoch, view, revision):
   {==}

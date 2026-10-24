@@ -2,6 +2,7 @@ import ./src/core/sidebar-read.bend as SIDEREAD
 import ./src/server/thin-signals.bend as SGV
 import ./src/core/signal.bend as SIGREV
 import Base
+import ./src/server/thin-sidebar.bend as CHATDERIVED
 import ./src/server/thin-sidebar-wire.bend as SWR
 import ./src/core/cbor.bend as CBR1 # fast hub R1
 import ./src/core/thin-pace.bend as TPR1 # fast hub R1
@@ -12062,3 +12063,15 @@ law model_labels_given:
   for +provider: String
   for +model: String
   {U.Models.label.given(U.Models.labels(info, provider), model) == J.Json.get_str(J.Json.get_obj(U.Models.about(info, provider), "labels"), Bool.pick(String, String.is_empty(model), "default", model), "") : String}
+
+# Read-only derived reuse never loosens an ordinary conversation picture key.
+law chat_derived_read:
+  for u: U.Ui
+  {CHATDERIVED.Sidebar.derived(J.Json.obj([J.KV{"action", J.Str{""}}]), u) == True{} : Bool}
+
+law chat_picture_full_sequence:
+  for +u: U.Ui
+  for +epoch: String
+  for +view: String
+  for revision: Nat
+  {CHATDERIVED.Sidebar.key.for(False{}, u, epoch, view, revision) == CHATDERIVED.Sidebar.key(u, epoch, view) : String}
