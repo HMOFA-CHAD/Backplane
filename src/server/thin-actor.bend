@@ -188,6 +188,19 @@ def SidebarImage.key(settings: Bool, u: U.Ui, epoch: String, view: String, revis
     case True{}: ""
     case False{}: SC.Sidebar.key.revision(u, epoch, view, revision)
 
+# When the trusted dependency revision is the full canonical sequence, the
+# already-built picture is exactly the metadata image key. Reuse that String
+# within this render; history-only revision differences keep the original key.
+def SidebarImage.key.same(same: Bool, picture: String, u: U.Ui, epoch: String, view: String, revision: Nat) -> String:
+  match same:
+    case True{}: picture
+    case False{}: SidebarImage.key(False{}, u, epoch, view, revision)
+
+def SidebarImage.key.shared(settings: Bool, +u: U.Ui, epoch: String, view: String, +revision: Nat, picture: String) -> String:
+  match settings:
+    case True{}: ""
+    case False{}: SidebarImage.key.same(Nat.is_eq(M.State.seq(U.Ui.state(u)), revision), picture, u, epoch, view, revision)
+
 def Sidebar.base(ms: List<&2, Memo>) -> List<&2, Memo>:
   match ms:
     case Nil{}: Nil{}
@@ -488,7 +501,7 @@ def Actor.render.web.indexed(+updated: Actor, +action: V.ActResult, +st: M.State
   +text = SGT.SignalTextCache.obtain(epoch, revision, U.Side.signals.online(prepared), SGV.SignalCache.signals(signals), SignalText.get(Sidebar.memos(updated)))
   +settings = SC.Sidebar.request(p, u)
   +key = SC.Sidebar.key.for(settings, prepared, epoch, Sidebar.view(updated), revision)
-  +image = SidebarImage.key(settings, prepared, epoch, Sidebar.view(updated), revision)
+  +image = SidebarImage.key.shared(settings, prepared, epoch, Sidebar.view(updated), revision, key)
   +cached = SidebarImage.cached(settings, Sidebar.memos(updated), key, image)
   +window = V.Render.window(stream, index, V.Target.thread(st, J.Json.get_obj(p, "target")), p, epoch, rows)
   +res = V.Obj.put(V.Render.web.prepared.materialized(action, prepared, window, cached, SGV.SignalCache.signals(signals), SIXV.IndexCache.index(metadata), SGT.SignalTextCache.values(text)), "mailDraftContext", Actor.mail_context(u))
