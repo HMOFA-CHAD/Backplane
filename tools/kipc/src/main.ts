@@ -17,6 +17,7 @@ import { spawn } from "node:child_process";
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { nativePath, hubPath } from "../../platform/windows-path.ts";
+import { Replies } from "./replies.ts";
 
 const args = process.argv.slice(2);
 const opt = (n: string) => {
@@ -27,25 +28,19 @@ const defLib = nativePath(opt("--lib"));
 const defDesc = nativePath(opt("--desc"));
 const client = `backplane-${process.pid}`;
 
-type Slot = { w: Worker; token: string; pending: Map<string, (m: { bytes?: Uint8Array; error?: string }) => void> };
+type Slot = { replies: Replies; token: string };
 const socks = new Map<string, Slot>();
 
 function slot(sock: string): Slot {
-  let s = socks.get(sock);
+  const s = socks.get(sock);
   if (s) return s;
   const w = new Worker(/(?:^|[\\/])\$bunfs(?:[\\/]|$)/.test(Bun.main) ? "./worker.ts" : new URL("./worker.ts", import.meta.url));
-  const pending = new Map<string, (m: { bytes?: Uint8Array; error?: string }) => void>();
-  w.onmessage = (ev: MessageEvent) => {
-    const d = ev.data as { op: string; id?: string; bytes?: Uint8Array; error?: string };
-    if (d.op === "reply" && d.id !== undefined) {
-      const f = pending.get(d.id);
-      pending.delete(d.id);
-      f?.(d);
-    }
-  };
-  s = { w, token: "", pending };
-  socks.set(sock, s);
-  return s;
+  const made: Slot = { token: "", replies: new Replies(w, () => {
+    // An old worker's late error must not detach a replacement connection.
+    if (socks.get(sock) === made) socks.delete(sock);
+  }) };
+  socks.set(sock, made);
+  return made;
 }
 
 const out = (o: unknown) => process.stdout.write(JSON.stringify(o) + "\n");
@@ -138,9 +133,7 @@ async function handle(line: string) {
   if (r.op === "close") {
     const s = socks.get(r.sock!);
     if (s) {
-      s.w.postMessage({ op: "close" });
-      s.w.terminate();
-      socks.delete(r.sock!);
+      s.replies.close();
     }
     return out({ id, ok: true });
   }
@@ -166,10 +159,7 @@ async function handle(line: string) {
     return fail(id, `bad message for ${r.type}: ${(e as Error).message}`, "AS_BAD_REQUEST");
   }
   const key = String(++seq);
-  const got = await new Promise<{ bytes?: Uint8Array; error?: string }>((res) => {
-    s.pending.set(key, res);
-    s.w.postMessage({ op: "req", id: key, sock: nativePath(r.sock!), lib: nativePath(r.lib ?? defLib), bytes, timeout: r.timeout ?? 30000 });
-  });
+  const got = await s.replies.request(key, { op: "req", id: key, sock: nativePath(r.sock!), lib: nativePath(r.lib ?? defLib), bytes, timeout: r.timeout ?? 30000 });
   if (got.error !== undefined || !got.bytes) return fail(id, got.error ?? "no reply");
   try {
     const rep = decodeResponse(schema, got.bytes);
