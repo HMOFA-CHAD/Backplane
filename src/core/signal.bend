@@ -228,8 +228,16 @@ def Signal.cache.go(xs: List<&2, String>, +online: Bool, +signals: Map<&2, Nat>,
     case +id <> rest:
       Signal.cache.go(rest, online, signals, Map.set(&2, String, info, Signal.key(id), Nat.show(Signal.visible(online, Signal.at(signals, id)))))
 
-def Signal.cache(+online: Bool, +signals: Map<&2, Nat>, info: Map<&2, String>) -> Map<&2, String>:
-  Signal.cache.go(Map.keys(&2, Nat, signals), online, signals, Map.set(&2, String, info, "@signal.online", Bool.pick(String, online, "1", "0")))
+# Values already accompany keys in the map traversal. Keep cache.go above as
+# the independent lookup-based reference used by compatibility checks.
+def Signal.cache.pairs(xs: List<&2, Sigma<&2, &2, String, _ => Nat>>, +online: Bool, info: Map<&2, String>) -> Map<&2, String>:
+  match xs:
+    case Nil{}: info
+    case (id, n) <> rest:
+      Signal.cache.pairs(rest, online, Map.set(&2, String, info, Signal.key(id), Nat.show(Signal.visible(online, n))))
+
+def Signal.cache(+online: Bool, signals: Map<&2, Nat>, info: Map<&2, String>) -> Map<&2, String>:
+  Signal.cache.pairs(Map.to_list(&2, Nat, signals), online, Map.set(&2, String, info, "@signal.online", Bool.pick(String, online, "1", "0")))
 
 def Signal.cached.k(r: Map<&2, String> & String) -> Nat:
   (_, v) = r

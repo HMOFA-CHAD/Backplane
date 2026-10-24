@@ -13069,3 +13069,9 @@ def Laws.signal_system_input(st, th, id, text, at):
 
 def Laws.signal_user_revision(th, id, text, at, old, head):
   {==}
+
+def Laws.signal_pair_offline_work_hidden(id, info):
+  {==}
+
+def Laws.signal_pair_offline_block_kept(id, info):
+  {==}
