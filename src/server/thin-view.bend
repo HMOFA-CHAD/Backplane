@@ -401,6 +401,27 @@ def Render.web.prepared.indexed(+a: ActResult, prepared: U.Ui, +window: J.Json, 
       Obj.put(Obj.put(Obj.put(Obj.put(J.Json.obj([J.KV{"shown", Render.web.indexed(prepared, window, sidebar, signals)}]),
         "remoteReady", J.Flag{True{}}), "session", Route.pack(u)), "cmds", J.Json.arr(cmds)), "window", window)
 
+def Render.web.metadata.full(+u: U.Ui, +window: J.Json, signals: Map<&2, Nat>, +plain: U.SIx) -> J.Json:
+  WP.Node.write(Render.timeline(A.view_sidebar_metadata(u, False{}, plain, signals), Render.older(J.Json.get_bool(window, "hasMore", False{}), u), Partial.buttons(J.Json.elems(J.Json.get_obj(window, "partial")), u)))
+
+def Render.web.metadata.checked(valid: Bool, shown: J.Json, sidebar: J.Json, u: U.Ui, window: J.Json, signals: Map<&2, Nat>, +plain: U.SIx) -> J.Json:
+  match valid:
+    case True{}: SS.Slot.replace(shown, sidebar)
+    case False{}: Render.web.metadata.full(u, window, signals, plain)
+
+def Render.web.metadata(+u: U.Ui, +window: J.Json, +sidebar: J.Json, +signals: Map<&2, Nat>, +plain: U.SIx) -> J.Json:
+  match sidebar:
+    case J.Null{}: Render.web.metadata.full(u, window, signals, plain)
+    case _:
+      +shown = WP.Node.write(Render.timeline(A.view_sidebar_metadata(u, True{}, plain, signals), Render.older(J.Json.get_bool(window, "hasMore", False{}), u), Partial.buttons(J.Json.elems(J.Json.get_obj(window, "partial")), u)))
+      Render.web.metadata.checked(Bool.and(Nat.is_eq(SS.Slot.count(shown), 1n), SS.Slot.is(sidebar, "aside")), shown, sidebar, u, window, signals, plain)
+
+def Render.web.prepared.metadata(+a: ActResult, prepared: U.Ui, +window: J.Json, sidebar: J.Json, signals: Map<&2, Nat>, +plain: U.SIx) -> J.Json:
+  match a:
+    case ActResult{+u, cmds}:
+      Obj.put(Obj.put(Obj.put(Obj.put(J.Json.obj([J.KV{"shown", Render.web.metadata(prepared, window, sidebar, signals, plain)}]),
+        "remoteReady", J.Flag{True{}}), "session", Route.pack(u)), "cmds", J.Json.arr(cmds)), "window", window)
+
 def Render.native_thread( +th: J.Json, +window: J.Json) -> J.Json:
   match th:
     case J.Null{}: J.Null{}

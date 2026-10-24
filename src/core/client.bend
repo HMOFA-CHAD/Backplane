@@ -1965,7 +1965,7 @@ def PSlot.rows(xs: List<&2, PSlot>) -> List<&2, SRow>:
 # The sidebar's index
 # -------------------
 # What every row of a frame asks of the whole state, gathered once per
-# frame (or phone screen) in grouped passes and never kept: each thread's
+# frame (or phone screen) in grouped passes: each thread's
 # open asks, each parent's unfinished child tasks, and the threads of each
 # project in the order the state lists them. Side.*.ix answer from it what
 # Side.* answer by walking the state (laws side_*_ix_eq, subs_count_ix_eq).
@@ -2016,6 +2016,25 @@ def SIx.asks.go(as: List<&2, M.Ask>, m: Map<&2, List<&2, M.Ask>>) -> Map<&2, Lis
 def Side.ix(+st: M.State) -> SIx:
   SIx{SIx.by.go(List.reverse(&2, M.Thread, Kids.keep(Ui.threads(st), Kids.set(st))), Map.new(&2, List<&2, M.Thread>)),
     SIx.asks.go(List.reverse(&2, M.Ask, M.Asks.all(st)), Map.new(&2, List<&2, M.Ask>)), M.Work.kids.map(st), M.Work.rows.map(st)}
+
+# Typed canonical input for the plain metadata index. World/mail are needed
+# for bot-child and mail-run visibility; transcript/clock/sequence/UI are not.
+# This input is transient and is never retained as a memo or sent to a client.
+type SidebarInput is Data:
+  SidebarInput{threads: Map<&2, M.Thread>, tasks: Map<&2, M.Task>, settings: Map<&2, String>, asks: Map<&2, M.Ask>, world: BT.World, mail: ML.Box}
+
+def SidebarInput.of(+st: M.State) -> SidebarInput:
+  match st:
+    case M.State{_, ts, _, _, tk, sg, _, ak, _, _, _}:
+      SidebarInput{ts, tk, sg, ak, M.State.bots(st), M.State.mail(st)}
+
+def SidebarInput.state(input: SidebarInput) -> M.State:
+  match input:
+    case SidebarInput{ts, tk, sg, ak, world, mail}:
+      M.State{Map.new(&2, M.Project), ts, Nil{}, 0n, tk, sg, Map.new(&2, List<&2, M.QItem>), ak, Map.new(&2, M.Device), Map.new(&2, M.Nav), [M.Ext{world, Map.new(&2, List<&2, M.Entry>), [mail]}]}
+
+def Side.ix.inputs(input: SidebarInput) -> SIx:
+  Side.ix(SidebarInput.state(input))
 
 def SIx.list.k(r: Map<&2, List<&2, M.Thread>> & List<&2, M.Thread>) -> List<&2, M.Thread>:
   (_, xs) = r

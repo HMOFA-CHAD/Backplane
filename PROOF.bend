@@ -1,4 +1,5 @@
 import Base
+import ./test/sidebar_input_proof.bend as SIDEINPUTPROOF
 import ./src/core/thin.bend as THINL # S3 lazy thin index
 import ./src/server/thin-mail.bend as TMAILL # S3 lazy mail cache
 import ./src/core/storedb.bend as SDB # S1 indexed store
@@ -13075,3 +13076,21 @@ def Laws.signal_pair_offline_work_hidden(id, info):
 
 def Laws.signal_pair_offline_block_kept(id, info):
   {==}
+
+def Laws.side_ix_metadata_input(st):
+  SIDEINPUTPROOF.exact(st)
+
+def Laws.side_input_activity(st, th, act, tone, kind, summary, at):
+  match st:
+    case M.State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, Nil{}}: {==}
+    case M.State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, M.Ext{world, by, mail} <> rest}: {==}
+
+def Laws.side_input_assistant(st, th, id, text, at):
+  match st:
+    case M.State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, Nil{}}: {==}
+    case M.State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, M.Ext{world, by, mail} <> rest}: {==}
+
+def Laws.side_input_system(st, th, id, text, at):
+  match st:
+    case M.State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, Nil{}}: {==}
+    case M.State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, M.Ext{world, by, mail} <> rest}: {==}
