@@ -9907,6 +9907,7 @@ def Settings.rows.of(i: Nat, +l: I.Loc) -> List<&2, String>:
     case 4n: ["KiCad", "FreeCAD", "KiCad IPC"]
     case 5n: ["Tailscale", MSG.T.settings.pair(l), MSG.T.settings.channel(l)]
     case 11n: [MSG.T.settings.tour(l)]
+    case 10n: [UZ.Ts.label()]
     case 13n: [Fab.set.order.label(), Fab.set.label()]
     case _: Nil{}
 
@@ -9923,7 +9924,7 @@ def Settings.words(i: Nat) -> String:
     case 7n: "keys api secrets tokens environment"
     case 8n: "antigravity google gemini sign in"
     case 9n: "timezone time zone clock"
-    case 10n: "usage limits tokens cost"
+    case 10n: "usage limits tokens cost token stats speed tok/s context cache"
     case 11n: "about tour help version"
     case 12n: "privacy share data"
     case 13n: "ordering order buy fab manufacturing quote price estimates stripe payment checkout fee"

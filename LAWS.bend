@@ -8982,6 +8982,20 @@ law tok_add_one_turn:
 law tok_add_no_cost:
   {M.Tok.part(M.Tok.add("", 1n, 0n, 0n, 1n, 0n, 0n, False{}), 7n) == 0n : Nat}
 
+# ---- usage-token-stats ----
+# the composer's token chip is opt-in: off on a fresh hub
+law tokstats_off_by_default:
+  {UZ.Ts.on(M.State.empty()) == False{} : Bool}
+
+# a Claude session already running when first seen gets no speed: its
+# running totals are only the baseline
+law speed_unseen_untold:
+  {H.Speed.value("", 5n, 3n, 1n, 1n) == "5/3/0/0/1/0/0/1" : String}
+
+# a turn's speed is its share of the running totals
+law speed_told_rise:
+  {H.Speed.value("2/1/0/0/0/0/0/0", 5n, 4n, 1n, 1n) == "5/4/3/3/1/3/3/1" : String}
+
 # ---- usage-boat-cap ----
 # without a shared cap in the status, the spend row says nothing about one
 law usage_boat_no_cap_nothing:

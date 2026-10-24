@@ -1491,12 +1491,15 @@ def Turn.session(t: M.Thread) -> String:
     case M.Thread{_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, se, _}:
       se
 
-def Turn.first(fs: J.Json) -> String:
+# the session's main model: the one with the widest window (helpers such
+# as a small model for titles are listed too, and may come first)
+def Turn.main(fs: J.Json, +best: String, +w: Nat) -> String:
   match fs:
-    case J.Field{k, _, _}:
-      k
+    case J.Field{+k, +v, t}:
+      Turn.main(t, Bool.pick(String, Bool.or(String.is_empty(best), Nat.is_gt(J.Json.get_nat(v, "contextWindow", 0n), w)), k, best),
+        Bool.pick(Nat, Bool.or(String.is_empty(best), Nat.is_gt(J.Json.get_nat(v, "contextWindow", 0n), w)), J.Json.get_nat(v, "contextWindow", 0n), w))
     case _:
-      ""
+      best
 
 def Turn.or(+a: String, +b: String) -> String:
   Bool.pick(String, String.is_empty(a), b, a)
@@ -1551,6 +1554,81 @@ def Turn.restart(+s: M.State, +now: Nat) -> List<&2, M.Change>:
 def Turn.cost.known(has: Bool, first: Bool, +basis: String) -> Bool:
   Bool.and(has, Bool.or(first, Bool.not(String.is_empty(basis))))
 
+# Speed (usage.bend's Ts): Claude's result gives the process's running API
+# time (duration_api_ms, every model call's own time added up) and, per
+# model, its running output tokens (modelUsage); a turn's share is the rise
+# since the last result (measured 2026-10-24: both run on across a
+# session's turns). The setting turn.speed.<thread> is
+# "<api ms>/<out>/<turn api ms>/<turn out>/<turn wall ms>/<timed api ms>/<timed out>/<steps>":
+# the running totals, the last turn's share and its wall time
+# (duration_ms), the thread's turns whose share was told, and the turn's
+# model calls (num_turns). A session the hub saw start starts at 0
+# (Speed.start); one already running is not told until its next result.
+def Speed.key(+th: String) -> String:
+  "turn.speed." ++ th
+
+def Speed.outs(fs: J.Json, +acc: Nat) -> Nat:
+  match fs:
+    case J.Field{_, +v, t}:
+      Speed.outs(t, Nat.add(acc, J.Json.get_nat(v, "outputTokens", 0n)))
+    case _:
+      acc
+
+def Speed.share(known: Bool, +now: Nat, +before: Nat) -> Nat:
+  Bool.pick(Nat, known, Turn.rise(now, before), 0n)
+
+def Speed.told(told: Bool, +n: Nat) -> Nat:
+  Bool.pick(Nat, told, n, 0n)
+
+def Speed.value.k(+old: String, +api: Nat, +out: Nat, +wall: Nat, +steps: Nat, +a: Nat, +o: Nat, +told: Bool) -> String:
+  String.join([Nat.show(api), Nat.show(out), Nat.show(Speed.told(told, a)), Nat.show(Speed.told(told, o)), Nat.show(wall),
+    Nat.show(Nat.add(M.Tok.part(old, 5n), Speed.told(told, a))), Nat.show(Nat.add(M.Tok.part(old, 6n), Speed.told(told, o))), Nat.show(steps)], "/")
+
+def Speed.value(+old: String, +api: Nat, +out: Nat, +wall: Nat, +steps: Nat) -> String:
+  +a = Speed.share(Bool.not(String.is_empty(old)), api, M.Tok.part(old, 0n))
+  +o = Speed.share(Bool.not(String.is_empty(old)), out, M.Tok.part(old, 1n))
+  Speed.value.k(old, api, out, wall, steps, a, o, Bool.and(Nat.is_gt(a, 0n), Nat.is_gt(o, 0n)))
+
+def Speed.claude(+s: M.State, +th: String, +now: Nat, +o: J.Json) -> List<&2, M.Change>:
+  Bool.pick(List<&2, M.Change>, Turn.has(o, "duration_api_ms"),
+    [M.SettingSet{Speed.key(th), Speed.value(M.Setting.get(s, Speed.key(th), ""), J.Json.get_nat(o, "duration_api_ms", 0n),
+      Speed.outs(Usage.fields(J.Json.get_obj(o, "modelUsage")), 0n), J.Json.get_nat(o, "duration_ms", 0n), J.Json.get_nat(o, "num_turns", 0n)), now}], Nil{})
+
+# a new session's running totals start at 0; the last turn's and the
+# thread's stay
+def Speed.restart(+old: String) -> String:
+  String.join(["0", "0", Nat.show(M.Tok.part(old, 2n)), Nat.show(M.Tok.part(old, 3n)), Nat.show(M.Tok.part(old, 4n)),
+    Nat.show(M.Tok.part(old, 5n)), Nat.show(M.Tok.part(old, 6n)), Nat.show(M.Tok.part(old, 7n))], "/")
+
+def Speed.start(+s: M.State, same: Bool, +th: String, +sid: String, +now: Nat) -> List<&2, M.Change>:
+  Bool.pick(List<&2, M.Change>, Bool.or(same, String.is_empty(sid)), Nil{},
+    [M.SettingSet{Speed.key(th), Speed.restart(M.Setting.get(s, Speed.key(th), "")), now}])
+
+# Claude's session totals per model (modelUsage: the main model and any
+# helper or subagent model), as the setting turn.models.<thread>, a line
+# per model "<model>|<in>|<out>|<cache read>|<cache write>|<nano-dollars>|<web searches>|<window>",
+# logged when it changes
+def Mu.key(+th: String) -> String:
+  "turn.models." ++ th
+
+def Mu.line(+k: String, +v: J.Json) -> String:
+  k ++ "|" ++ String.join([Nat.show(J.Json.get_nat(v, "inputTokens", 0n)), Nat.show(J.Json.get_nat(v, "outputTokens", 0n)),
+    Nat.show(J.Json.get_nat(v, "cacheReadInputTokens", 0n)), Nat.show(J.Json.get_nat(v, "cacheCreationInputTokens", 0n)),
+    Nat.show(Turn.nusd(Turn.raw(v, "costUSD"))), Nat.show(J.Json.get_nat(v, "webSearchRequests", 0n)), Nat.show(J.Json.get_nat(v, "contextWindow", 0n))], "|")
+
+def Mu.lines(fs: J.Json, +acc: String) -> String:
+  match fs:
+    case J.Field{+k, +v, t}:
+      Mu.lines(t, Bool.pick(String, String.is_empty(acc), Mu.line(k, v), acc ++ "\n" ++ Mu.line(k, v)))
+    case _:
+      acc
+
+def Mu.set(+s: M.State, +th: String, +now: Nat, +v: String) -> List<&2, M.Change>:
+  Bool.pick(List<&2, M.Change>, Bool.or(String.is_empty(v), String.eq(v, M.Setting.get(s, Mu.key(th), ""))), Nil{}, [M.SettingSet{Mu.key(th), v, now}])
+
+def Mu.claude(+s: M.State, +th: String, +now: Nat, +o: J.Json) -> List<&2, M.Change>:
+  Mu.set(s, th, now, Mu.lines(Usage.fields(J.Json.get_obj(o, "modelUsage")), ""))
+
 def Turn.claude.k(fresh: Bool, +s: M.State, +th: String, +now: Nat, +o: J.Json) -> List<&2, M.Change>:
   match fresh:
     case False{}:
@@ -1560,12 +1638,13 @@ def Turn.claude.k(fresh: Bool, +s: M.State, +th: String, +now: Nat, +o: J.Json) 
       +total = Turn.nusd(Turn.raw(o, "total_cost_usd"))
       +hasc = Bool.and(Turn.cost.known(Turn.has(o, "total_cost_usd"), False{}, Turn.claude.basis(s, th)), Nat.is_ge(total, Turn.claude.base(s, th)))
       +think = Turn.has(J.Json.get_obj(u, "output_tokens_details"), "thinking_tokens")
-      List.append(&2, M.Change, Turn.restart(s, now), [M.TurnUsage{th, "claude", Turn.or(Turn.model(Hub.thread(s, th)), Turn.first(Usage.fields(J.Json.get_obj(o, "modelUsage")))), J.Json.get_str(o, "uuid", ""),
+      List.concat(&2, M.Change, [Turn.restart(s, now), [M.TurnUsage{th, "claude", Turn.or(Turn.model(Hub.thread(s, th)), Turn.main(Usage.fields(J.Json.get_obj(o, "modelUsage")), "", 0n)), J.Json.get_str(o, "uuid", ""),
         J.Json.get_nat(u, "input_tokens", 0n), J.Json.get_nat(u, "cache_read_input_tokens", 0n), J.Json.get_nat(u, "cache_creation_input_tokens", 0n),
         J.Json.get_nat(u, "output_tokens", 0n), J.Json.get_nat(J.Json.get_obj(u, "output_tokens_details"), "thinking_tokens", 0n),
         Bool.pick(Nat, hasc, Nat.sub(total, Turn.claude.base(s, th)), 0n),
         "irwo" ++ Bool.pick(String, think, "t", "") ++ Bool.pick(String, hasc, "c", ""),
-        Bool.pick(String, Turn.has(o, "total_cost_usd"), "c:" ++ Nat.show(total), Turn.basis(s, th)), now}])
+        Bool.pick(String, Turn.has(o, "total_cost_usd"), "c:" ++ Nat.show(total), Turn.basis(s, th)), now}],
+        Speed.claude(s, th, now, o), Mu.claude(s, th, now, o)])
 
 # a result line's turn, once
 def Turn.claude(+s: M.State, +th: String, +now: Nat, +o: J.Json) -> List<&2, M.Change>:
@@ -1697,7 +1776,8 @@ def Claude.init.k(same: Bool, thread: String, sid: String, +now: Nat) -> Step:
 # session's cost starts at 0, Turn.claude.start)
 def Claude.init(+s: M.State, +thread: String, +now: Nat, +o: J.Json) -> Step:
   +sid = J.Json.get_str(o, "session_id", "")
-  Step.after(Claude.init.k(Claude.init.same(Hub.thread(s, thread), sid), thread, sid, now), Turn.claude.start(Claude.init.same(Hub.thread(s, thread), sid), thread, sid, now))
+  Step.after(Claude.init.k(Claude.init.same(Hub.thread(s, thread), sid), thread, sid, now), List.append(&2, M.Change, Turn.claude.start(Claude.init.same(Hub.thread(s, thread), sid), thread, sid, now),
+    Speed.start(s, Claude.init.same(Hub.thread(s, thread), sid), thread, sid, now)))
 
 # Claude's subagents (model.bend's Bg): a local agent started, what it
 # does now, and its end; the list is written only when it changes, as a

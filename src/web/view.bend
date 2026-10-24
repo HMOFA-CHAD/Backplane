@@ -102,7 +102,7 @@ def VLabel.option.k(+lc: I.Loc, known: Bool, +v: String) -> String:
     case False{}: Bool.pick(String, String.is_empty(v), MSG.T.common.default(lc), v)
 
 def VLabel.option(+lc: I.Loc, +key: String, v: String) -> String:
-  VLabel.option.k(lc, Bool.or(Bool.or(String.eq(key, "order.enabled"), String.eq(key, "order.estimates")), Bool.or(String.eq(key, "restart.continue"), Bool.or(String.eq(key, "ui.theme"), Bool.or(String.eq(key, "sidebar.view"), Bool.or(String.eq(key, "update.channel"), Bool.or(String.eq(key, "kicad.ipc"), Bool.or(String.starts_with(key, "notify."), String.starts_with(key, "sync.")))))))), v)
+  VLabel.option.k(lc, Bool.or(Bool.or(Bool.or(String.eq(key, "order.enabled"), String.eq(key, "order.estimates")), String.eq(key, "ui.tokstats")), Bool.or(String.eq(key, "restart.continue"), Bool.or(String.eq(key, "ui.theme"), Bool.or(String.eq(key, "sidebar.view"), Bool.or(String.eq(key, "update.channel"), Bool.or(String.eq(key, "kicad.ipc"), Bool.or(String.starts_with(key, "notify."), String.starts_with(key, "sync.")))))))), v)
 
 # Display labels only: metadata keys and submitted chip values stay unchanged.
 def VLabel.effort(+lc: I.Loc, +e: String) -> String:
@@ -1417,6 +1417,10 @@ def View.usage.pagers(cs: List<&2, UP.UpControl>) -> List<&2, D.Node>:
 def View.usage.page(+lc: I.Loc, +u: U.Ui) -> List<&2, D.Node>:
   UV.Uv.page(lc, u)
 
+# the opt-in for the composer's token chip (usage.bend's Ts)
+def View.tok.set(+lc: I.Loc, +st: M.State) -> D.Node:
+  View.setrow(UZ.Ts.label(), UZ.Ts.blurb(), View.chips.loc(lc, ["on", "off"], Bool.pick(String, UZ.Ts.on(st), "on", "off"), UZ.Ts.key()))
+
 def View.tz.set(+lc: I.Loc, +u: U.Ui) -> List<&2, D.Node>:
   [View.setrow(MSG.T.settings.zone(lc), U.Tzs.line.loc(lc, u),
     [WB.WB.input("tzname", "tzname", U.Ui.scratch(u, "@f.tzname"), "Europe/Helsinki", "tz-set"), D.Dom.button("primary", "tz-set", "", MSG.T.settings.tz.choose(lc), MSG.T.common.set(lc)),
@@ -1544,7 +1548,7 @@ def View.settings.rows.k(i: Nat, +lc: I.Loc, +u: U.Ui, +st: M.State, +nf: Map<&2
     case 7n: List.concat(&2, D.Node, [View.keys.set(lc, u)])
     case 8n: List.concat(&2, D.Node, [View.agy.rows(U.Agv.rows.loc(lc, u))])
     case 9n: List.concat(&2, D.Node, [View.tz.set(lc, u)])
-    case 10n: View.usage.page(lc, u)
+    case 10n: View.tok.set(lc, st) <> View.usage.page(lc, u)
     case 11n: List.concat(&2, D.Node, [[View.setrow(MSG.T.settings.tour(lc), MSG.T.settings.tour.note(lc), [D.Dom.button("", "ob-open", "", MSG.T.settings.tour.again(lc), MSG.T.settings.tour.show(lc))])]])
     case 12n: View.agy.rows(U.Share.rows(u))
     case 13n: List.concat(&2, D.Node, [[D.El{"p", "", [D.At{"class", "set-about"}], [D.Txt{U.Fab.set.about()}]}],
@@ -2261,10 +2265,43 @@ def View.send.loc(+lc: I.Loc, +act: String, +send: String) -> D.Node:
   Bool.pick(D.Node, String.eq(act, "interrupt"), D.Dom.button("primary stop", act, "", MSG.T.composer.stop.tip(lc), send),
     D.Dom.button("primary", act, "", MSG.T.composer.enter.tip(lc, Bool.pick(String, String.eq(send, MSG.T.composer.queue(lc)), "steer", "queue")), send))
 
+# The token chip (opt-in, usage.bend's Ts): the thread's token use by the
+# send button; a click opens the panel with all its provider told, and a
+# click outside or on the chip again closes it (the flag "tokstats")
+def View.tok.chip(on: Bool, +text: String, +open: Bool) -> List<&2, D.Node>:
+  match on:
+    case True{}:
+      [D.El{"button", "", [D.At{"class", Bool.pick(String, open, "tok-chip on", "tok-chip")}, D.At{"title", UZ.Ts.tip()}, D.At{"data-value", "tokstats"}, D.On{"click", "flag"}],
+        WI.WIcon.svg("gauge", 14) <> Bool.pick(List<&2, D.Node>, String.is_empty(text), Nil{}, [D.Dom.span("tok-n", text)])}]
+    case False{}:
+      Nil{}
+
+def View.tok.rows(rs: List<&2, UZ.TsRow>) -> List<&2, D.Node>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case +r <> t:
+      D.El{"div", "", [D.At{"class", "tok-row"}], [D.Dom.span("tok-l", UZ.TsRow.label(r)), D.Dom.span("tok-v", UZ.TsRow.value(r))]} <> View.tok.rows(t)
+
+def View.tok.secs(ss: List<&2, UZ.TsSec>) -> List<&2, D.Node>:
+  match ss:
+    case Nil{}:
+      Nil{}
+    case +x <> t:
+      D.El{"div", "", [D.At{"class", "tok-sec"}], D.Dom.cat(Bool.pick(List<&2, D.Node>, String.is_empty(UZ.TsSec.title(x)), Nil{}, [D.Dom.span("tok-h", UZ.TsSec.title(x))]), View.tok.rows(UZ.TsSec.rows(x)))} <> View.tok.secs(t)
+
+def View.tok.pop(open: Bool, +st: M.State, +th: String, +prov: String) -> List<&2, D.Node>:
+  match open:
+    case True{}:
+      [D.El{"div", "", [D.At{"class", "shade"}, D.At{"data-value", "tokstats"}, D.On{"click", "flag"}], Nil{}},
+       D.El{"div", "", [D.At{"class", "tok-pop"}], D.Dom.span("tok-title", UZ.Ts.label()) <> View.tok.secs(UZ.Ts.sections(st, th, prov))}]
+    case False{}:
+      Nil{}
+
 def View.composer.loc(+lc: I.Loc, +draft: String, +send: String, +act: String, +label: String, +ctx: String, +picking: Bool, +ms: List<&2, String>, +model: String, +info: String, +prov: String, +es: List<&2, String>, +effort: String, +rs: List<&2, U.SkillRow>,
-    +atts: List<&2, String>, +up: String, vo: List<&2, D.Node>, +mic: String, +q: String, srch: Bool) -> D.Node:
+    +atts: List<&2, String>, +up: String, vo: List<&2, D.Node>, +mic: String, +q: String, srch: Bool, tk: List<&2, D.Node>, tp: List<&2, D.Node>) -> D.Node:
   D.El{"div", "", [D.At{"class", "composer"}], D.Dom.cat(
-    View.menu.loc(lc, picking, ms, model, info, prov, es, effort, q, srch), D.Dom.cat(View.skills(rs), D.Dom.cat(vo, D.Dom.cat(View.attaching.loc(lc, atts, up), [
+    View.menu.loc(lc, picking, ms, model, info, prov, es, effort, q, srch), D.Dom.cat(tp, D.Dom.cat(View.skills(rs), D.Dom.cat(vo, D.Dom.cat(View.attaching.loc(lc, atts, up), [
     D.El{"textarea", "composer", [D.At{"id", "composer"}, D.At{"rows", "3"}, D.At{"placeholder", MSG.T.composer.placeholder(lc)}, D.At{"value", draft}, D.On{"input", "draft"},
       D.At{"data-enter", Bool.pick(String, List.is_empty(&2, U.SkillRow, rs), "send", "skill")}, D.At{"data-enter-alt", "send-alt"}, D.At{"data-tab", Bool.pick(String, List.is_empty(&2, U.SkillRow, rs), "", "skill")}, D.At{"data-arrows", Bool.pick(String, List.is_empty(&2, U.SkillRow, rs), "", "skill-move")}, D.At{"data-esc", Bool.pick(String, List.is_empty(&2, U.SkillRow, rs), "", "skill-close")}, D.At{"data-paste", "attach"}], Nil{}},
     D.El{"div", "", [D.At{"class", "composer-foot"}], [
@@ -2272,14 +2309,14 @@ def View.composer.loc(+lc: I.Loc, +draft: String, +send: String, +act: String, +
       View.draw.loc(lc),
       D.El{"label", "", [D.At{"class", "attach"}, D.At{"title", MSG.T.composer.attach.tip(lc)}], [WI.WIcon.svg("paperclip", 16),
         D.El{"input", "attach-file", [D.At{"type", "file"}, D.At{"multiple", ""}, D.At{"data-attach", "attach"}], Nil{}}]},
-      D.El{"span", "", [D.At{"class", "foot-end"}], [View.mic.loc(lc, mic),
-        View.send.loc(lc, act, send)]}]}]))))}
+      D.El{"span", "", [D.At{"class", "foot-end"}], D.Dom.cat(tk, [View.mic.loc(lc, mic),
+        View.send.loc(lc, act, send)])}]}])))))}
 
 # the thread's header, or the one given (a bot's)
 
 def View.composer(+draft: String, +send: String, +act: String, +label: String, +ctx: String, +picking: Bool, +ms: List<&2, String>, +model: String, +info: String, +prov: String, +es: List<&2, String>, +effort: String, +rs: List<&2, U.SkillRow>,
     +atts: List<&2, String>, +up: String, vo: List<&2, D.Node>, +mic: String) -> D.Node:
-  View.composer.loc(I.En{}, draft, send, act, label, ctx, picking, ms, model, info, prov, es, effort, rs, atts, up, vo, mic, "", False{})
+  View.composer.loc(I.En{}, draft, send, act, label, ctx, picking, ms, model, info, prov, es, effort, rs, atts, up, vo, mic, "", False{}, Nil{}, Nil{})
 
 def View.send(+act: String, +send: String) -> D.Node:
   View.send.loc(I.En{}, act, send)
@@ -2300,8 +2337,10 @@ def View.top(+lc: I.Loc, hd: List<&2, D.Node>, t: M.Thread, +st: M.State, +chip:
 def View.composer.t(+lc: I.Loc, +st: M.State, +sel: String, +drafts: Map<&2, String>, +op: Map<&2, Bool>, +nf: Map<&2, String>, +turn: M.TurnState, +pr: String, +mo: String,
     +atts: List<&2, String>, +up: String, vo: List<&2, D.Node>, +mic: String) -> D.Node:
   +stop = U.Follow.stop(View.running(turn), U.Str.get(drafts, sel), atts)
-  View.composer.loc(lc, U.Str.get(drafts, sel), U.Follow.button(lc, st, sel, View.running(turn), stop, U.Str.get(drafts, sel)), U.Follow.act(stop), VLabel.model(lc, pr, mo), U.Usage.tail(st, sel), U.Flag.get(op, "models"), Nil{}, mo, U.Models.of(nf, pr), pr,
-    U.Chip.all(U.Str.get(nf, "models"), pr, mo), U.Effort.of(st, sel), U.Skills.shown(st, sel, drafts, nf), atts, up, vo, mic, U.Str.get(drafts, "@f.mq"), False{})
+  +tok = UZ.Ts.on(st)
+  View.composer.loc(lc, U.Str.get(drafts, sel), U.Follow.button(lc, st, sel, View.running(turn), stop, U.Str.get(drafts, sel)), U.Follow.act(stop), VLabel.model(lc, pr, mo), Bool.pick(String, tok, "", U.Usage.tail(st, sel)), U.Flag.get(op, "models"), Nil{}, mo, U.Models.of(nf, pr), pr,
+    U.Chip.all(U.Str.get(nf, "models"), pr, mo), U.Effort.of(st, sel), U.Skills.shown(st, sel, drafts, nf), atts, up, vo, mic, U.Str.get(drafts, "@f.mq"), False{},
+    View.tok.chip(tok, UZ.Ts.chip(st, sel), U.Flag.get(op, "tokstats")), View.tok.pop(Bool.and(tok, U.Flag.get(op, "tokstats")), st, sel, pr))
 
 def View.asks.box(+lc: I.Loc, +st: M.State, +id: String, +draft: String, +nf: Map<&2, String>) -> D.Node:
   D.El{"div", "asks", [D.At{"class", "asks"}, D.At{"id", "asks"}], View.asks(lc, U.Asks.open(st, id), draft, nf)}

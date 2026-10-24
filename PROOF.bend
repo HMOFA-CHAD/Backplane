@@ -10911,6 +10911,15 @@ def Laws.tok_add_one_turn():
 def Laws.tok_add_no_cost():
   {==}
 
+def Laws.tokstats_off_by_default():
+  {==}
+
+def Laws.speed_unseen_untold():
+  {==}
+
+def Laws.speed_told_rise():
+  {==}
+
 def Laws.card_task_status_agrees():
   {==}
 

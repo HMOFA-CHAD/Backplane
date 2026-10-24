@@ -678,3 +678,193 @@ def Chip.text(+v: String, +now: Nat) -> String:
 
 def Chip.of(+st: M.State, +th: String, +now: Nat) -> String:
   Chip.text(M.Setting.get(st, Chip.key(th), ""), now)
+
+# Token stats
+# -----------
+# Opt-in (the setting ui.tokstats, off until turned on): a chip by the
+# composer with how much the thread's session holds (or, from a provider
+# that never says, the tokens its turns used), and the panel it opens with
+# what the provider told: the context, the last turn (model.bend's
+# turn.last), the thread's turns (tok.t), and Claude's models this session
+# (hub.bend's turn.models). Speed is Claude's alone: output tokens over the
+# time its model calls took (hub.bend's turn.speed, from duration_api_ms),
+# so tool runs and waits are not in it; no other provider says how long its
+# calls took, and a turn's wall time would count the tools as the model's.
+
+type TsRow is Data:
+  TsRow{label: String, value: String}
+
+type TsSec is Data:
+  TsSec{title: String, rows: List<&2, TsRow>}
+
+def Ts.key() -> String:
+  "ui.tokstats"
+
+def Ts.label() -> String:
+  "Token stats"
+
+def Ts.blurb() -> String:
+  "A chip by the send button with the thread's token use; click it for the details its agent reports (tokens, cache, cost, and Claude's speed)"
+
+def Ts.tip() -> String:
+  "Token use: click for the details"
+
+def Ts.on(+st: M.State) -> Bool:
+  String.eq(M.Setting.get(st, Ts.key(), "off"), "on")
+
+def Ts.pad3(+n: Nat) -> String:
+  Bool.pick(String, Nat.is_lt(n, 10n), "00" ++ Nat.show(n), Bool.pick(String, Nat.is_lt(n, 100n), "0" ++ Nat.show(n), Nat.show(n)))
+
+def Ts.g3(+n: Nat, +by: Nat) -> String:
+  "," ++ Ts.pad3(Nat.mod(Nat.div(n, by), 1000n))
+
+# 1234567 as "1,234,567"
+def Ts.num(+n: Nat) -> String:
+  Bool.pick(String, Nat.is_lt(n, 1000n), Nat.show(n),
+    Bool.pick(String, Nat.is_lt(n, 1000000n), Nat.show(Nat.div(n, 1000n)) ++ Ts.g3(n, 1n),
+      Bool.pick(String, Nat.is_lt(n, 1000000000n), Nat.show(Nat.div(n, 1000000n)) ++ Ts.g3(n, 1000n) ++ Ts.g3(n, 1n),
+        Nat.show(Nat.div(n, 1000000000n)) ++ Ts.g3(n, 1000000n) ++ Ts.g3(n, 1000n) ++ Ts.g3(n, 1n))))
+
+def Ts.tenths(+x10: Nat) -> String:
+  Nat.show(Nat.div(x10, 10n)) ++ "." ++ Nat.show(Nat.mod(x10, 10n))
+
+def Ts.nz(+n: Nat) -> Nat:
+  Bool.pick(Nat, Nat.is_eq(n, 0n), 1n, n)
+
+# milliseconds as "1.4 s" or "2m 05s"
+def Ts.secs(+ms: Nat) -> String:
+  Bool.pick(String, Nat.is_lt(ms, 60000n), Ts.tenths(Nat.div(ms, 100n)) ++ " s",
+    Nat.show(Nat.div(ms, 60000n)) ++ "m " ++ M.Tok.pad2(Nat.div(Nat.mod(ms, 60000n), 1000n)) ++ "s")
+
+# output tokens a second, to a tenth
+def Ts.rate(+out: Nat, +ms: Nat) -> String:
+  Ts.tenths(Nat.div(Nat.mul(out, 10000n), Ts.nz(ms))) ++ " tok/s"
+
+def Ts.pct(+part: Nat, +whole: Nat) -> String:
+  Nat.show(Nat.div(Nat.mul(part, 100n), Ts.nz(whole))) ++ "%"
+
+def Ts.str(+v: String, +i: Nat) -> String:
+  Chip.part(String.split(v, '/'), i)
+
+def Ts.if(keep: Bool, r: TsRow) -> List<&2, TsRow>:
+  match keep:
+    case True{}:
+      [r]
+    case False{}:
+      Nil{}
+
+# the chip's text: the context held ("62k · 31%"), else the thread's tokens
+# ("1.2M tok"), else nothing (the chip shows its icon alone)
+def Ts.chip.t(+tv: String) -> String:
+  Bool.pick(String, Nat.is_eq(Tk.part(tv, 0n), 0n), "",
+    Use.tokens(Nat.add(Nat.add(Tk.part(tv, 1n), Tk.part(tv, 2n)), Nat.add(Tk.part(tv, 3n), Tk.part(tv, 4n)))) ++ " tok")
+
+def Ts.chip.k(+used: Nat, +window: Nat, +tv: String) -> String:
+  Bool.pick(String, Nat.is_eq(used, 0n), Ts.chip.t(tv),
+    Use.tokens(used) ++ Bool.pick(String, Nat.is_eq(window, 0n), "", " · " ++ Ts.pct(used, window)))
+
+def Ts.chip(+st: M.State, +th: String) -> String:
+  Ts.chip.k(M.Usage.used(M.Setting.get(st, M.Usage.key(th), "")), M.Usage.window(M.Setting.get(st, M.Usage.key(th), "")),
+    M.Setting.get(st, M.Tok.pre(st) ++ "t." ++ th, ""))
+
+def Ts.held(+provider: String, +used: Nat, +window: Nat) -> String:
+  Bool.pick(String, Nat.is_eq(used, 0n), Bool.pick(String, Use.reports(provider), "no reading yet", "not reported by " ++ provider),
+    Bool.pick(String, Nat.is_eq(window, 0n), Ts.num(used) ++ " tokens", Ts.num(used) ++ " of " ++ Ts.num(window) ++ " (" ++ Ts.pct(used, window) ++ ")"))
+
+def Ts.context(+provider: String, +v: String) -> TsSec:
+  TsSec{"Context", List.append(&2, TsRow, [TsRow{"Held now", Ts.held(provider, M.Usage.used(v), M.Usage.window(v))}],
+    Ts.if(Bool.and(Nat.is_gt(M.Usage.window(v), 0n), Nat.is_ge(M.Usage.window(v), M.Usage.used(v))), TsRow{"Room left", Ts.num(Nat.sub(M.Usage.window(v), M.Usage.used(v)))}))}
+
+# a part the provider gave, or a dash
+def Ts.known(+known: String, +part: String, +v: String) -> String:
+  Bool.pick(String, String.contains(known, part), v, "—")
+
+def Ts.model(+v: String) -> String:
+  String.join(String.split(String.join(List.drop(&2, String, String.split(v, '/'), 8n), "/"), '|'), " · ")
+
+# Claude's speed for the turn (turn.speed), when its share was told
+def Ts.speed(+sp: String) -> List<&2, TsRow>:
+  Bool.pick(List<&2, TsRow>, Nat.is_eq(Tk.part(sp, 2n), 0n), Nil{},
+    [TsRow{"Output speed", Ts.rate(Tk.part(sp, 3n), Tk.part(sp, 2n))},
+     TsRow{"Model time", Ts.secs(Tk.part(sp, 2n)) ++ Bool.pick(String, Nat.is_gt(Tk.part(sp, 7n), 0n), " over " ++ Nat.show(Tk.part(sp, 7n)) ++ Bool.pick(String, Nat.is_eq(Tk.part(sp, 7n), 1n), " step", " steps"), "")}])
+
+def Ts.wall(+sp: String) -> List<&2, TsRow>:
+  Bool.pick(List<&2, TsRow>, Nat.is_eq(Tk.part(sp, 4n), 0n), Nil{}, [TsRow{"Turn time", Ts.secs(Tk.part(sp, 4n))}])
+
+def Ts.last.k(+v: String, +sp: String, +claude: Bool) -> List<&2, TsRow>:
+  +kn = Ts.str(v, 7n)
+  List.concat(&2, TsRow, [[TsRow{"Model", Ts.model(v)}],
+    Ts.if(String.is_empty(kn), TsRow{"Tokens", "not told (the session ran before Backplane counted it)"}),
+    Ts.if(Bool.not(String.is_empty(kn)), TsRow{"Input", Ts.known(kn, "i", Ts.num(Tk.part(v, 0n)))}),
+    Ts.if(Bool.not(String.is_empty(kn)), TsRow{"Cache read", Ts.known(kn, "r", Ts.num(Tk.part(v, 1n)))}),
+    Ts.if(Bool.not(String.is_empty(kn)), TsRow{"Cache write", Ts.known(kn, "w", Ts.num(Tk.part(v, 2n)))}),
+    Ts.if(Bool.not(String.is_empty(kn)), TsRow{"Output", Ts.known(kn, "o", Ts.num(Tk.part(v, 3n))) ++ Bool.pick(String, String.contains(kn, "t"), " (" ++ Ts.num(Tk.part(v, 4n)) ++ " reasoning)", "")}),
+    Ts.if(Bool.not(String.is_empty(kn)), TsRow{"Cost", Bool.pick(String, String.contains(kn, "c"), Tk.usd(Tk.part(v, 5n)), "not reported")}),
+    Bool.pick(List<&2, TsRow>, claude, Ts.speed(sp), Nil{}), Bool.pick(List<&2, TsRow>, claude, Ts.wall(sp), Nil{})])
+
+def Ts.last(+v: String, +sp: String) -> TsSec:
+  TsSec{"Last turn", Bool.pick(List<&2, TsRow>, String.is_empty(v), [TsRow{"", "no turn counted yet"}],
+    Ts.last.k(v, sp, String.starts_with(Ts.model(v), "claude ·")))}
+
+def Ts.avg(+sp: String) -> List<&2, TsRow>:
+  Bool.pick(List<&2, TsRow>, Nat.is_eq(Tk.part(sp, 5n), 0n), Nil{}, [TsRow{"Average speed", Ts.rate(Tk.part(sp, 6n), Tk.part(sp, 5n))}])
+
+def Ts.thread.k(+tv: String, +sp: String) -> List<&2, TsRow>:
+  +ins = Nat.add(Tk.part(tv, 1n), Nat.add(Tk.part(tv, 2n), Tk.part(tv, 3n)))
+  List.concat(&2, TsRow, [[TsRow{"Turns", Ts.num(Tk.part(tv, 0n)) ++ Tk.unknown(tv)},
+    TsRow{"Input", Ts.num(Tk.part(tv, 1n))}, TsRow{"Cache read", Ts.num(Tk.part(tv, 2n))}, TsRow{"Cache write", Ts.num(Tk.part(tv, 3n))},
+    TsRow{"Output", Ts.num(Tk.part(tv, 4n)) ++ Bool.pick(String, Nat.is_eq(Tk.part(tv, 5n), 0n), "", " (" ++ Ts.num(Tk.part(tv, 5n)) ++ " reasoning)")}],
+    Ts.if(Nat.is_gt(ins, 0n), TsRow{"Cache hits", Ts.pct(Tk.part(tv, 2n), ins) ++ " of input"}),
+    [TsRow{"Cost", Tk.cost(tv)}], Ts.avg(sp)])
+
+def Ts.thread(+tv: String, +sp: String) -> TsSec:
+  TsSec{"This thread", Bool.pick(List<&2, TsRow>, Nat.is_eq(Tk.part(tv, 0n), 0n), [TsRow{"", "no turns counted yet"}], Ts.thread.k(tv, sp))}
+
+def Ts.mu.part(+ps: List<&2, String>, +i: Nat) -> Nat:
+  M.Switch.num(Chip.part(ps, i), 0n)
+
+def Ts.mu.row(+ps: List<&2, String>) -> TsRow:
+  TsRow{Chip.part(ps, 0n), Use.tokens(Ts.mu.part(ps, 1n)) ++ " in · " ++ Use.tokens(Ts.mu.part(ps, 3n)) ++ " cache read · " ++ Use.tokens(Ts.mu.part(ps, 4n)) ++ " cache write · " ++
+    Use.tokens(Ts.mu.part(ps, 2n)) ++ " out · " ++ Tk.usd(Ts.mu.part(ps, 5n)) ++
+    Bool.pick(String, Nat.is_eq(Ts.mu.part(ps, 6n), 0n), "", " · " ++ Nat.show(Ts.mu.part(ps, 6n)) ++ " web searches")}
+
+def Ts.mu.rows(ls: List<&2, String>, +acc: List<&2, TsRow>) -> List<&2, TsRow>:
+  match ls:
+    case Nil{}:
+      List.reverse(&2, TsRow, acc)
+    case +l <> t:
+      Ts.mu.rows(t, Bool.pick(List<&2, TsRow>, String.is_empty(l), acc, Ts.mu.row(String.split(l, '|')) <> acc))
+
+def Ts.models(+v: String) -> List<&2, TsSec>:
+  Bool.pick(List<&2, TsSec>, String.is_empty(v), Nil{}, [TsSec{"This session by model", Ts.mu.rows(String.split(v, '\n'), Nil{})}])
+
+def Ts.note(+sp: String, claude: Bool) -> List<&2, TsSec>:
+  Bool.pick(List<&2, TsSec>, Bool.and(claude, Nat.is_gt(Tk.part(sp, 5n), 0n)),
+    [TsSec{"", [TsRow{"", "Speed is output tokens over the time Claude's model calls took, as Claude reports it: the wait for the first token is in it (so short replies read slow), tool runs are not."}]}], Nil{})
+
+# the panel's sections for a thread on a provider
+def Ts.sections(+st: M.State, +th: String, +provider: String) -> List<&2, TsSec>:
+  +sp = M.Setting.get(st, "turn.speed." ++ th, "")
+  List.concat(&2, TsSec, [[Ts.context(provider, M.Setting.get(st, M.Usage.key(th), "")), Ts.last(M.Setting.get(st, M.Tok.last.key(th), ""), sp),
+    Ts.thread(M.Setting.get(st, M.Tok.pre(st) ++ "t." ++ th, ""), sp)],
+    Ts.models(M.Setting.get(st, "turn.models." ++ th, "")), Ts.note(sp, String.eq(provider, "claude"))])
+
+def TsSec.title(s: TsSec) -> String:
+  match s:
+    case TsSec{t, _}:
+      t
+
+def TsSec.rows(s: TsSec) -> List<&2, TsRow>:
+  match s:
+    case TsSec{_, rs}:
+      rs
+
+def TsRow.label(r: TsRow) -> String:
+  match r:
+    case TsRow{l, _}:
+      l
+
+def TsRow.value(r: TsRow) -> String:
+  match r:
+    case TsRow{_, v}:
+      v

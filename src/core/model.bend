@@ -1688,6 +1688,15 @@ def Tok.project(t: Thread) -> String:
     case Thread{_, p, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
       p
 
+# a thread's last turn as told (usage.bend's Ts), the setting
+# turn.last.<thread> = "<in>/<cache read>/<cache write>/<out>/<reasoning>/<nano-dollars>/<at>/<known>/<provider>|<model>"
+# (the model last: its name may hold a "/")
+def Tok.last.key(+th: String) -> String:
+  "turn.last." ++ th
+
+def Tok.last(+i: Nat, +r: Nat, +w: Nat, +o: Nat, +t: Nat, +c: Nat, +at: Nat, +known: String, +pm: String) -> String:
+  String.join([Nat.show(i), Nat.show(r), Nat.show(w), Nat.show(o), Nat.show(t), Nat.show(c), Nat.show(at), known, pm], "/")
+
 def State.tokens.k(+s: State, +x: String, +th: String, +pj: String, +pm: String, +i: Nat, +r: Nat, +w: Nat, +o: Nat, +t: Nat, +c: Nat, +ck: Bool, +kk: Bool, +key: String, +basis: String, +at: Nat) -> State:
   +s1 = Tok.sum(Tok.sum(Tok.sum(s, x ++ "t." ++ th, i, r, w, o, t, c, ck, kk), x ++ "d." ++ Tok.day(at), i, r, w, o, t, c, ck, kk), x ++ "m." ++ Tok.month(at), i, r, w, o, t, c, ck, kk)
   +s2 = Tok.sum(Tok.sum(s1, x ++ "mm." ++ Tok.month(at) ++ "|" ++ pm, i, r, w, o, t, c, ck, kk), x ++ "p." ++ pj ++ "|" ++ Tok.month(at), i, r, w, o, t, c, ck, kk)
@@ -1700,8 +1709,10 @@ def State.tokens.k(+s: State, +x: String, +th: String, +pj: String, +pm: String,
   State.setting(State.setting(s4, "tok.key." ++ th, key), "tok.basis." ++ th, basis)
 
 def State.tokens(+s: State, +th: String, +pv: String, +mo: String, +i: Nat, +r: Nat, +w: Nat, +o: Nat, +t: Nat, +c: Nat, +known: String, +key: String, +basis: String, +at: Nat) -> State:
-  State.tokens.k(s, Tok.pre(s), th, Tok.project(State.thread.get(s, th)), pv ++ "|" ++ Bool.pick(String, String.is_empty(mo), "default", mo), i, r, w, o, t, c,
-    String.contains(known, "c"), String.contains(known, "o"), key, basis, at)
+  State.setting(State.tokens.k(s, Tok.pre(s), th, Tok.project(State.thread.get(s, th)), pv ++ "|" ++ Bool.pick(String, String.is_empty(mo), "default", mo), i, r, w, o, t, c,
+    String.contains(known, "c"), String.contains(known, "o"), key, basis, at),
+    Tok.last.key(th), Tok.last(i, r, w, o, t, c, at, known, pv ++ "|" ++ Bool.pick(String, String.is_empty(mo), "default", mo)))
+
 
 # Launched threads
 # ----------------
