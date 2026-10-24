@@ -13043,3 +13043,10 @@ def Laws.active_rows_given_eq(st, ix, now, q):
 
 def Laws.side_mine_work_independent(by, asks, kids, a, b, pid):
   {==}
+
+def Laws.side_signals_given_eq(u):
+  match u:
+    case U.Ui{st, se, dr, li, op, on, now, ad, pa, ve, ri, wa, er, no, nf, ob, tr}: {==}
+
+def Laws.signal_cache_epoch_miss(n, m):
+  {==}
