@@ -13143,3 +13143,16 @@ def Laws.chat_sidebar_image_settings_separate(u, epoch, view, revision):
 
 def Laws.chat_sidebar_image_no_wire_authority(key, node, rest):
   {==}
+
+def Laws.sidebar_shared_key_equal(u, epoch, view, revision, h):
+  %Equal.sym(Bool, Nat.is_eq(M.State.seq(U.Ui.state(u)), revision), True{}, h) : {CHATSIDE.SidebarImage.key.same(_, CHATDERIVED.Sidebar.key(u, epoch, view), u, epoch, view, revision) == CHATSIDE.SidebarImage.key(False{}, u, epoch, view, revision) : String}
+  %nat_eq_sound(M.State.seq(U.Ui.state(u)), revision, h)
+    : {CHATDERIVED.Sidebar.key(u, epoch, view) == CHATDERIVED.Sidebar.key.revision(u, epoch, view, _) : String}
+  {==}
+
+def Laws.sidebar_shared_key_different(u, epoch, view, revision, picture, h):
+  %Equal.sym(Bool, Nat.is_eq(M.State.seq(U.Ui.state(u)), revision), False{}, h) : {CHATSIDE.SidebarImage.key.same(_, picture, u, epoch, view, revision) == CHATSIDE.SidebarImage.key(False{}, u, epoch, view, revision) : String}
+  {==}
+
+def Laws.sidebar_shared_key_settings(u, epoch, view, revision, picture):
+  {==}

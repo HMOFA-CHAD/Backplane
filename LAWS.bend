@@ -12097,3 +12097,29 @@ law chat_sidebar_image_no_wire_authority:
   for node: J.Json
   for +rest: List<&2, CHATSIDE.Memo>
   {SWR.Region.key(CHATSIDE.SidebarImage{key, node} <> rest) == SWR.Region.key(rest) : String}
+
+# Sharing a duplicate key never changes its exact value or fallback.
+law sidebar_shared_key_equal:
+  for +u: U.Ui
+  for +epoch: String
+  for +view: String
+  for +revision: Nat
+  for +h: {Nat.is_eq(M.State.seq(U.Ui.state(u)), revision) == True{} : Bool}
+  {CHATSIDE.SidebarImage.key.shared(False{}, u, epoch, view, revision, CHATDERIVED.Sidebar.key(u, epoch, view)) == CHATSIDE.SidebarImage.key(False{}, u, epoch, view, revision) : String}
+
+law sidebar_shared_key_different:
+  for +u: U.Ui
+  for +epoch: String
+  for +view: String
+  for +revision: Nat
+  for picture: String
+  for h: {Nat.is_eq(M.State.seq(U.Ui.state(u)), revision) == False{} : Bool}
+  {CHATSIDE.SidebarImage.key.shared(False{}, u, epoch, view, revision, picture) == CHATSIDE.SidebarImage.key(False{}, u, epoch, view, revision) : String}
+
+law sidebar_shared_key_settings:
+  for u: U.Ui
+  for epoch: String
+  for view: String
+  for revision: Nat
+  for picture: String
+  {CHATSIDE.SidebarImage.key.shared(True{}, u, epoch, view, revision, picture) == "" : String}
