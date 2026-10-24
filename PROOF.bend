@@ -6437,6 +6437,12 @@ def Laws.tint_code_again():
 def Laws.select_leaves_settings():
   {==}
 
+def Laws.select_same_leaves_settings():
+  {==}
+
+def Laws.select_same_keeps_thread():
+  {==}
+
 def Laws.room_leaves_settings():
   {==}
 
@@ -13028,3 +13034,6 @@ def Laws.dialog_session_allows(): {==}
 def Laws.pi_effort_flag(): {==}
 def Laws.pi_effort_unknown_default(): {==}
 
+
+def Laws.sidebar_wire_unissued(): {==}
+def Laws.sidebar_wire_wrong_ack(): {==}

@@ -173,7 +173,7 @@ def presentation_json(text: String) -> J.Json:
 
 def presentation_choice(action: String, session: J.Json, value: String) -> J.Json:
   match action:
-    case "select": PS.Session.pack(U.Ui.select.k(PS.Session.adopt(U.Ui.init(0n), session), value))
+    case "select": PS.Session.select(session, value)
     case "draft": PS.Session.draft(session, value)
     case _: session
 
@@ -181,7 +181,7 @@ def presentation_prepare(session: J.Json, input: J.Json, action: String) -> J.Js
   PS.Session.prepare(session, input, action)
 
 def presentation_select(u: U.Ui, id: String) -> U.Ui:
-  U.Ui.select.k(u, id)
+  U.Ui.select.nav(u, id)
 
 def presentation_perform(+u: U.Ui, input: J.Json, +action: String, value: String) -> U.Act:
   act(presentation_handoff(u, PS.Session.prepare(presentation(u), input, action)), action, value)

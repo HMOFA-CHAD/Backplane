@@ -1,4 +1,5 @@
 import Base
+import ./src/server/thin-sidebar-wire.bend as SWR
 import ./src/core/cbor.bend as CBR1 # fast hub R1
 import ./src/core/thin-pace.bend as TPR1 # fast hub R1
 import ./src/core/thin.bend as THINL # S3 lazy thin index
@@ -3855,6 +3856,13 @@ law idx_links_found:
 # choosing a thread, a bot or a room while Settings is open leaves it
 law select_leaves_settings:
   {U.Ui.flag(U.Act.ui(U.Ui.select(U.Ui.flag_on(U.Ui.init(0n), "settings"), "t1")), "settings") == False{} : Bool}
+
+# the thread already selected, picked again, leaves Settings and stays chosen
+law select_same_leaves_settings:
+  {U.Ui.flag(U.Ui.select.nav(U.Ui.flag_on(U.Ui.select.k(U.Ui.init(0n), "t1"), "settings"), "t1"), "settings") == False{} : Bool}
+
+law select_same_keeps_thread:
+  {U.Ui.sel(U.Ui.select.nav(U.Ui.flag_on(U.Ui.select.k(U.Ui.init(0n), "t1"), "settings"), "t1")) == "t1" : String}
 
 law room_leaves_settings:
   {U.Ui.flag(U.Act.ui(U.Bots.room.select(U.Ui.flag_on(U.Ui.init(0n), "settings"), "r1")), "settings") == False{} : Bool}
@@ -11879,3 +11887,10 @@ law pi_effort_flag:
 
 law pi_effort_unknown_default:
   {AG.Effort.args("pi", "turbo") == Nil{} : List<&2, String>}
+
+# A sidebar transport reference needs an actually issued, matching receipt.
+law sidebar_wire_unissued:
+  {SWR.Region.can_reuse("", "") == False{} : Bool}
+
+law sidebar_wire_wrong_ack:
+  {SWR.Region.can_reuse("7", "8") == False{} : Bool}

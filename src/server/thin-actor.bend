@@ -26,6 +26,7 @@ import ../core/emb.bend as E
 type Memo is Data:
   Memo{key: String, clock: Nat, partial: Bool, result: J.Json}
   Sidebar{key: String, node: J.Json}
+  SidebarWire{key: String, token: String}
 
 type Actor is Data:
   Actor{ui: U.Ui, view: String, target: J.Json, pending: Map<&2, String>, reads: List<&2, J.Json>, dirty: Bool, memo: List<&2, Memo>}
@@ -139,10 +140,17 @@ def Actor.merge( +fresh: U.Ui, +old: U.Ui, +same: Bool, +thread: String, +presen
 
 # At most one private region is retained. Canonical or UI input changes
 # invalidate its exact key; another view/target drops it before rehydration.
+def SidebarWire.keep(ms: List<&2, Memo>) -> List<&2, Memo>:
+  match ms:
+    case Nil{}: Nil{}
+    case SidebarWire{key, token} <> _: [SidebarWire{key, token}]
+    case _ <> rest: SidebarWire.keep(rest)
+
 def Sidebar.keep(ms: List<&2, Memo>) -> List<&2, Memo>:
   match ms:
     case Nil{}: Nil{}
-    case Sidebar{key, node} <> _: [Sidebar{key, node}]
+    case Sidebar{key, node} <> rest: Sidebar{key, node} <> SidebarWire.keep(rest)
+    case SidebarWire{key, token} <> rest: SidebarWire{key, token} <> Sidebar.keep(rest)
     case _ <> rest: Sidebar.keep(rest)
 
 def Sidebar.get(ms: List<&2, Memo>, +key: String) -> J.Json:
@@ -154,8 +162,8 @@ def Sidebar.get(ms: List<&2, Memo>, +key: String) -> J.Json:
 
 def Sidebar.save(valid: Bool, a: Actor, key: String, node: J.Json) -> Actor:
   match valid a:
-    case True{} Actor{u, view, target, pending, reads, dirty, _}:
-      Actor{u, view, target, pending, reads, dirty, [Sidebar{key, node}]}
+    case True{} Actor{u, view, target, pending, reads, dirty, ms}:
+      Actor{u, view, target, pending, reads, dirty, Sidebar{key, node} <> SidebarWire.keep(ms)}
     case False{} Actor{u, view, target, pending, reads, dirty, _}:
       Actor{u, view, target, pending, reads, dirty, Nil{}}
 
@@ -507,7 +515,7 @@ def Actor.remember(+a: Actor, +m: Memo) -> Actor:
 # renderer and the thread (a reply arriving clears the memo: Actor.reply_if)
 def Memo.request(+p: J.Json) -> J.Json:
   match p:
-    case J.Obj{+fs}: J.Obj{V.Obj.drop(V.Obj.drop(fs, "requestRevision"), "viewRevision")}
+    case J.Obj{+fs}: J.Obj{V.Obj.drop(V.Obj.drop(V.Obj.drop(fs, "requestRevision"), "viewRevision"), "sidebarRegion")}
     case _: p
 
 def Memo.key(+seq: Nat, +info: String, +p: J.Json, +anchor: Nat, +view: String, +web: Bool, +thread: String) -> String:
@@ -526,6 +534,7 @@ def Memo.reply(ms: List<&2, Memo>, +update: Bool, +key: String, +clock: Nat, +we
   match ms:
     case Nil{}: None{}
     case Sidebar{_, _} <> rest: Memo.reply(rest, update, key, clock, web, stream, thread, epoch, target, lc)
+    case SidebarWire{_, _} <> rest: Memo.reply(rest, update, key, clock, web, stream, thread, epoch, target, lc)
     case Memo{+k, +at, +partial, +res} <> _:
       Memo.reply.k(Bool.and(update, Bool.and(String.eq(k, key), Bool.and(Nat.is_ge(clock, at), Bool.and(Nat.is_lt(Nat.sub(clock, at), 1000n),
         Bool.and(Nat.is_gt(TL.Stream.size(stream), 0n), Bool.or(Bool.and(partial, S.Splice.partial(stream)), Bool.and(Bool.not(partial), Bool.not(S.Splice.partial(stream))))))))), res, web, stream, thread, epoch, target, lc)

@@ -1,5 +1,6 @@
 import { terminalInputReply } from './terminal-input.js';
 import { modelMenuReply } from './model-menu-input.js';
+import { sidebarOffer, sidebarPicture } from './sidebar-region.js';
 
 // Bounded view transport shared by the web and native bridge. Product actions
 // and rendering remain in Bend. No canonical replay is initiated here.
@@ -138,7 +139,7 @@ export class ThinViews {
     if (!l || !viewTarget(target)) return { failed: 'invalid view selection', cmds: [] };
     if (session && own(session, 'route') && !compactRoute(session.route, target)) return { failed: 'invalid view route', cmds: [] };
     if (l.revision >= MAX_REVISION) return { failed: 'view revision exhausted', cmds: [] };
-    l.target = snapshot(target); l.viewId = ''; l.viewRevision = ''; l.updatePending = false; l.updateId = null; l.invalidated = false; l.changedRevision = null; l.readInvalidated = false;
+    l.target = snapshot(target); l.viewId = ''; l.viewRevision = ''; l.updatePending = false; l.updateId = null; l.invalidated = false; l.changedRevision = null; l.readInvalidated = false;l.sidebar = null;
     return this.request(hub, 'view.open', { session, cid });
   }
   request(hub, method, args = {}) {
@@ -161,8 +162,11 @@ export class ThinViews {
     let id; try { id = this.allocate(); } catch (e) { return { failed: e.message, cmds: [] }; }
     const p = { ...extra, version: 1, hub, generation: l.greeting.generation, epoch: l.greeting.epoch,
       requestRevision: l.revision, target: snapshot(l.target), viewId: l.viewId };
+    const regionEnabled = this.api.sidebarRegions === true && l.greeting.renderer === 'web'
+      && ['view.open','view.page','view.update','view.action'].includes(method);
+    if (regionEnabled) p.sidebarRegion = sidebarOffer(l.sidebar);
     const call = { id, link: l, method, target: snapshot(l.target), revision: l.revision, viewId: l.viewId,
-      began: this.api.now(), input: snapshot(p), explicitRead: method === 'view.update' && (l.readInvalidated || l.changedRevision === null) };
+      began: this.api.now(), input: snapshot(p), sidebarBase: regionEnabled ? l.sidebar : null, explicitRead: method === 'view.update' && (l.readInvalidated || l.changedRevision === null) };
     if (method === 'view.update') { l.updatePending = true; l.updateId = id; l.invalidated = false; l.readInvalidated = false; }
     this.calls.set(id, call);
     return { id, cmds: [this.api.send(hub, { id, m: method, p })] };
@@ -197,7 +201,7 @@ export class ThinViews {
     const current = l.revision === c.revision && sameTarget(l.target, c.target);
     this.retireUpdate(c);
     if (e.ok !== true) return { failed: record(e.error) ? e.error.code : 'UNAVAILABLE', id: e.id, method: c.method, retry: false, cmds: [] };
-    const r = e.result;
+    let r = e.result;
     if (!record(r) || utf8Bytes(JSON.stringify(r)) > l.greeting.limits.replyBytes || r.version !== 1 ||
         r.hub !== hub || r.generation !== l.greeting.generation || r.epoch !== l.greeting.epoch ||
         r.requestRevision !== c.revision || !sameTarget(r.target, c.target) ||
@@ -214,12 +218,21 @@ export class ThinViews {
         !(Object.hasOwn(r, 'modelMenuInput') ? modelMenuReply(r, c.input) : terminalInputReply(r, c.input)))) {
       return { failed: 'invalid compact action reply', id: e.id, method: c.method, retry: false, cmds: [] };
     }
+    let sidebar;
+    if (Object.hasOwn(r, 'sidebarRegion')) {
+      try {
+        sidebar = sidebarPicture(r, c.input, c.sidebarBase);r = sidebar.result;
+        // A compressed reply grants no larger logical presentation budget.
+        if (utf8Bytes(JSON.stringify(r)) > l.greeting.limits.replyBytes) throw Error('Expanded view limit');
+      } catch { return { failed: 'invalid sidebar region', id: e.id, method: c.method, retry: false, cmds: [] }; }
+    }
     if (this.api.validateResult && this.api.validateResult(r, c.input) !== true) return { failed: 'invalid view presentation', id: e.id, method: c.method, retry: false, cmds: [] };
     const cmds = c.method === 'view.action' ? r.cmds.map(x => this.api.command(snapshot(x), c.input)) : [];
     const presentation = ['view.open', 'view.page', 'view.update', 'view.action'].includes(c.method);
     const displayed = current && presentation && record(r.shown) && r.remoteReady === true;
     if (displayed) {
       l.viewId = r.viewId; l.viewRevision = r.viewRevision; l.shown = r.shown;
+      l.sidebar = sidebar?.cache || null;
       // A full matching action picture already includes older canonical
       // invalidations. Compact ACKs and auxiliary replies cover no picture.
       coverChanged(l, r.viewRevision);
