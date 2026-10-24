@@ -30,6 +30,7 @@ type Memo is Data:
   Memo{key: String, clock: Nat, partial: Bool, result: J.Json}
   Sidebar{key: String, node: J.Json}
   SidebarWire{key: String, token: String}
+  SidebarImage{key: String, node: J.Json}
   Signals{cache: SGV.SignalCache}
   SideIndex{cache: SIXV.IndexCache}
   SignalText{cache: SGT.SignalTextCache}
@@ -152,12 +153,50 @@ def SidebarWire.keep(ms: List<&2, Memo>) -> List<&2, Memo>:
     case SidebarWire{key, token} <> _: [SidebarWire{key, token}]
     case _ <> rest: SidebarWire.keep(rest)
 
-def Sidebar.keep(ms: List<&2, Memo>) -> List<&2, Memo>:
+# One exact metadata-only sidebar projection, private to this actor. Its
+# key is never used by the transport. The picture and wire keys stay separate.
+def SidebarImage.keep(ms: List<&2, Memo>) -> List<&2, Memo>:
+  match ms:
+    case Nil{}: Nil{}
+    case SidebarImage{key, node} <> _: [SidebarImage{key, node}]
+    case _ <> rest: SidebarImage.keep(rest)
+
+def SidebarImage.drop(ms: List<&2, Memo>) -> List<&2, Memo>:
+  match ms:
+    case Nil{}: Nil{}
+    case SidebarImage{_, _} <> rest: SidebarImage.drop(rest)
+    case m <> rest: m <> SidebarImage.drop(rest)
+
+def SidebarImage.save(valid: Bool, a: Actor, key: String, node: J.Json) -> Actor:
+  match valid a:
+    case True{} Actor{u, view, target, pending, reads, dirty, ms}:
+      Actor{u, view, target, pending, reads, dirty, SidebarImage{key, node} <> SidebarImage.drop(ms)}
+    case False{} Actor{u, view, target, pending, reads, dirty, ms}:
+      Actor{u, view, target, pending, reads, dirty, SidebarImage.drop(ms)}
+
+def SidebarImage.lookup(ms: List<&2, Memo>, +key: String) -> J.Json:
+  match ms:
+    case Nil{}: J.Null{}
+    case SidebarImage{+saved, node} <> _:
+      Bool.pick(J.Json, Bool.and(SC.Sidebar.bounded(key), String.eq(saved, key)), node, J.Null{})
+    case _ <> rest: SidebarImage.lookup(rest, key)
+
+# Only ordinary reads reach the False branch here. Settings keeps its already
+# qualified picture cache; every exact clock/UI/info/scope fence stays present.
+def SidebarImage.key(settings: Bool, u: U.Ui, epoch: String, view: String, revision: Nat) -> String:
+  match settings:
+    case True{}: ""
+    case False{}: SC.Sidebar.key.revision(u, epoch, view, revision)
+
+def Sidebar.base(ms: List<&2, Memo>) -> List<&2, Memo>:
   match ms:
     case Nil{}: Nil{}
     case Sidebar{key, node} <> rest: Sidebar{key, node} <> SidebarWire.keep(rest)
-    case SidebarWire{key, token} <> rest: SidebarWire{key, token} <> Sidebar.keep(rest)
-    case _ <> rest: Sidebar.keep(rest)
+    case SidebarWire{key, token} <> rest: SidebarWire{key, token} <> Sidebar.base(rest)
+    case _ <> rest: Sidebar.base(rest)
+
+def Sidebar.keep(+ms: List<&2, Memo>) -> List<&2, Memo>:
+  List.append(&2, Memo, Sidebar.base(ms), SidebarImage.keep(ms))
 
 def Signals.keep(ms: List<&2, Memo>) -> List<&2, Memo>:
   match ms:
@@ -234,6 +273,11 @@ def Sidebar.lookup(allowed: Bool, ms: List<&2, Memo>, key: String) -> J.Json:
   match allowed:
     case True{}: Sidebar.get(ms, key)
     case False{}: J.Null{}
+
+def SidebarImage.cached(settings: Bool, ms: List<&2, Memo>, picture: String, image: String) -> J.Json:
+  match settings:
+    case True{}: Sidebar.lookup(True{}, ms, picture)
+    case False{}: SidebarImage.lookup(ms, image)
 
 def Sidebar.view(a: Actor) -> String:
   match a:
@@ -431,8 +475,9 @@ def Actor.render.web.fresh(+updated: Actor, +action: V.ActResult, +st: M.State, 
   +node = SS.Slot.sidebar(J.Json.get_obj(res, "shown"))
   Rendered{Sidebar.save(Bool.and(SC.Sidebar.bounded(key), SS.Slot.is(node, "aside")), updated, key, node), res}
 
-# Read/Settings derived caches. Rendered-sidebar lookup remains Settings-only;
-# ordinary reads keep their full-sequence picture identity. Clock/recipient/UI
+# Read/Settings derived caches. Ordinary reads keep their full-sequence
+# picture identity; the private rendered sidebar has a separate metadata key.
+# Settings retains its existing lookup policy. Clock/recipient/UI
 # fences stay exact, and every main panel uses the fresh canonical state.
 def Actor.render.web.indexed(+updated: Actor, +action: V.ActResult, +st: M.State, +index: T.Index, +p: J.Json,
     +epoch: String, +now: Nat, +rows: List<&2, String>, +stream: TL.Stream, +revision: Nat) -> Rendered:
@@ -441,12 +486,15 @@ def Actor.render.web.indexed(+updated: Actor, +action: V.ActResult, +st: M.State
   +signals = SGV.SignalCache.obtain.revision(epoch, revision, st, Signals.get(Sidebar.memos(updated)))
   +metadata = SIXV.IndexCache.obtain.revision(epoch, revision, st, SideIndex.get(Sidebar.memos(updated)))
   +text = SGT.SignalTextCache.obtain(epoch, revision, U.Side.signals.online(prepared), SGV.SignalCache.signals(signals), SignalText.get(Sidebar.memos(updated)))
-  +key = SC.Sidebar.key.for(SC.Sidebar.request(p, u), prepared, epoch, Sidebar.view(updated), revision)
-  +cached = Sidebar.lookup(SC.Sidebar.request(p, u), Sidebar.memos(updated), key)
+  +settings = SC.Sidebar.request(p, u)
+  +key = SC.Sidebar.key.for(settings, prepared, epoch, Sidebar.view(updated), revision)
+  +image = SidebarImage.key(settings, prepared, epoch, Sidebar.view(updated), revision)
+  +cached = SidebarImage.cached(settings, Sidebar.memos(updated), key, image)
   +window = V.Render.window(stream, index, V.Target.thread(st, J.Json.get_obj(p, "target")), p, epoch, rows)
   +res = V.Obj.put(V.Render.web.prepared.materialized(action, prepared, window, cached, SGV.SignalCache.signals(signals), SIXV.IndexCache.index(metadata), SGT.SignalTextCache.values(text)), "mailDraftContext", Actor.mail_context(u))
   +node = SS.Slot.sidebar(J.Json.get_obj(res, "shown"))
-  Rendered{SignalText.save(SGT.SignalTextCache.bounded(text), SideIndex.save(SIXV.IndexCache.bounded(metadata), Signals.save(SGV.SignalCache.bounded(signals), Sidebar.save(Bool.and(SC.Sidebar.bounded(key), SS.Slot.is(node, "aside")), updated, key, node), signals), metadata), text), res}
+  +saved = SignalText.save(SGT.SignalTextCache.bounded(text), SideIndex.save(SIXV.IndexCache.bounded(metadata), Signals.save(SGV.SignalCache.bounded(signals), Sidebar.save(Bool.and(SC.Sidebar.bounded(key), SS.Slot.is(node, "aside")), updated, key, node), signals), metadata), text)
+  Rendered{SidebarImage.save(Bool.and(Bool.not(settings), Bool.and(SC.Sidebar.bounded(image), SS.Slot.is(node, "aside"))), saved, image, node), res}
 
 def Actor.render.web.select(allowed: Bool, updated: Actor, action: V.ActResult, st: M.State, index: T.Index, p: J.Json,
     epoch: String, now: Nat, rows: List<&2, String>, stream: TL.Stream, revision: Nat) -> Rendered:
@@ -640,6 +688,7 @@ def Memo.reply(ms: List<&2, Memo>, +update: Bool, +key: String, +clock: Nat, +we
     case Signals{_} <> rest: Memo.reply(rest, update, key, clock, web, stream, thread, epoch, target, lc)
     case SideIndex{_} <> rest: Memo.reply(rest, update, key, clock, web, stream, thread, epoch, target, lc)
     case SignalText{_} <> rest: Memo.reply(rest, update, key, clock, web, stream, thread, epoch, target, lc)
+    case SidebarImage{_, _} <> rest: Memo.reply(rest, update, key, clock, web, stream, thread, epoch, target, lc)
     case Memo{+k, +at, +partial, +res} <> _:
       Memo.reply.k(Bool.and(update, Bool.and(String.eq(k, key), Bool.and(Nat.is_ge(clock, at), Bool.and(Nat.is_lt(Nat.sub(clock, at), 1000n),
         Bool.and(Nat.is_gt(TL.Stream.size(stream), 0n), Bool.or(Bool.and(partial, S.Splice.partial(stream)), Bool.and(Bool.not(partial), Bool.not(S.Splice.partial(stream))))))))), res, web, stream, thread, epoch, target, lc)

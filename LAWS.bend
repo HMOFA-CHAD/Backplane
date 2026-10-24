@@ -1,3 +1,4 @@
+import ./src/server/thin-actor.bend as CHATSIDE
 import ./src/core/sidebar-read.bend as SIDEREAD
 import ./src/server/thin-signals.bend as SGV
 import ./src/core/signal.bend as SIGREV
@@ -12075,3 +12076,24 @@ law chat_picture_full_sequence:
   for +view: String
   for revision: Nat
   {CHATDERIVED.Sidebar.key.for(False{}, u, epoch, view, revision) == CHATDERIVED.Sidebar.key(u, epoch, view) : String}
+
+# A private rendered sidebar never becomes ordinary wire-picture authority.
+law chat_sidebar_image_key:
+  for +u: U.Ui
+  for +epoch: String
+  for +view: String
+  for revision: Nat
+  {CHATSIDE.SidebarImage.key(False{}, u, epoch, view, revision) == CHATDERIVED.Sidebar.key.revision(u, epoch, view, revision) : String}
+
+law chat_sidebar_image_settings_separate:
+  for u: U.Ui
+  for epoch: String
+  for view: String
+  for revision: Nat
+  {CHATSIDE.SidebarImage.key(True{}, u, epoch, view, revision) == "" : String}
+
+law chat_sidebar_image_no_wire_authority:
+  for key: String
+  for node: J.Json
+  for +rest: List<&2, CHATSIDE.Memo>
+  {SWR.Region.key(CHATSIDE.SidebarImage{key, node} <> rest) == SWR.Region.key(rest) : String}

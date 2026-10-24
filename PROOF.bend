@@ -1,3 +1,4 @@
+import ./src/server/thin-actor.bend as CHATSIDE
 import ./src/core/sidebar-read.bend as SIDEREAD
 import Base
 import ./src/server/thin-sidebar.bend as CHATDERIVED
@@ -13132,4 +13133,13 @@ def Laws.chat_derived_read(u):
   {==}
 
 def Laws.chat_picture_full_sequence(u, epoch, view, revision):
+  {==}
+
+def Laws.chat_sidebar_image_key(u, epoch, view, revision):
+  {==}
+
+def Laws.chat_sidebar_image_settings_separate(u, epoch, view, revision):
+  {==}
+
+def Laws.chat_sidebar_image_no_wire_authority(key, node, rest):
   {==}
