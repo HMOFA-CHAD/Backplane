@@ -12037,3 +12037,21 @@ law sidebar_read_system:
   for text: String
   for at: Nat
   {SIDEREAD.Input.of(M.State.apply(st, M.MessagePosted{th, id, M.System{}, text, at})) == SIDEREAD.Input.of(st) : SIDEREAD.Input}
+
+# Canonical signal text never masks fresh unrelated recipient info.
+law signal_text_overlay_empty:
+  for +base: Map<&2, String>
+  {SIGREV.Signal.cache.overlay(base, Map.new(&2, String)) == base : Map<&2, String>}
+
+law signal_text_overlay_known:
+  for +value: String
+  for other: String
+  {SIGREV.Signal.cache.overlay(MLeaf{"@signal:t", value}, MLeaf{"@signal:t", other}) == MLeaf{"@signal:t", value} : Map<&2, String>}
+
+law signal_text_overlay_online:
+  for other: String
+  {SIGREV.Signal.cache.overlay(MLeaf{"@signal.online", "1"}, MLeaf{"@signal.online", other}) == MLeaf{"@signal.online", "1"} : Map<&2, String>}
+
+law signal_text_overlay_fresh:
+  for text: String
+  {SIGREV.Signal.cache.overlay(MLeaf{"@signal.online", "1"}, MLeaf{"status", text}) == Map.set(&2, String, MLeaf{"@signal.online", "1"}, "status", text) : Map<&2, String>}

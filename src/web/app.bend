@@ -161,6 +161,13 @@ def view_sidebar_metadata(+u: U.Ui, reuse: Bool, plain: U.SIx, +signals: Map<&2,
   WS.WS.view(u, V.View.page.signals.sidebar.metadata(U.Side.with_signals.given(stamp(u), signals), reuse,
     SGR.Signal.info.raw(Map.keys(&2, String, U.Ui.infos(u))), plain, signals), V.View.term.loc(U.Lang.loc(u), U.Ui.term(u, WS.WS.owner(u))))
 
+# Canonical text comes from a bounded hub-owned epoch/revision/online memo.
+# Unknown reserved recipient entries still select the original fallback.
+# Workspace, terminal and all recipient values are current for this frame.
+def view_sidebar_materialized(+u: U.Ui, reuse: Bool, plain: U.SIx, signals: Map<&2, Nat>, text: Map<&2, String>) -> D.Node:
+  WS.WS.view(u, V.View.page.signals.sidebar.metadata(U.Side.with_signal_text(stamp(u), text), reuse,
+    SGR.Signal.info.raw(Map.keys(&2, String, U.Ui.infos(u))), plain, signals), V.View.term.loc(U.Lang.loc(u), U.Ui.term(u, WS.WS.owner(u))))
+
 def view(+u: U.Ui) -> D.Node:
   view_sidebar(u, False{})
 

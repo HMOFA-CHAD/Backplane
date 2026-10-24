@@ -422,6 +422,28 @@ def Render.web.prepared.metadata(+a: ActResult, prepared: U.Ui, +window: J.Json,
       Obj.put(Obj.put(Obj.put(Obj.put(J.Json.obj([J.KV{"shown", Render.web.metadata(prepared, window, sidebar, signals, plain)}]),
         "remoteReady", J.Flag{True{}}), "session", Route.pack(u)), "cmds", J.Json.arr(cmds)), "window", window)
 
+# Current recipient info overlays a canonical-only signal text map.
+def Render.web.materialized.full(+u: U.Ui, +window: J.Json, signals: Map<&2, Nat>, +plain: U.SIx, +text: Map<&2, String>) -> J.Json:
+  WP.Node.write(Render.timeline(A.view_sidebar_materialized(u, False{}, plain, signals, text), Render.older(J.Json.get_bool(window, "hasMore", False{}), u), Partial.buttons(J.Json.elems(J.Json.get_obj(window, "partial")), u)))
+
+def Render.web.materialized.checked(valid: Bool, shown: J.Json, sidebar: J.Json, u: U.Ui, window: J.Json, signals: Map<&2, Nat>, +plain: U.SIx, +text: Map<&2, String>) -> J.Json:
+  match valid:
+    case True{}: SS.Slot.replace(shown, sidebar)
+    case False{}: Render.web.materialized.full(u, window, signals, plain, text)
+
+def Render.web.materialized(+u: U.Ui, +window: J.Json, +sidebar: J.Json, +signals: Map<&2, Nat>, +plain: U.SIx, +text: Map<&2, String>) -> J.Json:
+  match sidebar:
+    case J.Null{}: Render.web.materialized.full(u, window, signals, plain, text)
+    case _:
+      +shown = WP.Node.write(Render.timeline(A.view_sidebar_materialized(u, True{}, plain, signals, text), Render.older(J.Json.get_bool(window, "hasMore", False{}), u), Partial.buttons(J.Json.elems(J.Json.get_obj(window, "partial")), u)))
+      Render.web.materialized.checked(Bool.and(Nat.is_eq(SS.Slot.count(shown), 1n), SS.Slot.is(sidebar, "aside")), shown, sidebar, u, window, signals, plain, text)
+
+def Render.web.prepared.materialized(+a: ActResult, prepared: U.Ui, +window: J.Json, sidebar: J.Json, signals: Map<&2, Nat>, +plain: U.SIx, +text: Map<&2, String>) -> J.Json:
+  match a:
+    case ActResult{+u, cmds}:
+      Obj.put(Obj.put(Obj.put(Obj.put(J.Json.obj([J.KV{"shown", Render.web.materialized(prepared, window, sidebar, signals, plain, text)}]),
+        "remoteReady", J.Flag{True{}}), "session", Route.pack(u)), "cmds", J.Json.arr(cmds)), "window", window)
+
 def Render.native_thread( +th: J.Json, +window: J.Json) -> J.Json:
   match th:
     case J.Null{}: J.Null{}

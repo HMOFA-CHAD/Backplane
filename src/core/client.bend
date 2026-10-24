@@ -13468,6 +13468,17 @@ def Side.with_signals.given(u: Ui, signals: Map<&2, Nat>) -> Ui:
     case Ui{st, se, dr, li, op, +on, now, ad, pa, ve, ri, wa, er, no, nf, ob, tr}:
       Ui{st, se, dr, li, op, on, now, ad, pa, ve, ri, wa, er, no, SG.Signal.cache(on, signals, nf), ob, tr}
 
+# The server can retain canonical strings while applying recipient info
+# freshly on every view. This Ui is display-only and is never adopted.
+def Side.signals.online(u: Ui) -> Bool:
+  match u:
+    case Ui{_, _, _, _, _, online, _, _, _, _, _, _, _, _, _, _, _}: online
+
+def Side.with_signal_text(u: Ui, canonical: Map<&2, String>) -> Ui:
+  match u:
+    case Ui{st, se, dr, li, op, on, now, ad, pa, ve, ri, wa, er, no, nf, ob, tr}:
+      Ui{st, se, dr, li, op, on, now, ad, pa, ve, ri, wa, er, no, SG.Signal.cache.overlay(canonical, nf), ob, tr}
+
 # Display-only activity for this frame. Never merge this decorated Ui back
 # into the client: the next frame derives fresh signals from current state.
 def Side.with_signals(u: Ui) -> Ui:
