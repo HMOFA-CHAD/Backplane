@@ -4912,31 +4912,115 @@ def Laws.wait_at_most_ten_minutes():
 # Start-up
 # --------
 
+# Reference equations for the cache format. The production walkers use
+# reversed accumulators and stop at the first newline without reading on.
+def CacheProof.one(s: String) -> String:
+  match s:
+    case SNil{}: SNil{}
+    case SCon{+c, t}:
+      BT.Cache.one.k(Char.is_eq(c, BT.Cache.nl()), c, CacheProof.one(t))
+
+def CacheProof.json.k(nl: Bool, c: Char, rest: String) -> String:
+  match nl:
+    case True{}: SNil{}
+    case False{}: SCon{c, rest}
+
+def CacheProof.json(s: String) -> String:
+  match s:
+    case SNil{}: SNil{}
+    case SCon{+c, t}:
+      CacheProof.json.k(Char.is_eq(c, BT.Cache.nl()), c, CacheProof.json(t))
+
+def CacheProof.text.k(nl: Bool, after: String, rest: String) -> String:
+  match nl:
+    case True{}: after
+    case False{}: rest
+
+def CacheProof.text(s: String) -> String:
+  match s:
+    case SNil{}: SNil{}
+    case SCon{+c, +t}:
+      CacheProof.text.k(Char.is_eq(c, BT.Cache.nl()), t, CacheProof.text(t))
+
+def CacheProof.one_reverse(b: Bool, +c: Char, +acc: String, +rest: String) -> {String.reverse.go(BT.Cache.one.k(b, c, acc), rest) == String.reverse.go(acc, BT.Cache.one.k(b, c, rest)) : String}:
+  match b:
+    case True{}: {==}
+    case False{}: {==}
+
+def CacheProof.one_go(+s: String, +acc: String) -> {BT.Cache.one.go(s, acc) == String.reverse.go(acc, CacheProof.one(s)) : String}:
+  match s:
+    case SNil{}: {==}
+    case SCon{+c, +t}:
+      Equal.trans(String,
+        BT.Cache.one.go(t, BT.Cache.one.k(Char.is_eq(c, BT.Cache.nl()), c, acc)),
+        String.reverse.go(BT.Cache.one.k(Char.is_eq(c, BT.Cache.nl()), c, acc), CacheProof.one(t)),
+        String.reverse.go(acc, BT.Cache.one.k(Char.is_eq(c, BT.Cache.nl()), c, CacheProof.one(t))),
+        CacheProof.one_go(t, BT.Cache.one.k(Char.is_eq(c, BT.Cache.nl()), c, acc)),
+        CacheProof.one_reverse(Char.is_eq(c, BT.Cache.nl()), c, acc, CacheProof.one(t)))
+
+def CacheProof.one_eq(+s: String) -> {BT.Cache.one(s) == CacheProof.one(s) : String}:
+  CacheProof.one_go(s, SNil{})
+
+def CacheProof.json.rest(nl: Bool, rest: String) -> String:
+  match nl:
+    case True{}: SNil{}
+    case False{}: rest
+
+def CacheProof.json_reverse(+b: Bool, +c: Char, +acc: String, +rest: String) -> {String.reverse.go(BT.Cache.one.k(b, c, acc), CacheProof.json.rest(b, rest)) == String.reverse.go(acc, CacheProof.json.k(b, c, rest)) : String}:
+  match b:
+    case True{}: {==}
+    case False{}: {==}
+
+def CacheProof.json_go(+s: String, +nl: Bool, +acc: String) -> {BT.Cache.json.go(s, nl, acc) == String.reverse.go(acc, CacheProof.json.rest(nl, CacheProof.json(s))) : String}:
+  match s nl:
+    case rest True{}: {==}
+    case SNil{} False{}: {==}
+    case SCon{+c, +t} False{}:
+      Equal.trans(String,
+        BT.Cache.json.go(t, Char.is_eq(c, BT.Cache.nl()), BT.Cache.one.k(Char.is_eq(c, BT.Cache.nl()), c, acc)),
+        String.reverse.go(BT.Cache.one.k(Char.is_eq(c, BT.Cache.nl()), c, acc), CacheProof.json.rest(Char.is_eq(c, BT.Cache.nl()), CacheProof.json(t))),
+        String.reverse.go(acc, CacheProof.json.k(Char.is_eq(c, BT.Cache.nl()), c, CacheProof.json(t))),
+        CacheProof.json_go(t, Char.is_eq(c, BT.Cache.nl()), BT.Cache.one.k(Char.is_eq(c, BT.Cache.nl()), c, acc)),
+        CacheProof.json_reverse(Char.is_eq(c, BT.Cache.nl()), c, acc, CacheProof.json(t)))
+
+def CacheProof.json_eq(+s: String) -> {BT.Cache.json(s) == CacheProof.json(s) : String}:
+  CacheProof.json_go(s, False{}, SNil{})
+
+def CacheProof.text_go(+s: String, +nl: Bool) -> {BT.Cache.text.go(s, nl) == CacheProof.text.k(nl, s, CacheProof.text(s)) : String}:
+  match s nl:
+    case rest True{}: {==}
+    case SNil{} False{}: {==}
+    case SCon{+c, +t} False{}:
+      CacheProof.text_go(t, Char.is_eq(c, BT.Cache.nl()))
+
+def CacheProof.text_eq(+s: String) -> {BT.Cache.text(s) == CacheProof.text(s) : String}:
+  CacheProof.text_go(s, False{})
+
 law cache_json_step:
   for b: Bool
   for +c: Char
   for +t: String
   for +mt: String
   for +e: {Char.is_eq(c, BT.Cache.nl()) == b : Bool}
-  for ih: {BT.Cache.json(BT.Cache.show(BT.Cache.one(t), mt)) == BT.Cache.one(t) : String}
-  {BT.Cache.json(BT.Cache.show(BT.Cache.one.k(Char.is_eq(c, BT.Cache.nl()), c, BT.Cache.one(t)), mt)) == BT.Cache.one.k(Char.is_eq(c, BT.Cache.nl()), c, BT.Cache.one(t)) : String}
+  for ih: {CacheProof.json(BT.Cache.show(CacheProof.one(t), mt)) == CacheProof.one(t) : String}
+  {CacheProof.json(BT.Cache.show(BT.Cache.one.k(Char.is_eq(c, BT.Cache.nl()), c, CacheProof.one(t)), mt)) == BT.Cache.one.k(Char.is_eq(c, BT.Cache.nl()), c, CacheProof.one(t)) : String}
 
 def cache_json_step(b, c, t, mt, e, ih):
   match b:
     case True{}:
-      %Equal.sym(Bool, Char.is_eq(c, BT.Cache.nl()), True{}, e) : {BT.Cache.json(BT.Cache.show(BT.Cache.one.k(_, c, BT.Cache.one(t)), mt)) == BT.Cache.one.k(_, c, BT.Cache.one(t)) : String}
+      %Equal.sym(Bool, Char.is_eq(c, BT.Cache.nl()), True{}, e) : {CacheProof.json(BT.Cache.show(BT.Cache.one.k(_, c, CacheProof.one(t)), mt)) == BT.Cache.one.k(_, c, CacheProof.one(t)) : String}
       ih
     case False{}:
-      %Equal.sym(Bool, Char.is_eq(c, BT.Cache.nl()), False{}, e) : {BT.Cache.json(BT.Cache.show(BT.Cache.one.k(_, c, BT.Cache.one(t)), mt)) == BT.Cache.one.k(_, c, BT.Cache.one(t)) : String}
-      %Equal.sym(Bool, Char.is_eq(c, BT.Cache.nl()), False{}, e) : {BT.Cache.json.k(_, c, BT.Cache.json(BT.Cache.show(BT.Cache.one(t), mt))) == SCon{c, BT.Cache.one(t)} : String}
-      Equal.cong(String, String, r => SCon{c, r}, BT.Cache.json(BT.Cache.show(BT.Cache.one(t), mt)), BT.Cache.one(t), ih)
+      %Equal.sym(Bool, Char.is_eq(c, BT.Cache.nl()), False{}, e) : {CacheProof.json(BT.Cache.show(BT.Cache.one.k(_, c, CacheProof.one(t)), mt)) == BT.Cache.one.k(_, c, CacheProof.one(t)) : String}
+      %Equal.sym(Bool, Char.is_eq(c, BT.Cache.nl()), False{}, e) : {CacheProof.json.k(_, c, CacheProof.json(BT.Cache.show(CacheProof.one(t), mt))) == SCon{c, CacheProof.one(t)} : String}
+      Equal.cong(String, String, r => SCon{c, r}, CacheProof.json(BT.Cache.show(CacheProof.one(t), mt)), CacheProof.one(t), ih)
 
-def Laws.models_cache_json(ms, mt):
+def CacheProof.roundtrip_json(+ms: String, +mt: String) -> {CacheProof.json(BT.Cache.show(CacheProof.one(ms), mt)) == CacheProof.one(ms) : String}:
   match ms:
     case SNil{}:
       {==}
     case SCon{+c, +t}:
-      cache_json_step(Char.is_eq(c, BT.Cache.nl()), c, t, mt, {==}, Laws.models_cache_json(t, mt))
+      cache_json_step(Char.is_eq(c, BT.Cache.nl()), c, t, mt, {==}, CacheProof.roundtrip_json(t, mt))
 
 law cache_text_step:
   for b: Bool
@@ -4944,25 +5028,43 @@ law cache_text_step:
   for +t: String
   for +mt: String
   for +e: {Char.is_eq(c, BT.Cache.nl()) == b : Bool}
-  for ih: {BT.Cache.text(BT.Cache.show(BT.Cache.one(t), mt)) == mt : String}
-  {BT.Cache.text(BT.Cache.show(BT.Cache.one.k(Char.is_eq(c, BT.Cache.nl()), c, BT.Cache.one(t)), mt)) == mt : String}
+  for ih: {CacheProof.text(BT.Cache.show(CacheProof.one(t), mt)) == mt : String}
+  {CacheProof.text(BT.Cache.show(BT.Cache.one.k(Char.is_eq(c, BT.Cache.nl()), c, CacheProof.one(t)), mt)) == mt : String}
 
 def cache_text_step(b, c, t, mt, e, ih):
   match b:
     case True{}:
-      %Equal.sym(Bool, Char.is_eq(c, BT.Cache.nl()), True{}, e) : {BT.Cache.text(BT.Cache.show(BT.Cache.one.k(_, c, BT.Cache.one(t)), mt)) == mt : String}
+      %Equal.sym(Bool, Char.is_eq(c, BT.Cache.nl()), True{}, e) : {CacheProof.text(BT.Cache.show(BT.Cache.one.k(_, c, CacheProof.one(t)), mt)) == mt : String}
       ih
     case False{}:
-      %Equal.sym(Bool, Char.is_eq(c, BT.Cache.nl()), False{}, e) : {BT.Cache.text(BT.Cache.show(BT.Cache.one.k(_, c, BT.Cache.one(t)), mt)) == mt : String}
-      %Equal.sym(Bool, Char.is_eq(c, BT.Cache.nl()), False{}, e) : {BT.Cache.text.k(_, BT.Cache.show(BT.Cache.one(t), mt), BT.Cache.text(BT.Cache.show(BT.Cache.one(t), mt))) == mt : String}
+      %Equal.sym(Bool, Char.is_eq(c, BT.Cache.nl()), False{}, e) : {CacheProof.text(BT.Cache.show(BT.Cache.one.k(_, c, CacheProof.one(t)), mt)) == mt : String}
+      %Equal.sym(Bool, Char.is_eq(c, BT.Cache.nl()), False{}, e) : {CacheProof.text.k(_, BT.Cache.show(CacheProof.one(t), mt), CacheProof.text(BT.Cache.show(CacheProof.one(t), mt))) == mt : String}
       ih
 
-def Laws.models_cache_text(ms, mt):
+def CacheProof.roundtrip_text(+ms: String, +mt: String) -> {CacheProof.text(BT.Cache.show(CacheProof.one(ms), mt)) == mt : String}:
   match ms:
     case SNil{}:
       {==}
     case SCon{+c, +t}:
-      cache_text_step(Char.is_eq(c, BT.Cache.nl()), c, t, mt, {==}, Laws.models_cache_text(t, mt))
+      cache_text_step(Char.is_eq(c, BT.Cache.nl()), c, t, mt, {==}, CacheProof.roundtrip_text(t, mt))
+
+def Laws.models_cache_json(ms, mt):
+  %Equal.sym(String, BT.Cache.one(ms), CacheProof.one(ms), CacheProof.one_eq(ms)) : {BT.Cache.json(BT.Cache.show(_, mt)) == _ : String}
+  Equal.trans(String,
+    BT.Cache.json(BT.Cache.show(CacheProof.one(ms), mt)),
+    CacheProof.json(BT.Cache.show(CacheProof.one(ms), mt)),
+    CacheProof.one(ms),
+    CacheProof.json_eq(BT.Cache.show(CacheProof.one(ms), mt)),
+    CacheProof.roundtrip_json(ms, mt))
+
+def Laws.models_cache_text(ms, mt):
+  %Equal.sym(String, BT.Cache.one(ms), CacheProof.one(ms), CacheProof.one_eq(ms)) : {BT.Cache.text(BT.Cache.show(_, mt)) == mt : String}
+  Equal.trans(String,
+    BT.Cache.text(BT.Cache.show(CacheProof.one(ms), mt)),
+    CacheProof.text(BT.Cache.show(CacheProof.one(ms), mt)),
+    mt,
+    CacheProof.text_eq(BT.Cache.show(CacheProof.one(ms), mt)),
+    CacheProof.roundtrip_text(ms, mt))
 
 def Laws.models_quiet(ms):
   %Equal.sym(Bool, String.eq(ms, ms), True{}, Laws.string_eq_refl(ms)) : {Bool.not(_) == False{} : Bool}
