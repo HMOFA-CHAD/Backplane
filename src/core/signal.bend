@@ -213,6 +213,23 @@ def Signal.cached.k(r: Map<&2, String> & String) -> Nat:
 def Signal.cached(+info: Map<&2, String>, +id: String) -> Nat:
   Signal.cached.k(Map.get(String, "0", info, Signal.key(id)))
 
+# The server may pass raw bits directly to the display index. Fall back to
+# the original info parser if its input was already decorated or has an
+# unknown reserved entry, so no legacy value disappears.
+def Signal.info.raw.go(xs: List<&2, String>, clean: Bool) -> Bool:
+  match xs:
+    case Nil{}: clean
+    case k <> rest: Signal.info.raw.go(rest, Bool.and(clean, Bool.not(String.starts_with(k, "@signal:"))))
+
+def Signal.info.raw(xs: List<&2, String>) -> Bool:
+  Signal.info.raw.go(xs, True{})
+
+def Signal.work.given(xs: List<&2, Sigma<&2, &2, String, _ => Nat>>, +online: Bool, work: Map<&2, Nat>) -> Map<&2, Nat>:
+  match xs:
+    case Nil{}: work
+    case (id, n) <> rest:
+      Signal.work.given(rest, online, Map.set(&2, Nat, work, Signal.key(id), Signal.visible(online, n)))
+
 def Signal.cache.put(yes: Bool, +k: String, +info: Map<&2, String>, work: Map<&2, Nat>) -> Map<&2, Nat>:
   match yes:
     case False{}: work

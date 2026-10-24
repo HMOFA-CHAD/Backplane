@@ -1,4 +1,5 @@
 import Base
+import ../core/signal.bend as SGR
 import ../core/i18n.bend as I
 import ../core/msgs.bend as MSG
 import ../core/json.bend as J
@@ -148,8 +149,13 @@ def view_sidebar(+u: U.Ui, reuse: Bool) -> D.Node:
 
 # Server-only entry: raw canonical signal bits are supplied explicitly;
 # session/workspace/terminal state and signal visibility remain current.
+def view_sidebar_indexed.page(raw: Bool, +u: U.Ui, reuse: Bool, +signals: Map<&2, Nat>) -> D.Node:
+  match raw:
+    case True{}: V.View.page.signals.sidebar.indexed(U.Side.with_signals.given(u, signals), reuse, signals)
+    case False{}: V.View.page.signals.sidebar(U.Side.with_signals.given(u, signals), reuse)
+
 def view_sidebar_indexed(+u: U.Ui, reuse: Bool, signals: Map<&2, Nat>) -> D.Node:
-  WS.WS.view(u, V.View.page.signals.sidebar(U.Side.with_signals.given(stamp(u), signals), reuse), V.View.term.loc(U.Lang.loc(u), U.Ui.term(u, WS.WS.owner(u))))
+  WS.WS.view(u, view_sidebar_indexed.page(SGR.Signal.info.raw(Map.keys(&2, String, U.Ui.infos(u))), stamp(u), reuse, signals), V.View.term.loc(U.Lang.loc(u), U.Ui.term(u, WS.WS.owner(u))))
 
 def view(+u: U.Ui) -> D.Node:
   view_sidebar(u, False{})
