@@ -159,7 +159,36 @@ def cut(k: Nat, n: Nat) -> Nat:
 def junk(n: Nat) -> Nat:
   T.len(String, G.Mesh.parts(G.Glb.parse(B.zeros(n, Nil{}))))
 
-# what the plot child sends the web, desktop and phones for a STEP's model:
-# upright in metres, thinned, as a plot line (its length in characters)
+# random vertices (a linear congruential sequence, 0..65535 on each axis):
+# triangles that span the model, so thinning keeps them
+def Rnd.next(+s: U32) -> U32:
+  ((s * 1664525 : U32) + 1013904223 : U32)
+
+def Rnd.f(+s: U32) -> F32:
+  F32.from_nat(U32.to_nat(U32.shrn(s, 16n)))
+
+def Rnd.pos(v: Nat, +s: U32, acc: List<&2, U32>) -> List<&2, U32>:
+  match v:
+    case 0n:
+      acc
+    case 1n+p:
+      +a = Rnd.next(s)
+      +b = Rnd.next(a)
+      +c = Rnd.next(b)
+      Rnd.pos(p, c, B.w(F32.bits(Rnd.f(c)), B.w(F32.bits(Rnd.f(b)), B.w(F32.bits(Rnd.f(a)), acc))))
+
+def Rnd.glb(+k: Nat) -> List<&2, U32>:
+  +v = Nat.mul(k, 3n)
+  B.glb(Msh.json(v), Msh.idx(v, 0n, Rnd.pos(v, 362, Nil{})), Nat.add(Nat.mul(v, 12n), Nat.mul(v, 4n)))
+
+def Rnd.thin(+k: Nat) -> List<&2, G.Tri3>:
+  P.Solid.thin(MC.Mech.upright(MC.Mech.metres(G.Mesh.tris(G.Glb.parse(Rnd.glb(k))))))
+
+# what the plot child sends the web, desktop and phones for a STEP's model
+# (upright in metres, thinned): the triangles kept
+def thin(k: Nat) -> Nat:
+  T.len(G.Tri3, Rnd.thin(k))
+
+# and its plot line, in characters
 def solid(k: Nat) -> Nat:
-  String.length(P.Line.plot(P.Plot.of.solid(P.Solid.of(P.Solid.thin(MC.Mech.upright(MC.Mech.metres(G.Mesh.tris(G.Glb.parse(Msh.glb(k))))))))))
+  String.length(P.Line.plot(P.Plot.of.solid(P.Solid.of(Rnd.thin(k)))))

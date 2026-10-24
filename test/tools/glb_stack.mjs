@@ -61,9 +61,13 @@ if (!process.argv[3]) {
     case 'junk':
       assert.equal(n(lib.junk(bin)), 0);
       break;
-    case 'solid':
-      assert.ok(n(lib.solid(k)) > 0);
+    case 'solid': {
+      // spanning triangles survive thinning (an empty plot line is ~92 chars)
+      const kept = n(lib.thin(k));
+      assert.ok(kept > k * 0.9 && kept <= k, `thinning kept ${kept} of ${k}`);
+      assert.ok(n(lib.solid(k)) > k * 10, 'the plot line carries the triangles');
       break;
+    }
     default:
       throw new Error(`unknown GLB case: ${process.argv[3]}`);
   }
