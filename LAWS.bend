@@ -12143,3 +12143,13 @@ law sidebar_sent_no_picture_authority:
   for node: J.Json
   for +rest: List<&2, CHATSIDE.Memo>
   {SWR.Region.key(CHATSIDE.SidebarSent{scope, token, node} <> rest) == SWR.Region.key(rest) : String}
+
+import ./src/web/sidebar-slot.bend as FULLSLOT
+# Full sidebar frames do not construct an unused reference rewrite.
+law sidebar_full_branch_identity:
+  for shown: J.Json
+  {SWR.Region.shown(False{}, shown) == shown : J.Json}
+law sidebar_full_branch_exact:
+  for +reuse: Bool
+  for +shown: J.Json
+  {SWR.Region.shown(reuse, shown) == Bool.pick(J.Json, reuse, SWR.Region.replace.go(shown, FULLSLOT.Slot.is(shown, "aside")), shown) : J.Json}
