@@ -380,6 +380,27 @@ def Render.web.prepared(+a: ActResult, prepared: U.Ui, +window: J.Json, sidebar:
       Obj.put(Obj.put(Obj.put(Obj.put(J.Json.obj([J.KV{"shown", Render.web.cached(prepared, window, sidebar)}]),
         "remoteReady", J.Flag{True{}}), "session", Route.pack(u)), "cmds", J.Json.arr(cmds)), "window", window)
 
+def Render.web.indexed.full(+u: U.Ui, +window: J.Json, signals: Map<&2, Nat>) -> J.Json:
+  WP.Node.write(Render.timeline(A.view_sidebar_indexed(u, False{}, signals), Render.older(J.Json.get_bool(window, "hasMore", False{}), u), Partial.buttons(J.Json.elems(J.Json.get_obj(window, "partial")), u)))
+
+def Render.web.indexed.checked(valid: Bool, shown: J.Json, sidebar: J.Json, u: U.Ui, window: J.Json, signals: Map<&2, Nat>) -> J.Json:
+  match valid:
+    case True{}: SS.Slot.replace(shown, sidebar)
+    case False{}: Render.web.indexed.full(u, window, signals)
+
+def Render.web.indexed(+u: U.Ui, +window: J.Json, +sidebar: J.Json, +signals: Map<&2, Nat>) -> J.Json:
+  match sidebar:
+    case J.Null{}: Render.web.indexed.full(u, window, signals)
+    case _:
+      +shown = WP.Node.write(Render.timeline(A.view_sidebar_indexed(u, True{}, signals), Render.older(J.Json.get_bool(window, "hasMore", False{}), u), Partial.buttons(J.Json.elems(J.Json.get_obj(window, "partial")), u)))
+      Render.web.indexed.checked(Bool.and(Nat.is_eq(SS.Slot.count(shown), 1n), SS.Slot.is(sidebar, "aside")), shown, sidebar, u, window, signals)
+
+def Render.web.prepared.indexed(+a: ActResult, prepared: U.Ui, +window: J.Json, sidebar: J.Json, signals: Map<&2, Nat>) -> J.Json:
+  match a:
+    case ActResult{+u, cmds}:
+      Obj.put(Obj.put(Obj.put(Obj.put(J.Json.obj([J.KV{"shown", Render.web.indexed(prepared, window, sidebar, signals)}]),
+        "remoteReady", J.Flag{True{}}), "session", Route.pack(u)), "cmds", J.Json.arr(cmds)), "window", window)
+
 def Render.native_thread( +th: J.Json, +window: J.Json) -> J.Json:
   match th:
     case J.Null{}: J.Null{}

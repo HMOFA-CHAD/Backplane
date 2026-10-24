@@ -1,4 +1,5 @@
 import Base
+import ./thin-signals.bend as SGV
 import ./thin-mail.bend as TM
 import ./thin-sidebar.bend as SC
 import ../web/sidebar-slot.bend as SS
@@ -27,6 +28,7 @@ type Memo is Data:
   Memo{key: String, clock: Nat, partial: Bool, result: J.Json}
   Sidebar{key: String, node: J.Json}
   SidebarWire{key: String, token: String}
+  Signals{cache: SGV.SignalCache}
 
 type Actor is Data:
   Actor{ui: U.Ui, view: String, target: J.Json, pending: Map<&2, String>, reads: List<&2, J.Json>, dirty: Bool, memo: List<&2, Memo>}
@@ -153,6 +155,27 @@ def Sidebar.keep(ms: List<&2, Memo>) -> List<&2, Memo>:
     case SidebarWire{key, token} <> rest: SidebarWire{key, token} <> Sidebar.keep(rest)
     case _ <> rest: Sidebar.keep(rest)
 
+def Signals.keep(ms: List<&2, Memo>) -> List<&2, Memo>:
+  match ms:
+    case Nil{}: Nil{}
+    case Signals{cache} <> _: [Signals{cache}]
+    case _ <> rest: Signals.keep(rest)
+
+def Signals.get(ms: List<&2, Memo>) -> Maybe<&2, SGV.SignalCache>:
+  match ms:
+    case Nil{}: None{}
+    case Signals{cache} <> _: Some{cache}
+    case _ <> rest: Signals.get(rest)
+
+def Actor.kept(+ms: List<&2, Memo>) -> List<&2, Memo>:
+  List.append(&2, Memo, Sidebar.keep(ms), Signals.keep(ms))
+
+def Signals.save(valid: Bool, a: Actor, cache: SGV.SignalCache) -> Actor:
+  match valid a:
+    case True{} Actor{u, view, target, pending, reads, dirty, ms}:
+      Actor{u, view, target, pending, reads, dirty, Signals{cache} <> Sidebar.keep(ms)}
+    case False{} _: a
+
 def Sidebar.get(ms: List<&2, Memo>, +key: String) -> J.Json:
   match ms:
     case Nil{}: J.Null{}
@@ -221,7 +244,7 @@ def Actor.refresh( +xs: List<&2, Actor>, +web: Bool, +st: M.State, +info: J.Json
       +fresh = V.Session.current(web, st, Actor.lean(info), live, now, input)
       +same = Bool.and(String.eq(oldView, view), W.Target.same(target, J.Json.get_obj(p, "target")))
       Actor{Actor.composer(old, V.Session.renderer(web, Actor.resolve(U.Ui.info_merge(Actor.merge(fresh, old, same, thread, Maybe.is_some(&2, J.Json, J.Json.get(J.Json.get_obj(J.Json.get_obj(input, "session"), "drafts"), thread))), info), thread), p)),
-        view, J.Json.get_obj(p, "target"), Bool.pick(Map<&2, String>, same, pending, Map.new(&2, String)), Bool.pick(List<&2, J.Json>, same, reads, Nil{}), dirty, Bool.pick(List<&2, Memo>, same, Sidebar.keep(memo), Nil{})}
+        view, J.Json.get_obj(p, "target"), Bool.pick(Map<&2, String>, same, pending, Map.new(&2, String)), Bool.pick(List<&2, J.Json>, same, reads, Nil{}), dirty, Bool.pick(List<&2, Memo>, same, Actor.kept(memo), Nil{})}
 
 # The hub's canonical projection is shared; each actor keeps its own pages,
 # drafts, request slots and exact scope. Compare only the selected body's
@@ -357,7 +380,7 @@ def ModelMenu.result(a: V.ActResult) -> J.Json:
     case V.ActResult{+u, cs}: J.Json.obj([J.KV{"modelMenuInput", J.Flag{True{}}}, J.KV{"remoteReady", J.Flag{True{}}},
       J.KV{"session", V.Route.pack(u)}, J.KV{"cmds", J.Json.arr(cs)}])
 
-def Actor.render.web(+updated: Actor, +action: V.ActResult, +st: M.State, +index: T.Index, +p: J.Json,
+def Actor.render.web.fresh(+updated: Actor, +action: V.ActResult, +st: M.State, +index: T.Index, +p: J.Json,
     +epoch: String, +now: Nat, +rows: List<&2, String>, +stream: TL.Stream) -> Rendered:
   +u = Actor.ui(updated)
   +prepared = V.Render.ui(u, st, index, J.Json.get_obj(p, "target"), rows, stream, now)
@@ -367,6 +390,31 @@ def Actor.render.web(+updated: Actor, +action: V.ActResult, +st: M.State, +index
   +res = V.Obj.put(V.Render.web.prepared(action, prepared, window, cached), "mailDraftContext", Actor.mail_context(u))
   +node = SS.Slot.sidebar(J.Json.get_obj(res, "shown"))
   Rendered{Sidebar.save(Bool.and(SC.Sidebar.bounded(key), SS.Slot.is(node, "aside")), updated, key, node), res}
+
+# Settings/refresh-only derived cache. The existing rendered-sidebar key
+# still includes the clock and all recipient/UI fences. Only Signal.index
+# (canonical metadata, no clock/info) can survive a clock-only refresh.
+def Actor.render.web.indexed(+updated: Actor, +action: V.ActResult, +st: M.State, +index: T.Index, +p: J.Json,
+    +epoch: String, +now: Nat, +rows: List<&2, String>, +stream: TL.Stream) -> Rendered:
+  +u = Actor.ui(updated)
+  +prepared = V.Render.ui(u, st, index, J.Json.get_obj(p, "target"), rows, stream, now)
+  +signals = SGV.SignalCache.obtain(epoch, st, Signals.get(Sidebar.memos(updated)))
+  +key = SC.Sidebar.key(prepared, epoch, Sidebar.view(updated))
+  +cached = Sidebar.lookup(SC.Sidebar.request(p, u), Sidebar.memos(updated), key)
+  +window = V.Render.window(stream, index, V.Target.thread(st, J.Json.get_obj(p, "target")), p, epoch, rows)
+  +res = V.Obj.put(V.Render.web.prepared.indexed(action, prepared, window, cached, SGV.SignalCache.signals(signals)), "mailDraftContext", Actor.mail_context(u))
+  +node = SS.Slot.sidebar(J.Json.get_obj(res, "shown"))
+  Rendered{Signals.save(SGV.SignalCache.bounded(signals), Sidebar.save(Bool.and(SC.Sidebar.bounded(key), SS.Slot.is(node, "aside")), updated, key, node), signals), res}
+
+def Actor.render.web.select(allowed: Bool, updated: Actor, action: V.ActResult, st: M.State, index: T.Index, p: J.Json,
+    epoch: String, now: Nat, rows: List<&2, String>, stream: TL.Stream) -> Rendered:
+  match allowed:
+    case True{}: Actor.render.web.indexed(updated, action, st, index, p, epoch, now, rows, stream)
+    case False{}: Actor.render.web.fresh(updated, action, st, index, p, epoch, now, rows, stream)
+
+def Actor.render.web(+updated: Actor, action: V.ActResult, st: M.State, index: T.Index, +p: J.Json,
+    epoch: String, now: Nat, rows: List<&2, String>, stream: TL.Stream) -> Rendered:
+  Actor.render.web.select(SC.Sidebar.request(p, Actor.ui(updated)), updated, action, st, index, p, epoch, now, rows, stream)
 
 def Actor.render.full.k(reuse: Bool, web: Bool, +updated: Actor, +action: V.ActResult, +st: M.State, +index: T.Index, +p: J.Json,
     +epoch: String, +now: Nat, +rows: List<&2, String>, +stream: TL.Stream) -> Rendered:
@@ -508,7 +556,7 @@ def Actor.loc(xs: List<&2, Actor>) -> I.Loc:
 
 def Actor.remember(+a: Actor, +m: Memo) -> Actor:
   match a:
-    case Actor{u, view, target, pending, reads, dirty, ms}: Actor{u, view, target, pending, reads, dirty, m <> Sidebar.keep(ms)}
+    case Actor{u, view, target, pending, reads, dirty, ms}: Actor{u, view, target, pending, reads, dirty, m <> Actor.kept(ms)}
 
 # what a render is made of but its live row: the read model's sequence, the
 # hub's info, the request but its revisions, the page anchor, the view, the
@@ -535,6 +583,7 @@ def Memo.reply(ms: List<&2, Memo>, +update: Bool, +key: String, +clock: Nat, +we
     case Nil{}: None{}
     case Sidebar{_, _} <> rest: Memo.reply(rest, update, key, clock, web, stream, thread, epoch, target, lc)
     case SidebarWire{_, _} <> rest: Memo.reply(rest, update, key, clock, web, stream, thread, epoch, target, lc)
+    case Signals{_} <> rest: Memo.reply(rest, update, key, clock, web, stream, thread, epoch, target, lc)
     case Memo{+k, +at, +partial, +res} <> _:
       Memo.reply.k(Bool.and(update, Bool.and(String.eq(k, key), Bool.and(Nat.is_ge(clock, at), Bool.and(Nat.is_lt(Nat.sub(clock, at), 1000n),
         Bool.and(Nat.is_gt(TL.Stream.size(stream), 0n), Bool.or(Bool.and(partial, S.Splice.partial(stream)), Bool.and(Bool.not(partial), Bool.not(S.Splice.partial(stream))))))))), res, web, stream, thread, epoch, target, lc)

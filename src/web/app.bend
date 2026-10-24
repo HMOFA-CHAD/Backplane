@@ -146,6 +146,11 @@ def hold_at_end(gap: Nat) -> Bool:
 def view_sidebar(+u: U.Ui, reuse: Bool) -> D.Node:
   WS.WS.view(u, V.View.page.sidebar(stamp(u), reuse), V.View.term.loc(U.Lang.loc(u), U.Ui.term(u, WS.WS.owner(u))))
 
+# Server-only entry: raw canonical signal bits are supplied explicitly;
+# session/workspace/terminal state and signal visibility remain current.
+def view_sidebar_indexed(+u: U.Ui, reuse: Bool, signals: Map<&2, Nat>) -> D.Node:
+  WS.WS.view(u, V.View.page.signals.sidebar(U.Side.with_signals.given(stamp(u), signals), reuse), V.View.term.loc(U.Lang.loc(u), U.Ui.term(u, WS.WS.owner(u))))
+
 def view(+u: U.Ui) -> D.Node:
   view_sidebar(u, False{})
 

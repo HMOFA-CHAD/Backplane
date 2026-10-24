@@ -1,3 +1,5 @@
+import ./src/server/thin-signals.bend as SGV
+import ./src/core/signal.bend as SIGREV
 import Base
 import ./src/server/thin-sidebar-wire.bend as SWR
 import ./src/core/cbor.bend as CBR1 # fast hub R1
@@ -11911,3 +11913,13 @@ law side_mine_work_independent:
   for b: Map<&2, Nat>
   for +pid: String
   {U.SIx.mine(U.SIx{by, asks, kids, a}, pid) == U.SIx.mine(U.SIx{by, asks, kids, b}, pid) : List<&2, M.Thread>}
+
+# Canonical-derived bits may be supplied without changing UI decoration.
+law side_signals_given_eq:
+  for +u: U.Ui
+  {U.Side.with_signals.given(u, SIGREV.Signal.index(U.Ui.state(u))) == U.Side.with_signals(u) : U.Ui}
+
+law signal_cache_epoch_miss:
+  for +n: Nat
+  for m: Map<&2, Nat>
+  {SGV.SignalCache.hit(SGV.SignalCache{"old", n, m, True{}}, "new", n) == False{} : Bool}

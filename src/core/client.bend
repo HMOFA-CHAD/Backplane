@@ -13442,6 +13442,13 @@ def Ui.act(+u: Ui, +action: String, +value: String) -> Act:
 def Ui.recv_act(u: Ui, +o: J.Json) -> Act:
   Mailv.sync(Ui.recv_act.s(String.eq(J.Json.get_str(o, "t", ""), "shot"), u, o))
 
+# The index may be supplied by a server-owned canonical-revision memo.
+# Online visibility and every unrelated info value are applied anew.
+def Side.with_signals.given(u: Ui, signals: Map<&2, Nat>) -> Ui:
+  match u:
+    case Ui{st, se, dr, li, op, +on, now, ad, pa, ve, ri, wa, er, no, nf, ob, tr}:
+      Ui{st, se, dr, li, op, on, now, ad, pa, ve, ri, wa, er, no, SG.Signal.cache(on, signals, nf), ob, tr}
+
 # Display-only activity for this frame. Never merge this decorated Ui back
 # into the client: the next frame derives fresh signals from current state.
 def Side.with_signals(u: Ui) -> Ui:
