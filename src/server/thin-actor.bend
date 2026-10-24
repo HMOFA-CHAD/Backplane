@@ -431,9 +431,9 @@ def Actor.render.web.fresh(+updated: Actor, +action: V.ActResult, +st: M.State, 
   +node = SS.Slot.sidebar(J.Json.get_obj(res, "shown"))
   Rendered{Sidebar.save(Bool.and(SC.Sidebar.bounded(key), SS.Slot.is(node, "aside")), updated, key, node), res}
 
-# Settings/refresh-only derived cache. The existing rendered-sidebar key
-# still includes the clock and all recipient/UI fences. Raw signals and
-# the proved plain metadata index alone survive irrelevant history changes.
+# Read/Settings derived caches. Rendered-sidebar lookup remains Settings-only;
+# ordinary reads keep their full-sequence picture identity. Clock/recipient/UI
+# fences stay exact, and every main panel uses the fresh canonical state.
 def Actor.render.web.indexed(+updated: Actor, +action: V.ActResult, +st: M.State, +index: T.Index, +p: J.Json,
     +epoch: String, +now: Nat, +rows: List<&2, String>, +stream: TL.Stream, +revision: Nat) -> Rendered:
   +u = Actor.ui(updated)
@@ -441,7 +441,7 @@ def Actor.render.web.indexed(+updated: Actor, +action: V.ActResult, +st: M.State
   +signals = SGV.SignalCache.obtain.revision(epoch, revision, st, Signals.get(Sidebar.memos(updated)))
   +metadata = SIXV.IndexCache.obtain.revision(epoch, revision, st, SideIndex.get(Sidebar.memos(updated)))
   +text = SGT.SignalTextCache.obtain(epoch, revision, U.Side.signals.online(prepared), SGV.SignalCache.signals(signals), SignalText.get(Sidebar.memos(updated)))
-  +key = SC.Sidebar.key.revision(prepared, epoch, Sidebar.view(updated), revision)
+  +key = SC.Sidebar.key.for(SC.Sidebar.request(p, u), prepared, epoch, Sidebar.view(updated), revision)
   +cached = Sidebar.lookup(SC.Sidebar.request(p, u), Sidebar.memos(updated), key)
   +window = V.Render.window(stream, index, V.Target.thread(st, J.Json.get_obj(p, "target")), p, epoch, rows)
   +res = V.Obj.put(V.Render.web.prepared.materialized(action, prepared, window, cached, SGV.SignalCache.signals(signals), SIXV.IndexCache.index(metadata), SGT.SignalTextCache.values(text)), "mailDraftContext", Actor.mail_context(u))
@@ -456,7 +456,7 @@ def Actor.render.web.select(allowed: Bool, updated: Actor, action: V.ActResult, 
 
 def Actor.render.web.revision(+updated: Actor, action: V.ActResult, st: M.State, index: T.Index, +p: J.Json,
     epoch: String, now: Nat, rows: List<&2, String>, stream: TL.Stream, revision: Nat) -> Rendered:
-  Actor.render.web.select(SC.Sidebar.request(p, Actor.ui(updated)), updated, action, st, index, p, epoch, now, rows, stream, revision)
+  Actor.render.web.select(SC.Sidebar.derived(p, Actor.ui(updated)), updated, action, st, index, p, epoch, now, rows, stream, revision)
 
 def Actor.render.web(updated: Actor, action: V.ActResult, +st: M.State, index: T.Index, p: J.Json,
     epoch: String, now: Nat, rows: List<&2, String>, stream: TL.Stream) -> Rendered:

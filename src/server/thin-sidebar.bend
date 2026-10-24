@@ -59,3 +59,15 @@ def Sidebar.request(+p: J.Json, +u: U.Ui) -> Bool:
   +action = J.Json.get_str(p, "action", "")
   Bool.or(Bool.and(String.eq(action, "flag"), String.eq(J.Json.get_str(p, "value", ""), "settings")),
     Bool.or(String.eq(action, "settings-page"), Bool.and(String.is_empty(action), U.Ui.flag(u, "settings"))))
+
+# Canonical-derived data is independent of the selected main panel. Ordinary
+# reads may use it without acquiring Settings' rendered-sidebar reuse.
+def Sidebar.derived(+p: J.Json, u: U.Ui) -> Bool:
+  Bool.or(String.is_empty(J.Json.get_str(p, "action", "")), Sidebar.request(p, u))
+
+# Ordinary chat keeps the original full canonical sequence in its picture
+# identity. Only the already-qualified Settings path uses the metadata key.
+def Sidebar.key.for(settings: Bool, +u: U.Ui, +epoch: String, +view: String, revision: Nat) -> String:
+  match settings:
+    case True{}: Sidebar.key.revision(u, epoch, view, revision)
+    case False{}: Sidebar.key(u, epoch, view)
