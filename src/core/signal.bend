@@ -239,6 +239,28 @@ def Signal.cache.pairs(xs: List<&2, Sigma<&2, &2, String, _ => Nat>>, +online: B
 def Signal.cache(+online: Bool, signals: Map<&2, Nat>, info: Map<&2, String>) -> Map<&2, String>:
   Signal.cache.pairs(Map.to_list(&2, Nat, signals), online, Map.set(&2, String, info, "@signal.online", Bool.pick(String, online, "1", "0")))
 
+# The cached map contains only canonical @signal:* strings and its exact
+# online visibility flag. Overlay current recipient info underneath it:
+# canonical keys win, while unknown reserved keys and all ordinary values
+# remain fresh. The independent cache() above is the full per-frame oracle.
+def Signal.cache.present(r: Map<&2, String> & Bool) -> Bool:
+  (_, found) = r
+  found
+
+def Signal.cache.overlay.put(known: Bool, key: String, value: String, acc: Map<&2, String>) -> Map<&2, String>:
+  match known:
+    case True{}: acc
+    case False{}: Map.set(&2, String, acc, key, value)
+
+def Signal.cache.overlay.go(xs: List<&2, Sigma<&2, &2, String, _ => String>>, +canonical: Map<&2, String>, acc: Map<&2, String>) -> Map<&2, String>:
+  match xs:
+    case Nil{}: acc
+    case (+key, value) <> rest:
+      Signal.cache.overlay.go(rest, canonical, Signal.cache.overlay.put(Signal.cache.present(Map.has(&2, String, canonical, key)), key, value, acc))
+
+def Signal.cache.overlay(+canonical: Map<&2, String>, current: Map<&2, String>) -> Map<&2, String>:
+  Signal.cache.overlay.go(Map.to_list(&2, String, current), canonical, canonical)
+
 def Signal.cached.k(r: Map<&2, String> & String) -> Nat:
   (_, v) = r
   M.Switch.num(v, 0n)

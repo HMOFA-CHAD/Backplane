@@ -1,5 +1,6 @@
 import Base
 import ./thin-signals.bend as SGV
+import ./thin-signal-text.bend as SGT
 import ./thin-side-index.bend as SIXV
 import ./thin-mail.bend as TM
 import ./thin-sidebar.bend as SC
@@ -31,6 +32,7 @@ type Memo is Data:
   SidebarWire{key: String, token: String}
   Signals{cache: SGV.SignalCache}
   SideIndex{cache: SIXV.IndexCache}
+  SignalText{cache: SGT.SignalTextCache}
 
 type Actor is Data:
   Actor{ui: U.Ui, view: String, target: J.Json, pending: Map<&2, String>, reads: List<&2, J.Json>, dirty: Bool, memo: List<&2, Memo>}
@@ -181,19 +183,37 @@ def SideIndex.get(ms: List<&2, Memo>) -> Maybe<&2, SIXV.IndexCache>:
     case SideIndex{cache} <> _: Some{cache}
     case _ <> rest: SideIndex.get(rest)
 
+def SignalText.keep(ms: List<&2, Memo>) -> List<&2, Memo>:
+  match ms:
+    case Nil{}: Nil{}
+    case SignalText{cache} <> _: [SignalText{cache}]
+    case _ <> rest: SignalText.keep(rest)
+
+def SignalText.get(ms: List<&2, Memo>) -> Maybe<&2, SGT.SignalTextCache>:
+  match ms:
+    case Nil{}: None{}
+    case SignalText{cache} <> _: Some{cache}
+    case _ <> rest: SignalText.get(rest)
+
 def SideIndex.save(valid: Bool, a: Actor, cache: SIXV.IndexCache) -> Actor:
   match valid a:
     case True{} Actor{u, view, target, pending, reads, dirty, +ms}:
-      Actor{u, view, target, pending, reads, dirty, SideIndex{cache} <> List.append(&2, Memo, Sidebar.keep(ms), Signals.keep(ms))}
+      Actor{u, view, target, pending, reads, dirty, SideIndex{cache} <> List.append(&2, Memo, Sidebar.keep(ms), List.append(&2, Memo, Signals.keep(ms), SignalText.keep(ms)))}
     case False{} _: a
 
 def Actor.kept(+ms: List<&2, Memo>) -> List<&2, Memo>:
-  List.append(&2, Memo, Sidebar.keep(ms), List.append(&2, Memo, Signals.keep(ms), SideIndex.keep(ms)))
+  List.append(&2, Memo, Sidebar.keep(ms), List.append(&2, Memo, Signals.keep(ms), List.append(&2, Memo, SideIndex.keep(ms), SignalText.keep(ms))))
 
 def Signals.save(valid: Bool, a: Actor, cache: SGV.SignalCache) -> Actor:
   match valid a:
-    case True{} Actor{u, view, target, pending, reads, dirty, ms}:
-      Actor{u, view, target, pending, reads, dirty, Signals{cache} <> Sidebar.keep(ms)}
+    case True{} Actor{u, view, target, pending, reads, dirty, +ms}:
+      Actor{u, view, target, pending, reads, dirty, Signals{cache} <> List.append(&2, Memo, Sidebar.keep(ms), SignalText.keep(ms))}
+    case False{} _: a
+
+def SignalText.save(valid: Bool, a: Actor, cache: SGT.SignalTextCache) -> Actor:
+  match valid a:
+    case True{} Actor{u, view, target, pending, reads, dirty, +ms}:
+      Actor{u, view, target, pending, reads, dirty, SignalText{cache} <> List.append(&2, Memo, Sidebar.keep(ms), List.append(&2, Memo, Signals.keep(ms), SideIndex.keep(ms)))}
     case False{} _: a
 
 def Sidebar.get(ms: List<&2, Memo>, +key: String) -> J.Json:
@@ -420,12 +440,13 @@ def Actor.render.web.indexed(+updated: Actor, +action: V.ActResult, +st: M.State
   +prepared = V.Render.ui(u, st, index, J.Json.get_obj(p, "target"), rows, stream, now)
   +signals = SGV.SignalCache.obtain.revision(epoch, revision, st, Signals.get(Sidebar.memos(updated)))
   +metadata = SIXV.IndexCache.obtain.revision(epoch, revision, st, SideIndex.get(Sidebar.memos(updated)))
+  +text = SGT.SignalTextCache.obtain(epoch, revision, U.Side.signals.online(prepared), SGV.SignalCache.signals(signals), SignalText.get(Sidebar.memos(updated)))
   +key = SC.Sidebar.key.revision(prepared, epoch, Sidebar.view(updated), revision)
   +cached = Sidebar.lookup(SC.Sidebar.request(p, u), Sidebar.memos(updated), key)
   +window = V.Render.window(stream, index, V.Target.thread(st, J.Json.get_obj(p, "target")), p, epoch, rows)
-  +res = V.Obj.put(V.Render.web.prepared.metadata(action, prepared, window, cached, SGV.SignalCache.signals(signals), SIXV.IndexCache.index(metadata)), "mailDraftContext", Actor.mail_context(u))
+  +res = V.Obj.put(V.Render.web.prepared.materialized(action, prepared, window, cached, SGV.SignalCache.signals(signals), SIXV.IndexCache.index(metadata), SGT.SignalTextCache.values(text)), "mailDraftContext", Actor.mail_context(u))
   +node = SS.Slot.sidebar(J.Json.get_obj(res, "shown"))
-  Rendered{SideIndex.save(SIXV.IndexCache.bounded(metadata), Signals.save(SGV.SignalCache.bounded(signals), Sidebar.save(Bool.and(SC.Sidebar.bounded(key), SS.Slot.is(node, "aside")), updated, key, node), signals), metadata), res}
+  Rendered{SignalText.save(SGT.SignalTextCache.bounded(text), SideIndex.save(SIXV.IndexCache.bounded(metadata), Signals.save(SGV.SignalCache.bounded(signals), Sidebar.save(Bool.and(SC.Sidebar.bounded(key), SS.Slot.is(node, "aside")), updated, key, node), signals), metadata), text), res}
 
 def Actor.render.web.select(allowed: Bool, updated: Actor, action: V.ActResult, st: M.State, index: T.Index, p: J.Json,
     epoch: String, now: Nat, rows: List<&2, String>, stream: TL.Stream, revision: Nat) -> Rendered:
@@ -618,6 +639,7 @@ def Memo.reply(ms: List<&2, Memo>, +update: Bool, +key: String, +clock: Nat, +we
     case SidebarWire{_, _} <> rest: Memo.reply(rest, update, key, clock, web, stream, thread, epoch, target, lc)
     case Signals{_} <> rest: Memo.reply(rest, update, key, clock, web, stream, thread, epoch, target, lc)
     case SideIndex{_} <> rest: Memo.reply(rest, update, key, clock, web, stream, thread, epoch, target, lc)
+    case SignalText{_} <> rest: Memo.reply(rest, update, key, clock, web, stream, thread, epoch, target, lc)
     case Memo{+k, +at, +partial, +res} <> _:
       Memo.reply.k(Bool.and(update, Bool.and(String.eq(k, key), Bool.and(Nat.is_ge(clock, at), Bool.and(Nat.is_lt(Nat.sub(clock, at), 1000n),
         Bool.and(Nat.is_gt(TL.Stream.size(stream), 0n), Bool.or(Bool.and(partial, S.Splice.partial(stream)), Bool.and(Bool.not(partial), Bool.not(S.Splice.partial(stream))))))))), res, web, stream, thread, epoch, target, lc)

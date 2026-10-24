@@ -13111,3 +13111,15 @@ def Laws.sidebar_read_system(st, th, id, text, at):
   match st:
     case M.State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, Nil{}}: {==}
     case M.State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, M.Ext{world, by, mail} <> rest}: {==}
+
+def Laws.signal_text_overlay_empty(base):
+  {==}
+
+def Laws.signal_text_overlay_known(value, other):
+  {==}
+
+def Laws.signal_text_overlay_online(other):
+  {==}
+
+def Laws.signal_text_overlay_fresh(text):
+  {==}
