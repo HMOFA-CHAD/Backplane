@@ -533,14 +533,21 @@ def Snap.seq.k(xs: List<&2, List<&2, String>>) -> Nat:
     case Nil{}:
       0n
 
-def Snap.state.k(+rs: SRows, eb: EB) -> M.State:
+# Reuse a decoded thread map when startup already needed it to choose windows.
+def Snap.state.threads.k(+rs: SRows, eb: EB, threads: Map<&2, M.Thread>) -> M.State:
   match eb:
     case EB{es, by}:
-      M.State{Fill.projects(SRows.of(rs, "project"), Map.new(&2, M.Project)), Fill.threads(SRows.of(rs, "thread"), Map.new(&2, M.Thread)), es,
+      M.State{Fill.projects(SRows.of(rs, "project"), Map.new(&2, M.Project)), threads, es,
         Snap.seq.k(SRows.of(rs, "obj.state")), Fill.tasks(SRows.of(rs, "task"), Map.new(&2, M.Task)), Fill.settings(SRows.of(rs, "setting"), Map.new(&2, String)),
         Fill.queues(SRows.of(rs, "queue"), Map.new(&2, List<&2, M.QItem>)), Fill.asks(SRows.of(rs, "ask"), Map.new(&2, M.Ask)),
         Fill.devices(SRows.of(rs, "obj.device"), Map.new(&2, M.Device)), Fill.navs(SRows.of(rs, "obj.nav"), Map.new(&2, M.Nav)),
         [M.Ext{Snap.world(rs), by, [Snap.box(rs)]}]}
+
+def Snap.state.k(+rs: SRows, eb: EB) -> M.State:
+  Snap.state.threads.k(rs, eb, Fill.threads(SRows.of(rs, "thread"), Map.new(&2, M.Thread)))
+
+def Snap.state.threads(+rs: SRows, threads: Map<&2, M.Thread>) -> M.State:
+  Snap.state.threads.k(rs, Fill.entries(SRows.of(rs, "entry"), Nil{}, Map.new(&2, List<&2, M.Entry>)), threads)
 
 # the read model the rows hold (entries: the rows of "entry" there are)
 def Snap.state(+rs: SRows) -> M.State:
