@@ -1511,6 +1511,10 @@ function localPresentation(action, value, session) {
     later();
   } else if (action === "draft") {
     ui = App.restore(ui, session.sel, value);
+    // the hub's page is redrawn with the draft at once (app.bend's
+    // presentation_overlay: the send button and the slash commands follow
+    // what is typed even while the hub is busy with a streaming turn)
+    if (frontendNode) later();
     try {
       if (value) localStorage.setItem(DRAFT + session.sel, value);
       else localStorage.removeItem(DRAFT + session.sel);

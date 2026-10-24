@@ -2612,6 +2612,15 @@ def Skills.mark(rs: List<&2, SkillRow>, +k: Nat) -> List<&2, SkillRow>:
 def Skills.marked(+rs: List<&2, SkillRow>, +at: Nat) -> List<&2, SkillRow>:
   Skills.mark(rs, Nat.add(Bool.pick(Nat, Nat.is_lt(at, List.length(&2, SkillRow, rs)), at, 0n), 1n))
 
+# the slash commands a draft being typed offers, the first marked, from
+# the draft alone (the browser's composer between the hub's renders,
+# view.bend's View.local; the hub adds the thread's own skills)
+def Slash.local(claude: Bool, +draft: String) -> List<&2, SkillRow>:
+  Skills.marked(Slash.rows(SL.Slash.cmds(claude, String.drop(Skills.token(draft), 1n))), 0n)
+
+def Slash.typing.d(+draft: String) -> Bool:
+  SL.Slash.typing(draft)
+
 def Ui.skills.k(shut: Bool, +st: M.State, +sel: String, +dr: Map<&2, String>, +nf: Map<&2, String>) -> List<&2, SkillRow>:
   match shut:
     case True{}:

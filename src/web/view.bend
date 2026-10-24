@@ -2289,6 +2289,142 @@ def View.send.loc(+lc: I.Loc, +act: String, +send: String) -> D.Node:
   Bool.pick(D.Node, String.eq(act, "interrupt"), D.Dom.button("primary stop", act, "", MSG.T.composer.stop.tip(lc), send),
     D.Dom.button("primary", act, "", MSG.T.composer.enter.tip(lc, Bool.pick(String, String.eq(send, MSG.T.composer.queue(lc)), "steer", "queue")), send))
 
+# The composer as typed (app.bend's presentation_overlay, in the browser):
+# the hub drew it for the draft it last had, which lags what is typed while
+# a turn streams (the hub is busy). Until it catches up, the send button
+# (Stop, Steer, Ask...) and the slash commands follow the draft at once, as
+# the hub would draw them; the root's data-run, data-atts, data-claude and
+# data-lang say what the draft alone cannot. The hub's own render wins
+# once it is for this draft (its textarea holds the same text).
+type Local is Data:
+  Local{draft: String, same: Bool, run: Bool, atts: Nat, claude: Bool, lc: I.Loc}
+
+def View.local.attr(as: List<&2, D.Attr>, +k: String) -> String:
+  match as:
+    case Nil{}:
+      ""
+    case D.At{+n, +v} <> t:
+      Bool.pick(String, String.eq(n, k), v, View.local.attr(t, k))
+    case _ <> t:
+      View.local.attr(t, k)
+
+def View.local.class(+as: List<&2, D.Attr>, +c: String) -> Bool:
+  String.eq(View.local.attr(as, "class"), c)
+
+# the draft the hub drew the composer for: its textarea's value
+def View.local.drawn(ks: List<&2, D.Node>) -> String:
+  match ks:
+    case Nil{}:
+      ""
+    case D.El{_, _, +as, _} <> t:
+      Bool.pick(String, String.eq(View.local.attr(as, "id"), "composer"), View.local.attr(as, "value"), View.local.drawn(t))
+    case _ <> t:
+      View.local.drawn(t)
+
+def View.local.skilled(ks: List<&2, D.Node>) -> Bool:
+  match ks:
+    case Nil{}:
+      False{}
+    case D.El{_, _, +as, _} <> t:
+      Bool.or(View.local.class(as, "skills"), View.local.skilled(t))
+    case _ <> t:
+      View.local.skilled(t)
+
+def Local.draft(l: Local) -> String:
+  match l:
+    case Local{d, _, _, _, _, _}: d
+
+def Local.same(l: Local) -> Bool:
+  match l:
+    case Local{_, s, _, _, _, _}: s
+
+def Local.lc(l: Local) -> I.Loc:
+  match l:
+    case Local{_, _, _, _, _, c}: c
+
+def Local.slash(+l: Local) -> List<&2, D.Node>:
+  match l:
+    case Local{+d, _, _, _, +c, _}: Bool.pick(List<&2, D.Node>, U.Slash.typing.d(d), View.skills(U.Slash.local(c, d)), Nil{})
+
+def Local.send(+l: Local) -> D.Node:
+  match l:
+    case Local{+d, _, +r, +n, _, +lc}:
+      +stop = Bool.and(r, Bool.and(String.is_empty(String.trim(d)), Nat.is_eq(n, 0n)))
+      View.send.loc(lc, U.Follow.act(stop), U.Follow.button(lc, M.State.empty(), "", r, stop, d))
+
+# the textarea's keys, as View.composer.loc sets them, for rows shown or not
+def View.local.keys(as: List<&2, D.Attr>, +rows: Bool) -> List<&2, D.Attr>:
+  match as:
+    case Nil{}:
+      Nil{}
+    case D.At{"data-enter", _} <> t:
+      D.At{"data-enter", Bool.pick(String, rows, "skill", "send")} <> View.local.keys(t, rows)
+    case D.At{"data-tab", _} <> t:
+      D.At{"data-tab", Bool.pick(String, rows, "skill", "")} <> View.local.keys(t, rows)
+    case D.At{"data-arrows", _} <> t:
+      D.At{"data-arrows", Bool.pick(String, rows, "skill-move", "")} <> View.local.keys(t, rows)
+    case D.At{"data-esc", _} <> t:
+      D.At{"data-esc", Bool.pick(String, rows, "skill-close", "")} <> View.local.keys(t, rows)
+    case h <> t:
+      h <> View.local.keys(t, rows)
+
+# the foot's send button (span.foot-end's last child) drawn for the draft
+def View.local.end(ks: List<&2, D.Node>, +l: Local) -> List<&2, D.Node>:
+  match ks:
+    case Nil{}:
+      Nil{}
+    case D.El{+tag, +key, +as, +kids} <> Nil{}:
+      Bool.pick(List<&2, D.Node>, String.eq(tag, "button"), [Local.send(l)], [D.El{tag, key, as, kids}])
+    case +k <> t:
+      k <> View.local.end(t, l)
+
+def View.local.foot(ks: List<&2, D.Node>, +l: Local) -> List<&2, D.Node>:
+  match ks:
+    case Nil{}:
+      Nil{}
+    case D.El{+tag, +key, +as, +kids} <> t:
+      Bool.pick(D.Node, View.local.class(as, "foot-end"), D.El{tag, key, as, View.local.end(kids, l)}, D.El{tag, key, as, kids}) <> View.local.foot(t, l)
+    case +k <> t:
+      k <> View.local.foot(t, l)
+
+# the composer's children: the hub's skills kept while its render is for
+# this draft, else the draft's slash commands (none once it is not one);
+# its $skills and references stay as the hub drew them
+def View.local.kids(ks: List<&2, D.Node>, +l: Local, +had: Bool, +drawn: String) -> List<&2, D.Node>:
+  match ks:
+    case Nil{}:
+      Nil{}
+    case D.El{+tag, +key, +as, +kids} <> t:
+      +skills = View.local.class(as, "skills")
+      +area = String.eq(View.local.attr(as, "id"), "composer")
+      +mine = Bool.or(Local.same(l), Bool.not(Bool.or(U.Slash.typing.d(Local.draft(l)), U.Slash.typing.d(drawn))))
+      +rows = Bool.pick(Bool, mine, had, Bool.not(List.is_empty(&2, D.Node, Local.slash(l))))
+      List.concat(&2, D.Node, [
+        Bool.pick(List<&2, D.Node>, Bool.and(area, Bool.and(Bool.not(mine), Bool.not(had))), Local.slash(l), Nil{}),
+        Bool.pick(List<&2, D.Node>, skills, Bool.pick(List<&2, D.Node>, mine, [D.El{tag, key, as, kids}], Local.slash(l)),
+          [D.El{tag, key, Bool.pick(List<&2, D.Attr>, area, View.local.keys(as, rows), as),
+            Bool.pick(List<&2, D.Node>, View.local.class(as, "composer-foot"), View.local.foot(kids, l), kids)}]),
+        View.local.kids(t, l, had, drawn)])
+    case +k <> t:
+      k <> View.local.kids(t, l, had, drawn)
+
+def View.local.go(nodes: List<&2, D.Node>, +draft: String, acc: List<&2, D.Node>) -> List<&2, D.Node>:
+  match nodes:
+    case Nil{}:
+      acc
+    case D.El{+tag, +key, +as, +kids} <> t:
+      +mine = Bool.and(View.local.class(as, "composer"), Bool.not(String.is_empty(View.local.attr(as, "data-lang"))))
+      View.local.go(t, draft, Bool.pick(D.Node, mine,
+        D.El{tag, key, as, View.local.kids(kids, Local{draft, String.eq(View.local.drawn(kids), draft), String.eq(View.local.attr(as, "data-run"), "1"),
+          Maybe.default(&2, Nat, Nat.read(View.local.attr(as, "data-atts")), 0n), String.eq(View.local.attr(as, "data-claude"), "1"), I.I18n.of_tag(View.local.attr(as, "data-lang"))},
+          View.local.skilled(kids), View.local.drawn(kids))},
+        D.El{tag, key, as, List.reverse(&2, D.Node, View.local.go(kids, draft, Nil{}))}) <> acc)
+    case +k <> t:
+      View.local.go(t, draft, k <> acc)
+
+def View.local(node: D.Node, +draft: String) -> List<&2, D.Node>:
+  View.local.go([node], draft, Nil{})
+
 # The token chip (opt-in, usage.bend's Ts): the thread's token use by the
 # send button; a click opens the panel with all its provider told, and a
 # click outside or on the chip again closes it (the flag "tokstats")
@@ -2323,8 +2459,9 @@ def View.tok.pop(open: Bool, +st: M.State, +th: String, +prov: String) -> List<&
       Nil{}
 
 def View.composer.loc(+lc: I.Loc, +draft: String, +send: String, +act: String, +label: String, +ctx: String, +picking: Bool, +ms: List<&2, String>, +model: String, +info: String, +prov: String, +es: List<&2, String>, +effort: String, +rs: List<&2, U.SkillRow>,
-    +atts: List<&2, String>, +up: String, vo: List<&2, D.Node>, +mic: String, +q: String, srch: Bool, tk: List<&2, D.Node>, tp: List<&2, D.Node>) -> D.Node:
-  D.El{"div", "", [D.At{"class", "composer"}], D.Dom.cat(
+    +atts: List<&2, String>, +up: String, vo: List<&2, D.Node>, +mic: String, +q: String, srch: Bool, tk: List<&2, D.Node>, tp: List<&2, D.Node>, run: Bool) -> D.Node:
+  D.El{"div", "", [D.At{"class", "composer"}, D.At{"data-run", Bool.pick(String, run, "1", "")}, D.At{"data-atts", Nat.show(List.length(&2, String, atts))},
+    D.At{"data-claude", Bool.pick(String, String.eq(prov, "claude"), "1", "")}, D.At{"data-lang", I.I18n.tag(lc)}], D.Dom.cat(
     View.menu.loc(lc, picking, ms, model, info, prov, es, effort, q, srch), D.Dom.cat(tp, D.Dom.cat(View.skills(rs), D.Dom.cat(vo, D.Dom.cat(View.attaching.loc(lc, atts, up), [
     D.El{"textarea", "composer", [D.At{"id", "composer"}, D.At{"rows", "3"}, D.At{"placeholder", MSG.T.composer.placeholder(lc)}, D.At{"value", draft}, D.On{"input", "draft"},
       D.At{"data-enter", Bool.pick(String, List.is_empty(&2, U.SkillRow, rs), "send", "skill")}, D.At{"data-enter-alt", "send-alt"}, D.At{"data-tab", Bool.pick(String, List.is_empty(&2, U.SkillRow, rs), "", "skill")}, D.At{"data-arrows", Bool.pick(String, List.is_empty(&2, U.SkillRow, rs), "", "skill-move")}, D.At{"data-esc", Bool.pick(String, List.is_empty(&2, U.SkillRow, rs), "", "skill-close")}, D.At{"data-paste", "attach"}], Nil{}},
@@ -2340,7 +2477,7 @@ def View.composer.loc(+lc: I.Loc, +draft: String, +send: String, +act: String, +
 
 def View.composer(+draft: String, +send: String, +act: String, +label: String, +ctx: String, +picking: Bool, +ms: List<&2, String>, +model: String, +info: String, +prov: String, +es: List<&2, String>, +effort: String, +rs: List<&2, U.SkillRow>,
     +atts: List<&2, String>, +up: String, vo: List<&2, D.Node>, +mic: String) -> D.Node:
-  View.composer.loc(I.En{}, draft, send, act, label, ctx, picking, ms, model, info, prov, es, effort, rs, atts, up, vo, mic, "", False{}, Nil{}, Nil{})
+  View.composer.loc(I.En{}, draft, send, act, label, ctx, picking, ms, model, info, prov, es, effort, rs, atts, up, vo, mic, "", False{}, Nil{}, Nil{}, False{})
 
 def View.send(+act: String, +send: String) -> D.Node:
   View.send.loc(I.En{}, act, send)
@@ -2364,7 +2501,7 @@ def View.composer.t(+lc: I.Loc, +st: M.State, +sel: String, +drafts: Map<&2, Str
   +tok = UZ.Ts.on(st)
   View.composer.loc(lc, U.Str.get(drafts, sel), U.Follow.button(lc, st, sel, View.running(turn), stop, U.Str.get(drafts, sel)), U.Follow.act(stop), VLabel.model(lc, pr, mo), Bool.pick(String, tok, "", U.Usage.tail(st, sel)), U.Flag.get(op, "models"), Nil{}, mo, U.Models.of(nf, pr), pr,
     U.Chip.all(U.Str.get(nf, "models"), pr, mo), U.Effort.of(st, sel), U.Skills.shown(st, sel, drafts, nf), atts, up, vo, mic, U.Str.get(drafts, "@f.mq"), False{},
-    View.tok.chip(tok, UZ.Ts.chip(st, sel), U.Flag.get(op, "tokstats")), View.tok.pop(Bool.and(tok, U.Flag.get(op, "tokstats")), st, sel, pr))
+    View.tok.chip(tok, UZ.Ts.chip(st, sel), U.Flag.get(op, "tokstats")), View.tok.pop(Bool.and(tok, U.Flag.get(op, "tokstats")), st, sel, pr), View.running(turn))
 
 def View.asks.box(+lc: I.Loc, +st: M.State, +id: String, +draft: String, +nf: Map<&2, String>) -> D.Node:
   D.El{"div", "asks", [D.At{"class", "asks"}, D.At{"id", "asks"}], View.asks(lc, U.Asks.open(st, id), draft, nf)}
