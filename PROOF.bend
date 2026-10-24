@@ -12914,3 +12914,6 @@ def Laws.dialog_session_allows(): {==}
 def Laws.pi_effort_flag(): {==}
 def Laws.pi_effort_unknown_default(): {==}
 
+
+def Laws.sidebar_wire_unissued(): {==}
+def Laws.sidebar_wire_wrong_ack(): {==}

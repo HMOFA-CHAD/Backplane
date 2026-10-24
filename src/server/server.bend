@@ -50,6 +50,7 @@ import ../core/cbor.bend as CB
 import ../mobile/session.bend as MSE
 import ./thin-view.bend as TV
 import ./thin-actor.bend as TA
+import ./thin-sidebar-wire.bend as TSW
 import ../core/thin-pace.bend as TPACE
 import ./thin-mail.bend as TMAIL
 import ../core/thin.bend as THIN
@@ -11224,7 +11225,7 @@ def Hub.thin.deliver(+fits: Bool, h: Hub, +client: U32, +o: J.Json, +answer: J.J
         +cl2 : List<&2, Client> <- Wire.to.view(Clients.swap(cl, client, Some{Client.thin.with(c, context)}), client, answer, size)
         return Hub{st, f, ls, cl2, as, inbox, Cfg.telemetry.ui_action(st, cfg, o, Maybe.is_some(&2, Client, Clients.get(cl2, client)), now), note}
 
-def Hub.thin.respond(h: Hub, +client: U32, +o: J.Json, +result: J.Json, +c: Client, +context: ThinContext, +now: Nat) -> IO(Hub):
+def Hub.thin.respond.full(h: Hub, +client: U32, +o: J.Json, +result: J.Json, +c: Client, +context: ThinContext, +now: Nat) -> IO(Hub):
   match h:
     case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
       +p = J.Json.get_obj(o, "p")
@@ -11233,6 +11234,15 @@ def Hub.thin.respond(h: Hub, +client: U32, +o: J.Json, +result: J.Json, +c: Clie
       +size = J.Json.bytes(answer)
       Hub.thin.deliver(Nat.is_le(size, Bool.pick(Nat, String.eq(J.Json.get_str(o, "m", ""), "view.search"), 65536n, 262144n)),
         Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, answer, size, c, context, now)
+
+def Hub.thin.respond.region(output: TSW.Output, h: Hub, client: U32, o: J.Json, c: Client, context: ThinContext, now: Nat) -> IO(Hub):
+  match output:
+    case TSW.Output{actors, result}:
+      Hub.thin.respond.full(h, client, o, result, c, ThinContext.with_actors(context, actors), now)
+
+def Hub.thin.respond(h: Hub, +client: U32, +o: J.Json, +result: J.Json, +c: Client, +context: ThinContext, +now: Nat) -> IO(Hub):
+  Hub.thin.respond.region(TSW.Region.output(String.eq(Client.thin.mode(c), "view-web"), ThinContext.actors(context), result, J.Json.get_obj(o, "p")),
+    h, client, o, c, context, now)
 
 def Hub.thin.cursor.empty(+empty: Bool, +text: String, +epoch: String, +target: J.Json, +query: String) -> Maybe<&2, Nat>:
   match empty:

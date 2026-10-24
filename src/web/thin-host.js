@@ -58,6 +58,7 @@ export class ThinHost {
     this.viewerRevision = 0;this.localRevision = 0;this.selectionRevision = 0;this.drafts = new Map();this.draftChanges = new Map();this.fields = new Map();this.pending = new Map();this.actions = [];this.active = null;
     this.messages = new MessageParts();this.ordinary = new Map();this.refreshScheduled = null;
     this.client = new Views({ now: api.now,
+      sidebarRegions: (api.renderer || 'web') === 'web',
       send: (_hub, request) => ({ type: 'request', request: request.p.session ? { ...request,
         p: { ...request.p, session: requestSession(request.p.session, request.m === 'view.action', request.p.target) } } : request }),
       command: (command, input) => ({ type: 'command', command, input }),

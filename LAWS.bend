@@ -1,4 +1,5 @@
 import Base
+import ./src/server/thin-sidebar-wire.bend as SWR
 import ./src/core/cbor.bend as CBR1 # fast hub R1
 import ./src/core/thin-pace.bend as TPR1 # fast hub R1
 import ./src/core/thin.bend as THINL # S3 lazy thin index
@@ -11860,3 +11861,10 @@ law pi_effort_flag:
 
 law pi_effort_unknown_default:
   {AG.Effort.args("pi", "turbo") == Nil{} : List<&2, String>}
+
+# A sidebar transport reference needs an actually issued, matching receipt.
+law sidebar_wire_unissued:
+  {SWR.Region.can_reuse("", "") == False{} : Bool}
+
+law sidebar_wire_wrong_ack:
+  {SWR.Region.can_reuse("7", "8") == False{} : Bool}
