@@ -13054,3 +13054,18 @@ def Laws.signal_cache_epoch_miss(n, m):
 def Laws.signal_given_mine(ix, u, signals, pid):
   match ix u:
     case U.SIx{by, asks, kids, work} U.Ui{st, se, dr, li, op, on, now, ad, pa, ve, ri, wa, er, no, nf, ob, tr}: {==}
+
+def Laws.signal_activity_input(st, th, act, tone, kind, summary, at):
+  match st:
+    case M.State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw}: {==}
+
+def Laws.signal_assistant_input(st, th, id, text, at):
+  match st:
+    case M.State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw}: {==}
+
+def Laws.signal_system_input(st, th, id, text, at):
+  match st:
+    case M.State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, bw}: {==}
+
+def Laws.signal_user_revision(th, id, text, at, old, head):
+  {==}

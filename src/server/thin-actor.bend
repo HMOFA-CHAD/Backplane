@@ -395,10 +395,10 @@ def Actor.render.web.fresh(+updated: Actor, +action: V.ActResult, +st: M.State, 
 # still includes the clock and all recipient/UI fences. Only Signal.index
 # (canonical metadata, no clock/info) can survive a clock-only refresh.
 def Actor.render.web.indexed(+updated: Actor, +action: V.ActResult, +st: M.State, +index: T.Index, +p: J.Json,
-    +epoch: String, +now: Nat, +rows: List<&2, String>, +stream: TL.Stream) -> Rendered:
+    +epoch: String, +now: Nat, +rows: List<&2, String>, +stream: TL.Stream, revision: Nat) -> Rendered:
   +u = Actor.ui(updated)
   +prepared = V.Render.ui(u, st, index, J.Json.get_obj(p, "target"), rows, stream, now)
-  +signals = SGV.SignalCache.obtain(epoch, st, Signals.get(Sidebar.memos(updated)))
+  +signals = SGV.SignalCache.obtain.revision(epoch, revision, st, Signals.get(Sidebar.memos(updated)))
   +key = SC.Sidebar.key(prepared, epoch, Sidebar.view(updated))
   +cached = Sidebar.lookup(SC.Sidebar.request(p, u), Sidebar.memos(updated), key)
   +window = V.Render.window(stream, index, V.Target.thread(st, J.Json.get_obj(p, "target")), p, epoch, rows)
@@ -407,42 +407,54 @@ def Actor.render.web.indexed(+updated: Actor, +action: V.ActResult, +st: M.State
   Rendered{Signals.save(SGV.SignalCache.bounded(signals), Sidebar.save(Bool.and(SC.Sidebar.bounded(key), SS.Slot.is(node, "aside")), updated, key, node), signals), res}
 
 def Actor.render.web.select(allowed: Bool, updated: Actor, action: V.ActResult, st: M.State, index: T.Index, p: J.Json,
-    epoch: String, now: Nat, rows: List<&2, String>, stream: TL.Stream) -> Rendered:
+    epoch: String, now: Nat, rows: List<&2, String>, stream: TL.Stream, revision: Nat) -> Rendered:
   match allowed:
-    case True{}: Actor.render.web.indexed(updated, action, st, index, p, epoch, now, rows, stream)
+    case True{}: Actor.render.web.indexed(updated, action, st, index, p, epoch, now, rows, stream, revision)
     case False{}: Actor.render.web.fresh(updated, action, st, index, p, epoch, now, rows, stream)
 
-def Actor.render.web(+updated: Actor, action: V.ActResult, st: M.State, index: T.Index, +p: J.Json,
+def Actor.render.web.revision(+updated: Actor, action: V.ActResult, st: M.State, index: T.Index, +p: J.Json,
+    epoch: String, now: Nat, rows: List<&2, String>, stream: TL.Stream, revision: Nat) -> Rendered:
+  Actor.render.web.select(SC.Sidebar.request(p, Actor.ui(updated)), updated, action, st, index, p, epoch, now, rows, stream, revision)
+
+def Actor.render.web(updated: Actor, action: V.ActResult, +st: M.State, index: T.Index, p: J.Json,
     epoch: String, now: Nat, rows: List<&2, String>, stream: TL.Stream) -> Rendered:
-  Actor.render.web.select(SC.Sidebar.request(p, Actor.ui(updated)), updated, action, st, index, p, epoch, now, rows, stream)
+  Actor.render.web.revision(updated, action, st, index, p, epoch, now, rows, stream, M.State.seq(st))
 
 def Actor.render.full.k(reuse: Bool, web: Bool, +updated: Actor, +action: V.ActResult, +st: M.State, +index: T.Index, +p: J.Json,
-    +epoch: String, +now: Nat, +rows: List<&2, String>, +stream: TL.Stream) -> Rendered:
+    +epoch: String, +now: Nat, +rows: List<&2, String>, +stream: TL.Stream, revision: Nat) -> Rendered:
   match reuse:
-    case True{}: Actor.render.web(updated, action, st, index, p, epoch, now, rows, stream)
+    case True{}: Actor.render.web.revision(updated, action, st, index, p, epoch, now, rows, stream, revision)
     case False{}: Rendered{updated, V.Obj.put(V.Render.acted_live(action, web, st, index, p, epoch, now, rows, stream), "mailDraftContext", Actor.mail_context(Actor.ui(updated)))}
 
-def Actor.render.full(+web: Bool, +updated: Actor, +action: V.ActResult, +st: M.State, +index: T.Index, +p: J.Json,
-    +epoch: String, +now: Nat, +rows: List<&2, String>, +stream: TL.Stream) -> Rendered:
-  Actor.render.full.k(Bool.and(web, W.Target.same(V.Target.after(Actor.ui(updated)), J.Json.get_obj(p, "target"))), web, updated, action, st, index, p, epoch, now, rows, stream)
+def Actor.render.full.revision(+web: Bool, +updated: Actor, +action: V.ActResult, +st: M.State, +index: T.Index, +p: J.Json,
+    +epoch: String, +now: Nat, +rows: List<&2, String>, +stream: TL.Stream, revision: Nat) -> Rendered:
+  Actor.render.full.k(Bool.and(web, W.Target.same(V.Target.after(Actor.ui(updated)), J.Json.get_obj(p, "target"))), web, updated, action, st, index, p, epoch, now, rows, stream, revision)
+
+def Actor.render.full(web: Bool, updated: Actor, action: V.ActResult, +st: M.State, index: T.Index, p: J.Json,
+    epoch: String, now: Nat, rows: List<&2, String>, stream: TL.Stream) -> Rendered:
+  Actor.render.full.revision(web, updated, action, st, index, p, epoch, now, rows, stream, M.State.seq(st))
 
 def Actor.render.picture(menu: Bool, +updated: Actor, +action: V.ActResult, web: Bool, st: M.State, index: T.Index, p: J.Json,
-    epoch: String, now: Nat, rows: List<&2, String>, stream: TL.Stream) -> Rendered:
+    epoch: String, now: Nat, rows: List<&2, String>, stream: TL.Stream, revision: Nat) -> Rendered:
   match menu:
     case True{}: Rendered{updated, ModelMenu.result(action)}
-    case False{}: Actor.render.full(web, updated, action, st, index, p, epoch, now, rows, stream)
+    case False{}: Actor.render.full.revision(web, updated, action, st, index, p, epoch, now, rows, stream, revision)
 
 def Actor.render.result(input: Bool, +updated: Actor, +action: V.ActResult, +web: Bool, st: M.State, index: T.Index, +p: J.Json,
-    epoch: String, now: Nat, rows: List<&2, String>, stream: TL.Stream) -> Rendered:
+    epoch: String, now: Nat, rows: List<&2, String>, stream: TL.Stream, revision: Nat) -> Rendered:
   match input:
     case True{}: Rendered{updated, TerminalInput.result(action)}
-    case False{}: Actor.render.picture(ModelMenu.allowed(web, p, action), updated, action, web, st, index, p, epoch, now, rows, stream)
+    case False{}: Actor.render.picture(ModelMenu.allowed(web, p, action), updated, action, web, st, index, p, epoch, now, rows, stream, revision)
 
-def Actor.render(+a: Actor, +web: Bool, +st: M.State, +index: T.Index, +p: J.Json, +epoch: String, +now: Nat, +rows: List<&2, String>, +stream: TL.Stream) -> Rendered:
+def Actor.render.revision(+a: Actor, +web: Bool, +st: M.State, +index: T.Index, +p: J.Json, +epoch: String, +now: Nat, +rows: List<&2, String>, +stream: TL.Stream, revision: Nat) -> Rendered:
   +ready = Actor.mail_ready(Actor.origin(a, epoch))
   +action = TerminalInput.run(TerminalInput.request(web, p), TerminalInput.owner(Actor.ui(ready), p), web, Actor.ui(ready), p, now)
   +updated = Actor.accept(ready, action, False{})
-  Actor.render.result(TerminalInput.allowed(web, p, action), updated, action, web, st, index, p, epoch, now, rows, stream)
+  Actor.render.result(TerminalInput.allowed(web, p, action), updated, action, web, st, index, p, epoch, now, rows, stream, revision)
+
+# External/legacy pure callers remain fenced by the complete canonical seq.
+def Actor.render(a: Actor, web: Bool, +st: M.State, index: T.Index, p: J.Json, epoch: String, now: Nat, rows: List<&2, String>, stream: TL.Stream) -> Rendered:
+  Actor.render.revision(a, web, st, index, p, epoch, now, rows, stream, M.State.seq(st))
 
 def Actor.pending_scope( +pending: Map<&2, String>, +id: String) -> String:
   U.Str.get(pending, id)

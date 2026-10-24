@@ -4,7 +4,8 @@ import ../core/signal.bend as SG
 
 # One private canonical-derived value on a surviving thin actor. No UI,
 # recipient info, clock, draft, command or rendered node is retained here.
-# The epoch/sequence are server inputs, never renderer acknowledgements.
+# The epoch and last signal-dependent canonical sequence are server inputs,
+# never renderer acknowledgements. Legacy callers use the full state sequence.
 type SignalCache is Data:
   SignalCache{epoch: String, seq: Nat, signals: Map<&2, Nat>, bounded: Bool}
 
@@ -29,7 +30,12 @@ def SignalCache.choose(hit: Bool, c: SignalCache, epoch: String, seq: Nat, st: M
     case True{}: c
     case False{}: SignalCache.build(epoch, seq, SG.Signal.index(st))
 
-def SignalCache.obtain(+epoch: String, +st: M.State, saved: Maybe<&2, SignalCache>) -> SignalCache:
+def SignalCache.obtain.revision(+epoch: String, +revision: Nat, st: M.State, saved: Maybe<&2, SignalCache>) -> SignalCache:
   match saved:
-    case None{}: SignalCache.build(epoch, M.State.seq(st), SG.Signal.index(st))
-    case Some{+c}: SignalCache.choose(SignalCache.hit(c, epoch, M.State.seq(st)), c, epoch, M.State.seq(st), st)
+    case None{}: SignalCache.build(epoch, revision, SG.Signal.index(st))
+    case Some{+c}: SignalCache.choose(SignalCache.hit(c, epoch, revision), c, epoch, revision, st)
+
+# Compatibility entry is deliberately conservative for callers without a
+# hub-owned dependency revision. No request field can opt into a cache hit.
+def SignalCache.obtain(epoch: String, +st: M.State, saved: Maybe<&2, SignalCache>) -> SignalCache:
+  SignalCache.obtain.revision(epoch, M.State.seq(st), st, saved)

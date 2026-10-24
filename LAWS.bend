@@ -11931,3 +11931,39 @@ law signal_given_mine:
   for signals: Map<&2, Nat>
   for +pid: String
   {U.SIx.mine(U.Side.signals.ix.given(ix, u, signals), pid) == U.SIx.mine(ix, pid) : List<&2, M.Thread>}
+
+# Typed signal inputs prove the only canonical-history exemptions.
+law signal_activity_input:
+  for +st: M.State
+  for th: String
+  for act: String
+  for tone: String
+  for kind: String
+  for summary: String
+  for at: Nat
+  {SIGREV.SignalInput.of(M.State.apply(st, M.ActivityLogged{th, act, tone, kind, summary, at})) == SIGREV.SignalInput.of(st) : SIGREV.SignalInput}
+
+law signal_assistant_input:
+  for +st: M.State
+  for th: String
+  for id: String
+  for text: String
+  for at: Nat
+  {SIGREV.SignalInput.of(M.State.apply(st, M.MessagePosted{th, id, M.Assistant{}, text, at})) == SIGREV.SignalInput.of(st) : SIGREV.SignalInput}
+
+law signal_system_input:
+  for +st: M.State
+  for th: String
+  for id: String
+  for text: String
+  for at: Nat
+  {SIGREV.SignalInput.of(M.State.apply(st, M.MessagePosted{th, id, M.System{}, text, at})) == SIGREV.SignalInput.of(st) : SIGREV.SignalInput}
+
+law signal_user_revision:
+  for th: String
+  for id: String
+  for text: String
+  for at: Nat
+  for old: Nat
+  for head: Nat
+  {SIGREV.SignalRevision.advance([M.MessagePosted{th, id, M.User{}, text, at}], old, head) == head : Nat}

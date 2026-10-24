@@ -2,6 +2,28 @@ import Base
 import ./model.bend as M
 import ./i18n.bend as I
 
+# The complete typed input to the pure index. Timeline, clock, UI info,
+# device/world state, projects and canonical sequence cannot be read by
+# the calculation below. Revision exemptions must preserve this value.
+type SignalInput is Data:
+  SignalInput{threads: Map<&2, M.Thread>, tasks: Map<&2, M.Task>, settings: Map<&2, String>, queued: Map<&2, List<&2, M.QItem>>, asks: Map<&2, M.Ask>}
+
+def SignalInput.of(st: M.State) -> SignalInput:
+  match st:
+    case M.State{_, ts, _, _, tk, sg, qu, ak, _, _, _}: SignalInput{ts, tk, sg, qu, ak}
+
+def SignalInput.setting(st: SignalInput, +key: String) -> String:
+  match st:
+    case SignalInput{_, _, sg, _, _}: M.State.get.k(Map.get(String, "", sg, key))
+
+def SignalInput.queue(st: SignalInput, +thread: String) -> List<&2, M.QItem>:
+  match st:
+    case SignalInput{_, _, _, qu, _}: M.Queue.items.k(Map.get(List<&2, M.QItem>, Nil{}, qu, thread))
+
+def SignalInput.asks(st: SignalInput) -> List<&2, M.Ask>:
+  match st:
+    case SignalInput{_, _, _, _, asks}: Map.values(&2, M.Ask, asks)
+
 # Visible activity, separate from persisted turn state and readiness. A result
 # owed to an agent is not running work. No clock, transcript, notices, provider
 # calls or cache readiness enter this projection. Bits 1/2 record actual work /
@@ -80,15 +102,15 @@ def Signal.shelf(s: M.Shelf) -> Bool:
     case M.Settled{}: True{}
     case _: False{}
 
-def Signal.own(+st: M.State, +asks: Map<&2, Nat>, +t: M.Thread) -> Nat:
+def Signal.own(+st: SignalInput, +asks: Map<&2, Nat>, +t: M.Thread) -> Nat:
   match t:
     case M.Thread{+id, _, _, _, _, +turn, +pending, _, _, _, _, _, _, _, _, _, _, _, _, _, deleted}:
-      +owned = Bool.or(Nat.is_gt(M.Bg.running(M.Bg.of(st, id)), 0n), Signal.watch(M.Work.watch(st, id)))
+      +owned = Bool.or(Nat.is_gt(M.Bg.running(M.Bg.lines(SignalInput.setting(st, M.Bg.key(id)))), 0n), Signal.watch(M.Bg.lines(SignalInput.setting(st, M.Work.watch.key(id)))))
       +blocked = Bool.or(Signal.failed(turn), Bool.or(Nat.is_gt(pending, 0n), Bool.or(Signal.blocked(Signal.at(asks, id)),
-        Bool.or(Bool.not(String.is_empty(M.Setting.get(st, "auth.wait." ++ id, ""))), Signal.held(M.Queue.items(st, id))))))
+        Bool.or(Bool.not(String.is_empty(SignalInput.setting(st, "auth.wait." ++ id))), Signal.held(SignalInput.queue(st, id))))))
       Bool.pick(Nat, deleted, 0n, Signal.compose(blocked, Bool.or(owned, Bool.and(M.State.running.k(t), Bool.not(blocked))), Signal.shelf(M.Shelf.of(t))))
 
-def Signal.owns(ts: List<&2, M.Thread>, +st: M.State, +asks: Map<&2, Nat>, m: Map<&2, Nat>) -> Map<&2, Nat>:
+def Signal.owns(ts: List<&2, M.Thread>, +st: SignalInput, +asks: Map<&2, Nat>, m: Map<&2, Nat>) -> Map<&2, Nat>:
   match ts:
     case Nil{}: m
     case +t <> rest:
@@ -120,12 +142,12 @@ def Signal.task.edges(xs: List<&2, M.Task>, +known: Map<&2, Nat>, m: Map<&2, Lis
     case M.Task{_, +p, +c, _, s, _, _, _, _} <> rest:
       Signal.task.edges(rest, known, Signal.edge(Bool.and(Bool.not(M.TaskState.terminal(s)), Bool.and(Signal.has(known, c), Signal.has(known, p))), c, p, m))
 
-def Signal.launch.edges(xs: List<&2, M.Thread>, +st: M.State, +known: Map<&2, Nat>, m: Map<&2, List<&2, String>>) -> Map<&2, List<&2, String>>:
+def Signal.launch.edges(xs: List<&2, M.Thread>, +st: SignalInput, +known: Map<&2, Nat>, m: Map<&2, List<&2, String>>) -> Map<&2, List<&2, String>>:
   match xs:
     case Nil{}: m
     case t <> rest:
       +id = M.Thread.id(t)
-      +by = M.Launch.by(st, id)
+      +by = String.drop(SignalInput.setting(st, M.Launch.key(id)), 1n)
       Signal.launch.edges(rest, st, known, Signal.edge(Bool.and(Bool.not(String.is_empty(by)), Signal.has(known, by)), id, by, m))
 
 type SignalStep is Data:
@@ -173,17 +195,20 @@ def Signal.ids(xs: List<&2, M.Thread>) -> List<&2, String>:
     case Nil{}: Nil{}
     case t <> rest: M.Thread.id(t) <> Signal.ids(rest)
 
-def Signal.index.owns(+st: M.State, +ts: List<&2, M.Thread>, tasks: List<&2, M.Task>, +known: Map<&2, Nat>) -> Map<&2, Nat>:
+def Signal.index.owns(+st: SignalInput, +ts: List<&2, M.Thread>, tasks: List<&2, M.Task>, +known: Map<&2, Nat>) -> Map<&2, Nat>:
   Signal.values(Signal.drain(Nat.mul(3n, List.length(&2, M.Thread, ts)), SignalStep{known, Signal.ids(ts)},
     Signal.launch.edges(ts, st, known, Signal.task.edges(tasks, known, Map.new(&2, List<&2, String>)))))
 
-def Signal.index.k(+st: M.State, +ts: List<&2, M.Thread>, tasks: List<&2, M.Task>) -> Map<&2, Nat>:
-  Signal.index.owns(st, ts, tasks, Signal.owns(ts, st, Signal.asks(M.Asks.all(st), Map.new(&2, Nat)), Map.new(&2, Nat)))
+def Signal.index.k(+st: SignalInput, +ts: List<&2, M.Thread>, tasks: List<&2, M.Task>) -> Map<&2, Nat>:
+  Signal.index.owns(st, ts, tasks, Signal.owns(ts, st, Signal.asks(SignalInput.asks(st), Map.new(&2, Nat)), Map.new(&2, Nat)))
 
-def Signal.index(+st: M.State) -> Map<&2, Nat>:
+def Signal.index.inputs(+st: SignalInput) -> Map<&2, Nat>:
   match st:
-    case M.State{_, ts, _, _, tk, _, _, _, _, _, _}:
+    case SignalInput{ts, tk, _, _, _}:
       Signal.index.k(st, Map.values(&2, M.Thread, ts), Map.values(&2, M.Task, tk))
+
+def Signal.index(st: M.State) -> Map<&2, Nat>:
+  Signal.index.inputs(SignalInput.of(st))
 
 def Signal.of(+st: M.State, t: M.Thread) -> Nat:
   Signal.at(Signal.index(st), M.Thread.id(t))
@@ -257,3 +282,21 @@ def Signal.island.go(ts: List<&2, M.Thread>, +info: Map<&2, String>, +acc: List<
 
 def Signal.island.threads(ts: List<&2, M.Thread>, info: Map<&2, String>) -> List<&2, M.Thread>:
   Signal.island.go(ts, info, Nil{})
+
+# Only these recorded history changes leave every Signal.index input alone.
+# New/unknown events invalidate by default; user messages touch the shelf.
+# This revision never controls timeline, rendered-sidebar or transport reuse.
+def SignalRevision.affects(c: M.Change) -> Bool:
+  match c:
+    case M.ActivityLogged{_, _, _, _, _, _}: False{}
+    case M.MessagePosted{_, _, M.Assistant{}, _, _}: False{}
+    case M.MessagePosted{_, _, M.System{}, _, _}: False{}
+    case _: True{}
+
+def SignalRevision.changed.go(cs: List<&2, M.Change>, changed: Bool) -> Bool:
+  match cs:
+    case Nil{}: changed
+    case c <> rest: SignalRevision.changed.go(rest, Bool.or(changed, SignalRevision.affects(c)))
+
+def SignalRevision.advance(cs: List<&2, M.Change>, old: Nat, head: Nat) -> Nat:
+  Bool.pick(Nat, SignalRevision.changed.go(cs, False{}), head, old)
