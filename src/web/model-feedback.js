@@ -3,9 +3,11 @@
 export class ModelFeedback {
   constructor(changed) { this.changed = changed;this.revision = 0;this.open = null; }
   choice(action, value, visible) {
-    if (!(action === 'flag' && value === 'models') && action !== 'model') return undefined;
+    // a choice leaves the menu open (another may follow); only the chip and
+    // the shade around the menu toggle it
+    if (!(action === 'flag' && value === 'models')) return undefined;
     const revision = ++this.revision;
-    this.open = action === 'model' ? false : !visible;
+    this.open = !visible;
     this.changed();
     return () => { if (revision === this.revision) { this.open = null;this.changed(); } };
   }

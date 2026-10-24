@@ -42,8 +42,9 @@ async function ready(id){await page.waitForFunction(id=>document.documentElement
   step=provider+'-picker';await page.locator('.model-chip[data-on-click="flag"][data-value="models"]').click();await page.locator('.model-menu').waitFor({state:'visible'});
   const choice=page.locator('.model-menu [data-on-click="model"][data-value="'+model+'"]');await choice.waitFor({state:'visible'});
   if(provider==='omp')assert((await page.locator('.model-menu').textContent()).includes('Fake OMP'));
-  await choice.click();await page.locator('.model-menu').waitFor({state:'hidden'});await ready(provider);await page.waitForFunction(model=>document.querySelector('.model-layer .row.on')?.dataset.value===model,model);
+  await choice.click();await ready(provider);await page.waitForFunction(model=>document.querySelector('.model-layer .row.on')?.dataset.value===model,model);assert(await page.locator('.model-menu').isVisible(),'the picker stays open after a choice');
   if(provider==='pi')assert.equal(await page.locator('.model-layer [data-on-click="effort"]:not([data-value^="@"])').count(),0);else assert(await page.locator('.model-layer [data-on-click="effort"][data-value="high"]').count());
+  await page.locator('.shade[data-value="models"]').click();await page.locator('.model-menu').waitFor({state:'hidden'});
   assert.equal(await page.locator('#composer').inputValue(),'Unsent synthetic '+provider+' draft');assert(rows().some(e=>e.$==='ModesSet'&&e.id===provider&&e.model===model));checks.push(provider+' composer model selection persists with draft; catalog label/thinking shape correct');
  }
  assert.equal(rows().filter(e=>e.$==='TurnChanged'&&e.state==='running').length,0);checks.push('No provider turn starts; temporary defaults do not affect user settings');

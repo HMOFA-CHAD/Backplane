@@ -1417,15 +1417,16 @@ def Ui.close(u: Ui, +key: String) -> Ui:
 def Ui.effort.set(prov: Bool, u: Ui, +value: String) -> Act:
   match prov:
     case True{}:
-      Ui.on_thread.p(Ui.close(u, "models"), "thread.provider", [J.KV{"provider", J.Str{String.drop(value, 1n)}}])
+      Ui.on_thread.p(u, "thread.provider", [J.KV{"provider", J.Str{String.drop(value, 1n)}}])
     case False{}:
       Ui.on_thread.p(u, "thread.effort", [J.KV{"effort", J.Str{value}}])
 
-# the selected thread's model (the picker closes)
+# the selected thread's model (the picker stays open for another choice; a
+# click outside it or on the chip closes it)
 def Ui.model(u: Ui, +model: String) -> Act:
   match u:
     case Ui{st, +sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
-      Ui.rpc(Ui.close(Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}, "models"), "thread.modes", [J.KV{"thread", J.Str{sel}}, J.KV{"model", J.Str{model}}])
+      Ui.rpc(Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}, "thread.modes", [J.KV{"thread", J.Str{sel}}, J.KV{"model", J.Str{model}}])
 
 def Ui.info(u: Ui, +k: String) -> String:
   match u:
