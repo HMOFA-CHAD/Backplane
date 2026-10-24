@@ -83,3 +83,26 @@ T3 Code's useful patterns here are separate metrics, environment selection,
 progressive results and honest cost/coverage labels. Backplane retains its
 existing Settings navigation and machine isolation. Its available counters do
 not justify copying rolling ranges, pricing overrides or historical scans.
+
+## Token stats in threads
+
+Settings → Usage → Token stats (off until turned on) puts a chip by a
+thread's send button: how much of the model's context the session holds
+("62k · 31%"), or, from a provider that gives no context reading, the tokens
+the thread's turns used. While it is on, the model chip drops its own
+"ctx" tail. Clicking the chip opens a panel with what the provider told:
+the context held and the room left, the last turn's input, cache read,
+cache write, output (and reasoning) and cost, the thread's totals with its
+cache hit share, and for Claude its models this session (helpers and
+subagents included) from `modelUsage`. A part a provider did not give shows
+a dash, never 0.
+
+Speed is Claude's alone. Its result line carries the process's running API
+time (`duration_api_ms`, every model call's own time added up) and output
+tokens per model; a turn's speed is its share of output over its share of
+that time, so tool runs and waits are not counted (and calls that ran side
+by side each count their own time). A session already running when the hub
+first saw it gets no speed until its next turn. No other provider reports
+call times, and a turn's wall time would count tools as the model's, so
+they get none. The readings are the settings `turn.last.<thread>`,
+`turn.speed.<thread>` and `turn.models.<thread>` (hub only, never mirrored).

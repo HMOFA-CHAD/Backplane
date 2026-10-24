@@ -344,8 +344,8 @@ def held() -> IO(Unit):
     C.Check.str("version: 2.1.286 has lifecycles", Bool.show(CM.Cmds.lifecycle("2.1.286")), "True")
     C.Check.str("version: 2.2.0 has", Bool.show(CM.Cmds.lifecycle("2.2.0")), "True")
     C.Check.str("version: 2.1.200 has not", Bool.show(CM.Cmds.lifecycle("2.1.200")), "False")
-    C.Check.str("ids: two text lines of one message differ", mid(B.Claude.block.k(0n, "t1", "m", 0n, 1n, 0n, "aaaaaaaa-1111", tb())) ++ "|" ++ mid(B.Claude.block.k(0n, "t1", "m", 0n, 1n, 0n, "bbbbbbbb-2222", tb())), "m:0:aaaaaaaa|m:0:bbbbbbbb")
-    C.Check.str("ids: a line with no uuid keeps the old id", mid(B.Claude.block.k(0n, "t1", "m", 0n, 1n, 0n, "", tb())), "m:0")
+    C.Check.str("ids: two text lines of one message differ", mid(B.Claude.block.k(0n, "t1", "m", 0n, 1n, 0n, "aaaaaaaa-1111", tb(), False{})) ++ "|" ++ mid(B.Claude.block.k(0n, "t1", "m", 0n, 1n, 0n, "bbbbbbbb-2222", tb(), False{})), "m:0:aaaaaaaa|m:0:bbbbbbbb")
+    C.Check.str("ids: a line with no uuid keeps the old id", mid(B.Claude.block.k(0n, "t1", "m", 0n, 1n, 0n, "", tb(), False{})), "m:0")
     C.Check.str("WorkSet stored and read back", Bool.show(store.back(C2.Change.decode(C2.Change.encode(M.WorkSet{"t1", "bg", "a\tx", 7n})))), "True")
 
 def main() -> IO(Unit):

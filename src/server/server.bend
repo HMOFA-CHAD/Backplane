@@ -1819,6 +1819,14 @@ def Hub.info(c: Cfg) -> J.Json:
     case Cfg{+home, _, host, port, _, _, _, +net, +tcfg, +views}:
       J.Json.obj(List.append(&2, J.KV, [J.KV{"telemetry.channel", J.Str{TI.Tio.channel(tcfg)}}, J.KV{"telemetry.id", J.Str{TI.Tio.id(tcfg)}}, J.KV{"telemetry.live", J.Str{Bool.pick(String, TI.Tio.can(tcfg, 0n), "1", "")}}, J.KV{"os", J.Str{TI.Tio.platform(tcfg, False{})}}, J.KV{"arch", J.Str{TI.Tio.platform(tcfg, True{})}}, J.KV{"home", J.Str{home}}, J.KV{"listen", J.Str{host ++ ":" ++ U32.show(port)}}], List.append(&2, J.KV, Info.net(net), Info.tch(net))))
 
+# the info as a render's memo key holds it (thin-actor.bend's Memo.key): all
+# of it but the models, told by their length (their text, every provider's
+# models, escaped into the key on every render was a tenth of its time).
+# A memo is kept a second at most, for a view.update that changed only the
+# live row, so models that change to the same length are seen at the next.
+def Hub.info.key(+c: Cfg) -> String:
+  J.Json.show(TA.Actor.lean(Hub.info(c))) ++ "|models:" ++ Nat.show(String.length(J.Json.get_str(Hub.info(c), "models", "")))
+
 # the pairing link (the tailnet address and the token) and its QR code: not
 # in the info every client hears, but told only to clients that came with
 # the token (Hub.join.k, Wire.pair), never to one let in the legacy way
@@ -3526,16 +3534,33 @@ def Parts.mcp.url() -> String:
 def Parts.mcp.claude() -> String:
   "\"pcbparts\":{\"type\":\"http\",\"url\":\"" ++ Parts.mcp.url() ++ "\"}"
 
-def Hub.agent_args(+cfg: Cfg, +thread: String, +model: String, +session: String, +r: M.RuntimeMode, +i: M.InteractionMode, prompt: String, +effort: String, +gen: String) -> List<&2, String>:
+# with the thinking setting on (model.bend's Think), Claude sends its
+# thinking's text (summarized; without the flag the blocks come empty)
+def Think.claude(think: Bool) -> List<&2, String>:
+  match think:
+    case True{}:
+      ["--thinking-display", "summarized"]
+    case False{}:
+      Nil{}
+
+# and Codex its reasoning summaries (items of type "reasoning")
+def Think.codex(think: Bool) -> List<&2, String>:
+  match think:
+    case True{}:
+      ["-c", "model_reasoning_summary=\"detailed\""]
+    case False{}:
+      Nil{}
+
+def Hub.agent_args(+cfg: Cfg, +thread: String, +model: String, +session: String, +r: M.RuntimeMode, +i: M.InteractionMode, prompt: String, +effort: String, +gen: String, think: Bool) -> List<&2, String>:
   match cfg:
     case Cfg{+home, _, _, _, _, +dirs, _, _, +tcfg, +views}:
-      List.append(&2, String, Q.Claude.args(model, session, r, i, prompt, List.append(&2, String, dirs, [home ++ "/attachments"])), List.append(&2, String, AG.Effort.args("claude", effort), List.append(&2, String, Q.Claude.plugins(dirs),
+      List.append(&2, String, Q.Claude.args(model, session, r, i, prompt, List.append(&2, String, dirs, [home ++ "/attachments"])), List.append(&2, String, List.append(&2, String, AG.Effort.args("claude", effort), Think.claude(think)), List.append(&2, String, Q.Claude.plugins(dirs),
         ["--mcp-config", "{\"mcpServers\":{\"backplane\":{\"type\":\"http\",\"url\":\"" ++ Hub.mcp_url.g(cfg, thread, gen) ++ "\"}," ++ Parts.mcp.claude() ++ "}}"])))
 
 # what a Claude process was started with; a turn asking for something else
-# (another model, mode or effort) restarts it
-def Agent.key(+model: String, r: M.RuntimeMode, i: M.InteractionMode, +effort: String) -> String:
-  model ++ "|" ++ C.Runtime.name(r) ++ "|" ++ C.Interaction.name(i) ++ "|" ++ AG.Effort.of("claude", effort)
+# (another model, mode or effort, or the thinking setting turned) restarts it
+def Agent.key(+model: String, r: M.RuntimeMode, i: M.InteractionMode, +effort: String, think: Bool) -> String:
+  model ++ "|" ++ C.Runtime.name(r) ++ "|" ++ C.Interaction.name(i) ++ "|" ++ AG.Effort.of("claude", effort) ++ Bool.pick(String, think, "|think", "")
 
 def Agent.same(m: Maybe<&2, Agent>, +key: String) -> Bool:
   match m:
@@ -3578,8 +3603,8 @@ def Agent.is(m: Maybe<&2, Agent>) -> Bool:
 
 # `codex exec` for one turn, with this thread's MCP endpoint and the
 # Backplane instructions (the same runtime block Claude gets)
-def Codex.args(+cfg: Cfg, +thread: String, +model: String, +session: String, r: M.RuntimeMode, +text: String, prompt: String, +effort: String, +gen: String, mailrun: Bool) -> List<&2, String>:
-  List.concat(&2, String, [Codex.head.k(String.is_empty(session), session), Codex.sandbox(r), Codex.opt("-m", model), AG.Effort.args("codex", effort), AT.Att.codex(text), MD.Disposition.codex(mailrun),
+def Codex.args(+cfg: Cfg, +thread: String, +model: String, +session: String, r: M.RuntimeMode, +text: String, prompt: String, +effort: String, +gen: String, mailrun: Bool, think: Bool) -> List<&2, String>:
+  List.concat(&2, String, [Codex.head.k(String.is_empty(session), session), Codex.sandbox(r), Codex.opt("-m", model), AG.Effort.args("codex", effort), Think.codex(think), AT.Att.codex(text), MD.Disposition.codex(mailrun),
     ["-c", "mcp_servers.backplane.url=\"" ++ Hub.mcp_url.g(cfg, thread, gen) ++ "\"", "-c", "mcp_servers.pcbparts.url=\"" ++ Parts.mcp.url() ++ "\"",
      "-c", "developer_instructions=" ++ J.Json.show(J.Str{prompt}), text]])
 
@@ -4519,7 +4544,7 @@ def Codex.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: Str
     +fs : K.Files <- Files.prepared(thread, cwd, inbox)
     +ss : List<&2, AG.USkill> <- Skills.scan(cwd)
     +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
-    Codex.run(Codex.args(cfg, thread, model, session, r, AG.Mention.expand("codex", text, ss), Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss), Hub.effort_of(st, thread), gen, MD.Disposition.launch(st, thread)), cwd, thread, gen, inbox)
+    Codex.run(Codex.args(cfg, thread, model, session, r, AG.Mention.expand("codex", text, ss), Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss), Hub.effort_of(st, thread), gen, MD.Disposition.launch(st, thread), M.Think.on(st)), cwd, thread, gen, inbox)
 
 def Grok.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +text: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
@@ -8960,7 +8985,7 @@ def Claude.job(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: S
     +fs : K.Files <- K.Files.read(cwd)
     ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, AutoView{thread, fs})
     +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
-    Keyring.gate("claude", IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, H.Proc.spawn("env", "MCP_TOOL_TIMEOUT=86400000" <> "CLAUDE_CODE_ENABLE_TODO_TOOLS=1" <> "claude" <> Hub.agent_args(cfg, thread, model, session, r, i, Hub.prompt(cfg, st, thread, cwd, fs, keys), effort, gen), cwd, 3),
+    Keyring.gate("claude", IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, H.Proc.spawn("env", "MCP_TOOL_TIMEOUT=86400000" <> "CLAUDE_CODE_ENABLE_TODO_TOOLS=1" <> "claude" <> Hub.agent_args(cfg, thread, model, session, r, i, Hub.prompt(cfg, st, thread, cwd, fs, keys), effort, gen, M.Think.on(st)), cwd, 3),
       res => Claude.started(res, thread, gen, cwd, input, inbox)), Claude.fail(thread, gen, KR.Keyring.refusal("claude"), inbox))
 
 def Agents.pid.k(same: Bool, a: Agent, +pid: U32) -> Agent:
@@ -9016,7 +9041,7 @@ def Hub.start.spawn(m: Maybe<&2, Agent>, h: Hub, +thread: String, +cwd: String, 
         +now : Nat <- Now.nat()
         +input : Chan(String) <- Chan.new(String, 256)
         IO.spawn(Unit, Claude.job(cfg, st, thread, cwd, model, session, r, i, effort, gen, input, inbox))
-        return Hub{st, f, ls, cl, Agent{thread, input, 0, Agent.key(model, r, i, effort), [ARun.new.h(gen, now)]} <> Agents.drop(as, thread), inbox, cfg, note}
+        return Hub{st, f, ls, cl, Agent{thread, input, 0, Agent.key(model, r, i, effort, M.Think.on(st)), [ARun.new.h(gen, now)]} <> Agents.drop(as, thread), inbox, cfg, note}
 
 def Hub.start.r(r: Hub & List<&2, String>, m: Maybe<&2, Agent>, +thread: String, +cwd: String, +model: String, +session: String, +rt: M.RuntimeMode, +i: M.InteractionMode, +effort: String, +gen: String) -> IO(Hub):
   IO.bind(Hub, Hub, Hub.announce(r), h => Hub.start.spawn(m, h, thread, cwd, model, session, rt, i, effort, gen))
@@ -9032,7 +9057,9 @@ def Hub.start.go(same: Bool, +m: Maybe<&2, Agent>, h: Hub, +thread: String, +cwd
         Hub.start.r(cr, m, thread, cwd, model, session, r, i, effort, Hub.gen(st, now))
 
 def Hub.start.k(+m: Maybe<&2, Agent>, h: Hub, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +i: M.InteractionMode, +effort: String) -> IO(Hub):
-  Hub.start.go(Agent.same(m, Agent.key(model, r, i, effort)), m, h, thread, cwd, model, session, r, i, effort)
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Hub.start.go(Agent.same(m, Agent.key(model, r, i, effort, M.Think.on(st))), m, Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, cwd, model, session, r, i, effort)
 
 def Hub.autoview(h: Hub, +thread: String, fs: K.Files) -> IO(Hub):
   match h:
@@ -11329,7 +11356,7 @@ def Hub.thin.render.at(h: Hub, +client: U32, +o: J.Json, +c: Client, +now: Nat, 
       +p = Hub.thin.input(String.eq(J.Json.get_str(o, "m", ""), "view.action"), J.Json.get_obj(o, "p"), ThinContext.cid(context))
       +web = String.eq(Client.thin.mode(c), "view-web")
       +thread = TV.Target.thread(st, J.Json.get_obj(p, "target"))
-      +key = TA.Memo.key(M.State.seq(st), J.Json.show(Hub.info(cfg)), p, anchor, ThinContext.view(context), web, thread)
+      +key = TA.Memo.key(M.State.seq(st), Hub.info.key(cfg), p, anchor, ThinContext.view(context), web, thread)
       Hub.thin.render.memo(TA.Memo.reply(TA.Actor.memos(ThinContext.actors(context)), String.eq(J.Json.get_str(o, "m", ""), "view.update"), key, ms, web,
         TLIVE.Stream.get(Cfg.thin.streams(cfg), thread), thread, Cfg.thin.epoch(cfg), J.Json.get_obj(p, "target"), TA.Actor.loc(ThinContext.actors(context))),
         Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, c, now, context, anchor, p, key, ms)
@@ -11403,13 +11430,23 @@ def Hub.thin.message(h: Hub, +client: U32, +o: J.Json, +c: Client, +now: Nat) ->
       +thread = TV.Target.thread(st, ThinContext.target(Client.thin.context(c)))
       Hub.thin.message_kind(String.eq(J.Json.get_str(J.Json.get_obj(o, "p"), "entryId", ""), TLIVE.Stream.id(thread)), Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, c, now, thread)
 
+# a message sent from an earlier page goes back to the newest (the reader
+# sees what was sent); any other action keeps the page
+def Hub.thin.sends(+action: String) -> Bool:
+  Bool.or(String.eq(action, "send"), String.eq(action, "send-alt"))
+
+def Hub.thin.act(send: Bool, h: Hub, +client: U32, +o: J.Json, +c: Client, +now: Nat) -> IO(Hub):
+  match send:
+    case True{}: Hub.thin.render(h, client, o, c, now, Hub.thin.context.for(False{}, J.Json.get_obj(o, "p"), c, "", 0n), 0n)
+    case False{}: Hub.thin.render(h, client, o, c, now, Client.thin.context(c), ThinContext.anchor(Client.thin.context(c)))
+
 def Hub.thin.dispatch(+kind: Nat, h: Hub, +client: U32, +o: J.Json, +c: Client, +now: Nat) -> IO(Hub):
   match kind h:
     case 0n _: Hub.thin.render(h, client, o, c, now, Hub.thin.context.for(True{}, J.Json.get_obj(o, "p"), c, J.Json.as_raw(J.Json.get(o, "id"), "0"), 0n), 0n)
     case 1n Hub{st, f, ls, cl, as, inbox, +cfg, note}: Hub.thin.page(Hub.thin.cursor(J.Json.get_obj(o, "p"), Cfg.thin.epoch(cfg), ""), Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, c, now)
     case 2n Hub{st, f, ls, cl, as, inbox, +cfg, note}: Hub.thin.search.valid(Hub.thin.query.valid(J.Json.get_obj(o, "p")), Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, c, now, Client.thin.context(c), Hub.thin.cursor(J.Json.get_obj(o, "p"), Cfg.thin.epoch(cfg), J.Json.get_str(J.Json.get_obj(o, "p"), "query", "")))
     case 3n _: Hub.thin.render(h, client, TV.Obj.put(o, "p", TV.Obj.put(J.Json.get_obj(o, "p"), "action", J.Str{""})), c, now, Client.thin.context(c), ThinContext.anchor(Client.thin.context(c)))
-    case 4n _: Hub.thin.render(h, client, o, c, now, Client.thin.context(c), ThinContext.anchor(Client.thin.context(c)))
+    case 4n _: Hub.thin.act(Hub.thin.sends(J.Json.get_str(J.Json.get_obj(o, "p"), "action", "")), h, client, o, c, now)
     case 5n _: Hub.thin.message(h, client, o, c, now)
     case 6n _: Hub.thin.respond(h, client, o, J.Json.obj([J.KV{"remoteReady", J.Flag{False{}}}, J.KV{"cmds", J.Json.arr(Nil{})}, J.KV{"cancelled", J.Flag{False{}}}]), c, Client.thin.context(c), now)
     case _ _: Hub.thin.error(h, client, o, "INVALID_REQUEST")

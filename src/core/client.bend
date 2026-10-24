@@ -371,10 +371,22 @@ def Info.put.m(j: Maybe<&2, J.Json>, +m: Map<&2, String>, +v: String) -> Map<&2,
     case _:
       Map.set(&2, String, m, "models", v)
 
+# The models info (every provider's models, opencode's hundreds) is parsed
+# and cut down only when it changed: the hub's views merge the info on
+# every render, and parsing it again each time was most of a render's time
+# (measured 2026-10-24: ~60% of the hub's CPU while a long thread scrolled).
+# "models.raw" keeps the text the cut-down parts came from.
+def Info.put.same(same: Bool, +m: Map<&2, String>, +v: String) -> Map<&2, String>:
+  match same:
+    case True{}:
+      m
+    case False{}:
+      Map.set(&2, String, Info.put.m(J.Json.parse(v), m, v), "models.raw", v)
+
 def Info.put.k(models: Bool, +m: Map<&2, String>, +k: String, +v: String) -> Map<&2, String>:
   match models:
     case True{}:
-      Info.put.m(J.Json.parse(v), m, v)
+      Info.put.same(String.eq(Str.get(m, "models.raw"), v), m, v)
     case False{}:
       Map.set(&2, String, m, k, v)
 
@@ -1417,15 +1429,16 @@ def Ui.close(u: Ui, +key: String) -> Ui:
 def Ui.effort.set(prov: Bool, u: Ui, +value: String) -> Act:
   match prov:
     case True{}:
-      Ui.on_thread.p(Ui.close(u, "models"), "thread.provider", [J.KV{"provider", J.Str{String.drop(value, 1n)}}])
+      Ui.on_thread.p(u, "thread.provider", [J.KV{"provider", J.Str{String.drop(value, 1n)}}])
     case False{}:
       Ui.on_thread.p(u, "thread.effort", [J.KV{"effort", J.Str{value}}])
 
-# the selected thread's model (the picker closes)
+# the selected thread's model (the picker stays open for another choice; a
+# click outside it or on the chip closes it)
 def Ui.model(u: Ui, +model: String) -> Act:
   match u:
     case Ui{st, +sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
-      Ui.rpc(Ui.close(Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}, "models"), "thread.modes", [J.KV{"thread", J.Str{sel}}, J.KV{"model", J.Str{model}}])
+      Ui.rpc(Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}, "thread.modes", [J.KV{"thread", J.Str{sel}}, J.KV{"model", J.Str{model}}])
 
 def Ui.info(u: Ui, +k: String) -> String:
   match u:
@@ -2611,6 +2624,15 @@ def Skills.mark(rs: List<&2, SkillRow>, +k: Nat) -> List<&2, SkillRow>:
 def Skills.marked(+rs: List<&2, SkillRow>, +at: Nat) -> List<&2, SkillRow>:
   Skills.mark(rs, Nat.add(Bool.pick(Nat, Nat.is_lt(at, List.length(&2, SkillRow, rs)), at, 0n), 1n))
 
+# the slash commands a draft being typed offers, the first marked, from
+# the draft alone (the browser's composer between the hub's renders,
+# view.bend's View.local; the hub adds the thread's own skills)
+def Slash.local(claude: Bool, +draft: String) -> List<&2, SkillRow>:
+  Skills.marked(Slash.rows(SL.Slash.cmds(claude, String.drop(Skills.token(draft), 1n))), 0n)
+
+def Slash.typing.d(+draft: String) -> Bool:
+  SL.Slash.typing(draft)
+
 def Ui.skills.k(shut: Bool, +st: M.State, +sel: String, +dr: Map<&2, String>, +nf: Map<&2, String>) -> List<&2, SkillRow>:
   match shut:
     case True{}:
@@ -2712,6 +2734,13 @@ def Effort.known(m: Maybe<&2, J.Json>, +provider: String) -> List<&2, String>:
       AG.Effort.keep(AG.Effort.levels(provider), Models.strs(J.Json.elems(j)))
     case None{}:
       AG.Effort.levels(provider)
+
+# Thinking's opt-in (model.bend's Think), on Settings > Agents
+def Think.label() -> String:
+  "Show thinking"
+
+def Think.note() -> String:
+  "Ask agents for their thinking and show it in the thread, folded (Claude, Codex and Pi; a Claude session restarts to take it)"
 
 def Effort.name(+e: String) -> String:
   Bool.pick(String, String.is_empty(e), "auto", e)
@@ -4296,10 +4325,13 @@ def Proj.machine.row.loc(+l: I.Loc, +u: Ui) -> List<&2, PItem>:
 def Proj.machine.row(+u: Ui) -> List<&2, PItem>:
   Proj.machine.row.loc(Lang.loc(u), u)
 
+# the picker's field: a form field ("bfield" "proj", @f.proj), so the
+# browser keeps what is typed and merges keystrokes instead of waiting on
+# the hub for each one (law-free: typing sets it, Bots.bfield)
 def Proj.query(u: Ui) -> String:
   match u:
     case Ui{_, _, dr, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
-      Str.get(dr, "@proj")
+      Str.get(dr, "@f.proj")
 
 def Proj.index(u: Ui) -> Nat:
   match u:
@@ -4309,7 +4341,7 @@ def Proj.index(u: Ui) -> Nat:
 def Proj.set(u: Ui, +q: String, +i: Nat) -> Ui:
   match u:
     case Ui{st, sel, +dr, live, op, on, now, ad, pa, ve, rid, w, er, note, nf, ob, tr}:
-      Ui{st, sel, Map.set(&2, String, Map.set(&2, String, dr, "@proj", q), "@proj.i", Nat.show(i)), live, op, on, now, ad, pa, ve, rid, w, er, note, nf, ob, tr}
+      Ui{st, sel, Map.set(&2, String, Map.set(&2, String, dr, "@f.proj", q), "@proj.i", Nat.show(i)), live, op, on, now, ad, pa, ve, rid, w, er, note, nf, ob, tr}
 
 def Proj.reset(u: Ui, +q: String) -> Ui:
   Ui.info_set(Proj.set(u, q, 0n), "proj.err", "")
@@ -7093,11 +7125,19 @@ def Mate.lead(+u: Ui) -> String:
 def Far.chat(u: Ui, +id: String) -> Act:
   Act{Bots.views(u, "", "", id), [Focus{"remote-send"}, ScrollEnd{}]}
 
+# the project picker's query changed: its highlight goes back to the top
+def Bots.bfield.proj(proj: Bool, u: Ui) -> Ui:
+  match proj:
+    case True{}:
+      Ui.scratch_set(u, "@proj.i", "0")
+    case False{}:
+      u
+
 # "name\u001ftext": a form field
 def Bots.bfield.k(ps: List<&2, String>, u: Ui) -> Ui:
   match ps:
-    case k <> t:
-      Ui.scratch_set(u, "@f." ++ k, String.join(t, "\u{1f}"))
+    case +k <> t:
+      Bots.bfield.proj(String.eq(k, "proj"), Ui.scratch_set(u, "@f." ++ k, String.join(t, "\u{1f}")))
     case Nil{}:
       u
 
@@ -9902,11 +9942,12 @@ def Settings.rows.of(i: Nat, +l: I.Loc) -> List<&2, String>:
   match i:
     case 0n: [MSG.T.settings.theme(l), MSG.T.settings.lang(l), MSG.T.settings.sidebar(l), MSG.T.settings.textsize(l)]
     case 1n: [MSG.T.settings.settle(l), MSG.T.settings.restart(l)]
-    case 2n: [MSG.T.settings.provider(l), MSG.T.settings.model(l)]
+    case 2n: [MSG.T.settings.provider(l), MSG.T.settings.model(l), Think.label()]
     case 3n: [MSG.T.settings.writing.provider(l)]
     case 4n: ["KiCad", "FreeCAD", "KiCad IPC"]
     case 5n: ["Tailscale", MSG.T.settings.pair(l), MSG.T.settings.channel(l)]
     case 11n: [MSG.T.settings.tour(l)]
+    case 10n: [UZ.Ts.label()]
     case 13n: [Fab.set.order.label(), Fab.set.label()]
     case _: Nil{}
 
@@ -9915,7 +9956,7 @@ def Settings.words(i: Nat) -> String:
   match i:
     case 0n: "appearance dark light theme font text size zoom scale language sidebar"
     case 1n: "threads settle restart continue notifications alerts notify"
-    case 2n: "agents provider model claude codex grok opencode muse pi omp effort"
+    case 2n: "agents provider model claude codex grok opencode muse pi omp effort thinking reasoning chain of thought"
     case 3n: "writing titles summaries text model"
     case 4n: "cad kicad freecad ipc path schematic board"
     case 5n: "network tailscale tailnet pairing pair phone qr machines sync update channel nightly stable version"
@@ -9923,7 +9964,7 @@ def Settings.words(i: Nat) -> String:
     case 7n: "keys api secrets tokens environment"
     case 8n: "antigravity google gemini sign in"
     case 9n: "timezone time zone clock"
-    case 10n: "usage limits tokens cost"
+    case 10n: "usage limits tokens cost token stats speed tok/s context cache"
     case 11n: "about tour help version"
     case 12n: "privacy share data"
     case 13n: "ordering order buy fab manufacturing quote price estimates stripe payment checkout fee"

@@ -49,7 +49,7 @@ export function presentationTarget(session) {
 // it alone validates transport identity, generations, targets and RPC ids.
 export class ThinHost {
   constructor(api, Views, next) {
-    this.api = api;this.hub = api.hub;this.ready = false;this.window = null;
+    this.api = api;this.hub = api.hub;this.ready = false;this.window = null;this.cursor = '';this.back = [];
     this.session = clone(api.session());
     this.validatePresentation = api.validatePresentation || validatePresentation;
     const rid = this.session.rid;
@@ -97,7 +97,7 @@ export class ThinHost {
     for (const operation of this.actions) operation.settled?.(false);
     this.actions = [];this.fields.clear();
     this.messages.clear();this.target = target;
-    this.ready = false;this.window = null;this.api.state({ phase: 'loading', remoteReady: false });
+    this.ready = false;this.window = null;this.cursor = '';this.back = [];this.api.state({ phase: 'loading', remoteReady: false });
     this.api.selection?.(target, this.session);
     return this.flush(this.client.select(this.hub, target, requestSession(this.session, false, target), this.api.cid), { selection: true });
   }
@@ -123,6 +123,9 @@ export class ThinHost {
       return true;
     }
     if (!this.ready) { settled?.(false);this.api.blocked();return true; }
+    // a message sent from an earlier page shows the newest (the hub's
+    // Hub.thin.act moves the page there too)
+    if (action === 'send' || action === 'send-alt') { this.cursor = '';this.back = []; }
     if (action === 'bfield') {
       const split = value.indexOf('\u001f');
       if (split <= 0) { settled?.(false);this.api.blocked();return false; }
@@ -192,10 +195,20 @@ export class ThinHost {
     this.active = result.id || null;
     this.flush(result, { viewerRevision: operation.viewerRevision ?? this.viewerRevision, revision: operation.revision, operation, selection: this.selectionRevision });
   }
+  // Scrolling pages: each older page overlaps the one before by half
+  // (thin-view.bend's Page.mid), and the cursors that led here are kept so
+  // scrolling back down retraces them to the newest ('' : no cursor).
   page() {
     if (!this.ready || !this.window?.older) return false;
-    return this.flush(this.client.request(this.hub, 'view.page', { cursor: this.window.older, session: requestSession(this.session, false, this.target) }));
+    this.back.push(this.cursor);this.cursor = this.window.older;
+    return this.flush(this.client.request(this.hub, 'view.page', { cursor: this.cursor, session: requestSession(this.session, false, this.target) }));
   }
+  newer() {
+    if (!this.ready || !this.back.length) return false;
+    this.cursor = this.back.pop();
+    return this.flush(this.client.request(this.hub, 'view.page', { cursor: this.cursor, session: requestSession(this.session, false, this.target) }));
+  }
+  atNewest() { return this.back.length === 0; }
   search(query, cursor = '') {
     if (!this.ready) return false;
     return this.flush(this.client.request(this.hub, 'view.search', { query, cursor }));

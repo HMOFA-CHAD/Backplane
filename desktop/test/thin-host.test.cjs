@@ -54,6 +54,15 @@ test('a draft typed while first view travels remains local and overtakes its old
  const f=await fixture();f.host.greeting(f.greeting);const old=f.reply();f.host.request('draft','NEW 日本語 👩‍💻');f.host.receive(old);
  assert.equal(f.getSession().drafts.A,'NEW 日本語 👩‍💻');assert.equal(f.disk.get('A'),'NEW 日本語 👩‍💻');assert.equal(f.sent.length,1);
 });
+test('scrolling pages: older pages are retraced back down to the newest, and a send returns there',async()=>{
+ const f=await fixture();f.open();assert.equal(f.host.atNewest(),true);assert.equal(f.host.newer(),false);
+ f.host.page();assert.equal(f.sent.at(-1).p.cursor,'older-bound-to-A');assert.equal(f.host.atNewest(),false);
+ f.host.receive(f.reply(f.sent.at(-1),{window:{ids:['r2'],older:'older-2',hasMore:true,anchor:{id:'r2',offset:0},partial:[]}}));
+ f.host.page();assert.equal(f.sent.at(-1).p.cursor,'older-2');f.host.receive(f.reply(f.sent.at(-1)));
+ f.host.newer();assert.equal(f.sent.at(-1).m,'view.page');assert.equal(f.sent.at(-1).p.cursor,'older-bound-to-A');f.host.receive(f.reply(f.sent.at(-1)));
+ f.host.newer();assert.equal(f.sent.at(-1).p.cursor,'');assert.equal(f.host.atNewest(),true);f.host.receive(f.reply(f.sent.at(-1)));
+ f.host.page();f.host.receive(f.reply(f.sent.at(-1)));assert.equal(f.host.atNewest(),false);f.host.request('send','');assert.equal(f.host.atNewest(),true);
+});
 test('page and search are explicit requests; ordinary open and selected updates never fetch older pages',async()=>{
  const f=await fixture();f.open();assert.equal(f.sent.length,1);f.host.page();assert.equal(f.sent.at(-1).m,'view.page');assert.equal(f.sent.at(-1).p.cursor,'older-bound-to-A');
  f.host.search('日本語 query');assert.equal(f.sent.at(-1).m,'view.search');assert.equal(f.sent.at(-1).p.query,'日本語 query');

@@ -211,12 +211,19 @@ def Pi.para(first: Bool, a: AC.Acp) -> AC.AcpOut:
     case False{}:
       Pi.delta(a, "\n\n")
 
+# a thought block's end carries the whole thought: told as a reasoning
+# item, which the hub logs only while thinking is on (hub.bend's Think)
+def Pi.thought(+text: String) -> String:
+  AC.Acp.event("item.completed", [J.KV{"item", J.Json.obj([J.KV{"type", J.Str{"reasoning"}}, J.KV{"text", J.Str{text}}])}])
+
 def Pi.update.k(i: Nat, +a: AC.Acp, +e: J.Json) -> AC.AcpOut:
   match i:
     case 0n:
       Pi.para(String.is_empty(Pi.buf(a)), a)
     case 1n:
       Pi.delta(a, J.Json.get_str(e, "delta", ""))
+    case 2n:
+      AC.AcpOut{a, Nil{}, [Pi.thought(J.Json.get_str(e, "content", ""))], Nil{}}
     case _:
       Pi.none(a)
 
@@ -369,7 +376,7 @@ def Pi.line.k(i: Nat, +a: AC.Acp, +t: AC.AcpTurn, +o: J.Json) -> AC.AcpOut:
     case 0n:
       Pi.reply.k(AC.Acp.pos(["0", "1", "2"], J.Json.get_str(o, "id", ""), 0n), J.Json.get_bool(o, "success", False{}), a, t, o)
     case 1n:
-      Pi.update.k(AC.Acp.pos(["text_start", "text_delta"], J.Json.get_str(J.Json.get_obj(o, "assistantMessageEvent"), "type", ""), 0n), a, J.Json.get_obj(o, "assistantMessageEvent"))
+      Pi.update.k(AC.Acp.pos(["text_start", "text_delta", "thinking_end"], J.Json.get_str(J.Json.get_obj(o, "assistantMessageEvent"), "type", ""), 0n), a, J.Json.get_obj(o, "assistantMessageEvent"))
     case 2n:
       AC.AcpOut{a, Nil{}, [Pi.log(o)], Nil{}}
     case 3n:

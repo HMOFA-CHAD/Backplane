@@ -88,6 +88,7 @@ def Icon.all() -> List<&2, IDef>:
    IDef{"image", [Icon.s("M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"), Icon.s("M9 7a2 2 0 1 0 0 4a2 2 0 1 0 0-4Z"), Icon.s("m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21")]},
    IDef{"folder", [Icon.s("M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z")]},
    IDef{"cpu", [Icon.s("M4 4h16v16H4z"), Icon.s("M9 9h6v6H9z"), Icon.s("M15 2v2"), Icon.s("M15 20v2"), Icon.s("M2 15h2"), Icon.s("M2 9h2"), Icon.s("M20 15h2"), Icon.s("M20 9h2"), Icon.s("M9 2v2"), Icon.s("M9 20v2")]},
+   IDef{"gauge", [Icon.s("M12 14L16 10"), Icon.s("M3.34 19a10 10 0 1 1 17.32 0")]},
    IDef{"zap", [Icon.s("M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z")]},
    IDef{"radio", [Icon.s("M4.9 19.1C1 15.2 1 8.8 4.9 4.9"), Icon.s("M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"), Icon.s("M10 12a2 2 0 1 0 4 0a2 2 0 1 0-4 0"), Icon.s("M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"), Icon.s("M19.1 4.9C23 8.8 23 15.1 19.1 19")]},
    IDef{"layers", [Icon.s("M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"), Icon.s("m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"), Icon.s("m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65")]},
@@ -140,7 +141,7 @@ def Icon.used() -> List<&2, String>:
   ["plus", "x", "chevron-down", "chevron-right", "settings", "paperclip", "arrow-up", "stop", "mic", "search", "sun", "moon",
    "play", "pause", "chevron-left", "skip-back", "skip-forward", "history", "git-compare", "message-square",
    "pin", "circle-check", "clock", "archive", "trash", "git-fork", "undo", "terminal", "panel-right", "diff",
-   "folder", "file", "file-text", "image", "circuit-board", "cpu", "box", "bell", "repeat", "square-pen"]
+   "folder", "file", "file-text", "image", "circuit-board", "cpu", "box", "bell", "repeat", "square-pen", "gauge"]
 
 def Icon.missing.k(none: Bool, +n: String, rest: List<&2, String>) -> List<&2, String>:
   match none:

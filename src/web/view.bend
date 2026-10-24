@@ -102,7 +102,7 @@ def VLabel.option.k(+lc: I.Loc, known: Bool, +v: String) -> String:
     case False{}: Bool.pick(String, String.is_empty(v), MSG.T.common.default(lc), v)
 
 def VLabel.option(+lc: I.Loc, +key: String, v: String) -> String:
-  VLabel.option.k(lc, Bool.or(Bool.or(String.eq(key, "order.enabled"), String.eq(key, "order.estimates")), Bool.or(String.eq(key, "restart.continue"), Bool.or(String.eq(key, "ui.theme"), Bool.or(String.eq(key, "sidebar.view"), Bool.or(String.eq(key, "update.channel"), Bool.or(String.eq(key, "kicad.ipc"), Bool.or(String.starts_with(key, "notify."), String.starts_with(key, "sync.")))))))), v)
+  VLabel.option.k(lc, Bool.or(Bool.or(Bool.or(String.eq(key, "order.enabled"), String.eq(key, "order.estimates")), Bool.or(String.eq(key, "ui.tokstats"), String.eq(key, "agent.thinking"))), Bool.or(String.eq(key, "restart.continue"), Bool.or(String.eq(key, "ui.theme"), Bool.or(String.eq(key, "sidebar.view"), Bool.or(String.eq(key, "update.channel"), Bool.or(String.eq(key, "kicad.ipc"), Bool.or(String.starts_with(key, "notify."), String.starts_with(key, "sync.")))))))), v)
 
 # Display labels only: metadata keys and submitted chip values stay unchanged.
 def VLabel.effort(+lc: I.Loc, +e: String) -> String:
@@ -1417,6 +1417,10 @@ def View.usage.pagers(cs: List<&2, UP.UpControl>) -> List<&2, D.Node>:
 def View.usage.page(+lc: I.Loc, +u: U.Ui) -> List<&2, D.Node>:
   UV.Uv.page(lc, u)
 
+# the opt-in for the composer's token chip (usage.bend's Ts)
+def View.tok.set(+lc: I.Loc, +st: M.State) -> D.Node:
+  View.setrow(UZ.Ts.label(), UZ.Ts.blurb(), View.chips.loc(lc, ["on", "off"], Bool.pick(String, UZ.Ts.on(st), "on", "off"), UZ.Ts.key()))
+
 def View.tz.set(+lc: I.Loc, +u: U.Ui) -> List<&2, D.Node>:
   [View.setrow(MSG.T.settings.zone(lc), U.Tzs.line.loc(lc, u),
     [WB.WB.input("tzname", "tzname", U.Ui.scratch(u, "@f.tzname"), "Europe/Helsinki", "tz-set"), D.Dom.button("primary", "tz-set", "", MSG.T.settings.tz.choose(lc), MSG.T.common.set(lc)),
@@ -1526,7 +1530,8 @@ def View.settings.rows.k(i: Nat, +lc: I.Loc, +u: U.Ui, +st: M.State, +nf: Map<&2
     case 2n: List.concat(&2, D.Node, [[View.setrow(MSG.T.settings.provider(lc), MSG.T.settings.agents.note(lc, Bool.pick(String, String.is_empty(U.Models.cli(U.Str.get(nf, "models"), prov)), MSG.T.settings.provider.missing(lc, prov), U.Models.cli(U.Str.get(nf, "models"), prov))), View.chips.loc(lc, ["claude", "codex", "grok", "muse", "antigravity", "opencode", "pi", "omp"], prov, "agent.provider"))],
       [View.setrow(MSG.T.settings.model(lc), Bool.pick(String, String.is_empty(M.Setting.get(st, "agent.model", "")), MSG.T.common.default(lc), M.Setting.get(st, "agent.model", "")) ++ ": " ++ U.Models.label_of(U.Models.of(nf, prov), prov, M.Setting.get(st, "agent.model", "")),
         D.Dom.cat(View.menu.find(lc, U.Models.search(U.Models.menu(U.Models.of(nf, prov), prov)), U.Ui.scratch(u, "@f.mq")),
-          View.chips.loc(lc, U.Models.settings(U.Models.of(nf, prov), prov, U.Ui.scratch(u, "@f.mq"), M.Setting.get(st, "agent.model", "")), M.Setting.get(st, "agent.model", ""), "agent.model")))]])
+          View.chips.loc(lc, U.Models.settings(U.Models.of(nf, prov), prov, U.Ui.scratch(u, "@f.mq"), M.Setting.get(st, "agent.model", "")), M.Setting.get(st, "agent.model", ""), "agent.model")))],
+      [View.setrow(U.Think.label(), U.Think.note(), View.chips.loc(lc, ["on", "off"], Bool.pick(String, M.Think.on(st), "on", "off"), M.Think.key()))]])
     case 3n: List.concat(&2, D.Node, [[View.setrow(MSG.T.settings.writing.provider(lc), MSG.T.web.settings.writing.note(lc), View.chips.loc(lc, ["claude", "codex", "grok", "muse"], U.TextGen.provider(st), "text.provider"))],
       [View.setrow(MSG.T.web.settings.writing.model(lc), Bool.pick(String, String.is_empty(U.TextGen.model(st)), MSG.T.common.default(lc), U.TextGen.model(st)) ++ ": " ++ U.Models.label_of(U.Str.get(nf, "models"), U.TextGen.provider(st), U.TextGen.model(st)),
         View.chips.loc(lc, U.Models.menu(U.Str.get(nf, "models"), U.TextGen.provider(st)), U.TextGen.model(st), "text.model"))]])
@@ -1544,7 +1549,7 @@ def View.settings.rows.k(i: Nat, +lc: I.Loc, +u: U.Ui, +st: M.State, +nf: Map<&2
     case 7n: List.concat(&2, D.Node, [View.keys.set(lc, u)])
     case 8n: List.concat(&2, D.Node, [View.agy.rows(U.Agv.rows.loc(lc, u))])
     case 9n: List.concat(&2, D.Node, [View.tz.set(lc, u)])
-    case 10n: View.usage.page(lc, u)
+    case 10n: View.tok.set(lc, st) <> View.usage.page(lc, u)
     case 11n: List.concat(&2, D.Node, [[View.setrow(MSG.T.settings.tour(lc), MSG.T.settings.tour.note(lc), [D.Dom.button("", "ob-open", "", MSG.T.settings.tour.again(lc), MSG.T.settings.tour.show(lc))])]])
     case 12n: View.agy.rows(U.Share.rows(u))
     case 13n: List.concat(&2, D.Node, [[D.El{"p", "", [D.At{"class", "set-about"}], [D.Txt{U.Fab.set.about()}]}],
@@ -1648,7 +1653,7 @@ def View.picker(+lc: I.Loc, open: Bool, +u: U.Ui) -> List<&2, D.Node>:
           D.Dom.div("subthread-route-note", D.Dom.when(U.ThreadTree.routing(u), D.Dom.span("", U.ThreadTree.route.note()))),
           D.Dom.div("desktop-folder", D.Dom.when(Bool.and(String.eq(U.Ui.scratch(u, "@desktop"), "1"), Bool.not(U.ThreadTree.routing(u))), D.Dom.button("", "desktop-folder", "", "Choose a local folder", "Choose folder…"))),
           D.El{"input", "proj", [D.At{"id", "proj"}, D.At{"placeholder", Bool.pick(String, U.Proj.browsing(u), MSG.T.picker.folder.placeholder(lc), MSG.T.picker.project.placeholder(lc))},
-            D.At{"autocomplete", "off"}, D.At{"value", U.Proj.query(u)}, D.On{"input", "proj-q"}, D.At{"data-enter", "proj-enter"}], Nil{}}],
+            D.At{"autocomplete", "off"}, D.At{"value", U.Proj.query(u)}, D.At{"data-bfield", "proj"}, D.On{"input", "bfield"}, D.At{"data-enter", "proj-enter"}], Nil{}}],
           D.Dom.cat(Bool.pick(List<&2, D.Node>, String.is_empty(U.Ui.info(u, "proj.err")), Nil{}, [D.El{"div", "", [D.At{"class", "perr"}], [D.Txt{U.Ui.info(u, "proj.err")}]}]),
             [D.El{"div", "", [D.At{"class", "prows"}], View.prows(u, U.Proj.items.loc(lc, u), 0n, U.Proj.index(u))}]))}]
     case False{}:
@@ -1866,12 +1871,35 @@ def View.act.g.loc(+lc: I.Loc, rem: Bool, +id: String, +tone: String, +kind: Str
 def View.act.g(rem: Bool, +id: String, +tone: String, +kind: String, +summary: String, +at: Nat, +st: M.State) -> D.Node:
   View.act.g.loc(I.En{}, rem, id, tone, kind, summary, at, st)
 
+# A thought (model.bend's Think): folded under "Thinking" and its first
+# line, the whole of it (Markdown) when opened; while the setting is off it
+# is not shown at all
+def View.think.clean(+l: String) -> String:
+  String.take(String.trim(String.join(String.split(String.join(String.split(l, '*'), ""), '#'), "")), 160n)
+
+def View.think.head(ls: List<&2, String>, +acc: String) -> String:
+  match ls:
+    case Nil{}:
+      acc
+    case +l <> t:
+      View.think.head(t, Bool.pick(String, String.is_empty(acc), View.think.clean(l), acc))
+
+def View.think.loc(+lc: I.Loc, on: Bool, +id: String, +text: String) -> D.Node:
+  match on:
+    case True{}:
+      D.El{"details", id, [D.At{"class", "act thinking"}, D.At{"data-id", id}], [
+        D.El{"summary", "", Nil{}, [D.Dom.span("kind", "Thinking"), D.Dom.span("summary", View.think.head(String.split(text, '\n'), ""))]},
+        D.El{"div", "", [D.At{"class", "body"}], D.Md.render.loc(lc, text)}]}
+    case False{}:
+      D.El{"div", id, [D.At{"class", "act thinking"}, D.At{"data-id", id}, D.At{"hidden", ""}], Nil{}}
+
 def View.act.t.loc(+lc: I.Loc, term: Bool, e: M.Entry, +st: M.State, +ec: U.Ec) -> D.Node:
   match term e:
     case True{} M.Act{+id, +th, tone, kind, sum, +at}:
       View.emb.loc(lc, ec, st, M.Act{id, th, tone, kind, sum, at}, th)
     case _ M.Act{+id, _, +tone, +kind, +summary, +at}:
-      View.act.g.loc(lc, String.eq(tone, "remind"), id, tone, kind, summary, at, st)
+      Bool.pick(D.Node, String.eq(tone, M.Think.tone()), View.think.loc(lc, M.Think.on(st), id, summary),
+        View.act.g.loc(lc, String.eq(tone, "remind"), id, tone, kind, summary, at, st))
     case _ M.Msg{+id, _, _, text, _}:
       D.El{"div", id, [D.At{"class", "act"}, D.At{"data-id", id}], [D.Dom.span("summary", text)]}
 
@@ -2261,10 +2289,180 @@ def View.send.loc(+lc: I.Loc, +act: String, +send: String) -> D.Node:
   Bool.pick(D.Node, String.eq(act, "interrupt"), D.Dom.button("primary stop", act, "", MSG.T.composer.stop.tip(lc), send),
     D.Dom.button("primary", act, "", MSG.T.composer.enter.tip(lc, Bool.pick(String, String.eq(send, MSG.T.composer.queue(lc)), "steer", "queue")), send))
 
+# The composer as typed (app.bend's presentation_overlay, in the browser):
+# the hub drew it for the draft it last had, which lags what is typed while
+# a turn streams (the hub is busy). Until it catches up, the send button
+# (Stop, Steer, Ask...) and the slash commands follow the draft at once, as
+# the hub would draw them; the root's data-run, data-atts, data-claude and
+# data-lang say what the draft alone cannot. The hub's own render wins
+# once it is for this draft (its textarea holds the same text).
+type Local is Data:
+  Local{draft: String, same: Bool, run: Bool, atts: Nat, claude: Bool, lc: I.Loc}
+
+def View.local.attr(as: List<&2, D.Attr>, +k: String) -> String:
+  match as:
+    case Nil{}:
+      ""
+    case D.At{+n, +v} <> t:
+      Bool.pick(String, String.eq(n, k), v, View.local.attr(t, k))
+    case _ <> t:
+      View.local.attr(t, k)
+
+def View.local.class(+as: List<&2, D.Attr>, +c: String) -> Bool:
+  String.eq(View.local.attr(as, "class"), c)
+
+# the draft the hub drew the composer for: its textarea's value
+def View.local.drawn(ks: List<&2, D.Node>) -> String:
+  match ks:
+    case Nil{}:
+      ""
+    case D.El{_, _, +as, _} <> t:
+      Bool.pick(String, String.eq(View.local.attr(as, "id"), "composer"), View.local.attr(as, "value"), View.local.drawn(t))
+    case _ <> t:
+      View.local.drawn(t)
+
+def View.local.skilled(ks: List<&2, D.Node>) -> Bool:
+  match ks:
+    case Nil{}:
+      False{}
+    case D.El{_, _, +as, _} <> t:
+      Bool.or(View.local.class(as, "skills"), View.local.skilled(t))
+    case _ <> t:
+      View.local.skilled(t)
+
+def Local.draft(l: Local) -> String:
+  match l:
+    case Local{d, _, _, _, _, _}: d
+
+def Local.same(l: Local) -> Bool:
+  match l:
+    case Local{_, s, _, _, _, _}: s
+
+def Local.lc(l: Local) -> I.Loc:
+  match l:
+    case Local{_, _, _, _, _, c}: c
+
+def Local.slash(+l: Local) -> List<&2, D.Node>:
+  match l:
+    case Local{+d, _, _, _, +c, _}: Bool.pick(List<&2, D.Node>, U.Slash.typing.d(d), View.skills(U.Slash.local(c, d)), Nil{})
+
+def Local.send(+l: Local) -> D.Node:
+  match l:
+    case Local{+d, _, +r, +n, _, +lc}:
+      +stop = Bool.and(r, Bool.and(String.is_empty(String.trim(d)), Nat.is_eq(n, 0n)))
+      View.send.loc(lc, U.Follow.act(stop), U.Follow.button(lc, M.State.empty(), "", r, stop, d))
+
+# the textarea's keys, as View.composer.loc sets them, for rows shown or not
+def View.local.keys(as: List<&2, D.Attr>, +rows: Bool) -> List<&2, D.Attr>:
+  match as:
+    case Nil{}:
+      Nil{}
+    case D.At{"data-enter", _} <> t:
+      D.At{"data-enter", Bool.pick(String, rows, "skill", "send")} <> View.local.keys(t, rows)
+    case D.At{"data-tab", _} <> t:
+      D.At{"data-tab", Bool.pick(String, rows, "skill", "")} <> View.local.keys(t, rows)
+    case D.At{"data-arrows", _} <> t:
+      D.At{"data-arrows", Bool.pick(String, rows, "skill-move", "")} <> View.local.keys(t, rows)
+    case D.At{"data-esc", _} <> t:
+      D.At{"data-esc", Bool.pick(String, rows, "skill-close", "")} <> View.local.keys(t, rows)
+    case h <> t:
+      h <> View.local.keys(t, rows)
+
+# the foot's send button (span.foot-end's last child) drawn for the draft
+def View.local.end(ks: List<&2, D.Node>, +l: Local) -> List<&2, D.Node>:
+  match ks:
+    case Nil{}:
+      Nil{}
+    case D.El{+tag, +key, +as, +kids} <> Nil{}:
+      Bool.pick(List<&2, D.Node>, String.eq(tag, "button"), [Local.send(l)], [D.El{tag, key, as, kids}])
+    case +k <> t:
+      k <> View.local.end(t, l)
+
+def View.local.foot(ks: List<&2, D.Node>, +l: Local) -> List<&2, D.Node>:
+  match ks:
+    case Nil{}:
+      Nil{}
+    case D.El{+tag, +key, +as, +kids} <> t:
+      Bool.pick(D.Node, View.local.class(as, "foot-end"), D.El{tag, key, as, View.local.end(kids, l)}, D.El{tag, key, as, kids}) <> View.local.foot(t, l)
+    case +k <> t:
+      k <> View.local.foot(t, l)
+
+# the composer's children: the hub's skills kept while its render is for
+# this draft, else the draft's slash commands (none once it is not one);
+# its $skills and references stay as the hub drew them
+def View.local.kids(ks: List<&2, D.Node>, +l: Local, +had: Bool, +drawn: String) -> List<&2, D.Node>:
+  match ks:
+    case Nil{}:
+      Nil{}
+    case D.El{+tag, +key, +as, +kids} <> t:
+      +skills = View.local.class(as, "skills")
+      +area = String.eq(View.local.attr(as, "id"), "composer")
+      +mine = Bool.or(Local.same(l), Bool.not(Bool.or(U.Slash.typing.d(Local.draft(l)), U.Slash.typing.d(drawn))))
+      +rows = Bool.pick(Bool, mine, had, Bool.not(List.is_empty(&2, D.Node, Local.slash(l))))
+      List.concat(&2, D.Node, [
+        Bool.pick(List<&2, D.Node>, Bool.and(area, Bool.and(Bool.not(mine), Bool.not(had))), Local.slash(l), Nil{}),
+        Bool.pick(List<&2, D.Node>, skills, Bool.pick(List<&2, D.Node>, mine, [D.El{tag, key, as, kids}], Local.slash(l)),
+          [D.El{tag, key, Bool.pick(List<&2, D.Attr>, area, View.local.keys(as, rows), as),
+            Bool.pick(List<&2, D.Node>, View.local.class(as, "composer-foot"), View.local.foot(kids, l), kids)}]),
+        View.local.kids(t, l, had, drawn)])
+    case +k <> t:
+      k <> View.local.kids(t, l, had, drawn)
+
+def View.local.go(nodes: List<&2, D.Node>, +draft: String, acc: List<&2, D.Node>) -> List<&2, D.Node>:
+  match nodes:
+    case Nil{}:
+      acc
+    case D.El{+tag, +key, +as, +kids} <> t:
+      +mine = Bool.and(View.local.class(as, "composer"), Bool.not(String.is_empty(View.local.attr(as, "data-lang"))))
+      View.local.go(t, draft, Bool.pick(D.Node, mine,
+        D.El{tag, key, as, View.local.kids(kids, Local{draft, String.eq(View.local.drawn(kids), draft), String.eq(View.local.attr(as, "data-run"), "1"),
+          Maybe.default(&2, Nat, Nat.read(View.local.attr(as, "data-atts")), 0n), String.eq(View.local.attr(as, "data-claude"), "1"), I.I18n.of_tag(View.local.attr(as, "data-lang"))},
+          View.local.skilled(kids), View.local.drawn(kids))},
+        D.El{tag, key, as, List.reverse(&2, D.Node, View.local.go(kids, draft, Nil{}))}) <> acc)
+    case +k <> t:
+      View.local.go(t, draft, k <> acc)
+
+def View.local(node: D.Node, +draft: String) -> List<&2, D.Node>:
+  View.local.go([node], draft, Nil{})
+
+# The token chip (opt-in, usage.bend's Ts): the thread's token use by the
+# send button; a click opens the panel with all its provider told, and a
+# click outside or on the chip again closes it (the flag "tokstats")
+def View.tok.chip(on: Bool, +text: String, +open: Bool) -> List<&2, D.Node>:
+  match on:
+    case True{}:
+      [D.El{"button", "", [D.At{"class", Bool.pick(String, open, "tok-chip on", "tok-chip")}, D.At{"title", UZ.Ts.tip()}, D.At{"data-value", "tokstats"}, D.On{"click", "flag"}],
+        WI.WIcon.svg("gauge", 14) <> Bool.pick(List<&2, D.Node>, String.is_empty(text), Nil{}, [D.Dom.span("tok-n", text)])}]
+    case False{}:
+      Nil{}
+
+def View.tok.rows(rs: List<&2, UZ.TsRow>) -> List<&2, D.Node>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case +r <> t:
+      D.El{"div", "", [D.At{"class", "tok-row"}], [D.Dom.span("tok-l", UZ.TsRow.label(r)), D.Dom.span("tok-v", UZ.TsRow.value(r))]} <> View.tok.rows(t)
+
+def View.tok.secs(ss: List<&2, UZ.TsSec>) -> List<&2, D.Node>:
+  match ss:
+    case Nil{}:
+      Nil{}
+    case +x <> t:
+      D.El{"div", "", [D.At{"class", "tok-sec"}], D.Dom.cat(Bool.pick(List<&2, D.Node>, String.is_empty(UZ.TsSec.title(x)), Nil{}, [D.Dom.span("tok-h", UZ.TsSec.title(x))]), View.tok.rows(UZ.TsSec.rows(x)))} <> View.tok.secs(t)
+
+def View.tok.pop(open: Bool, +st: M.State, +th: String, +prov: String) -> List<&2, D.Node>:
+  match open:
+    case True{}:
+      [D.El{"div", "", [D.At{"class", "shade"}, D.At{"data-value", "tokstats"}, D.On{"click", "flag"}], Nil{}},
+       D.El{"div", "", [D.At{"class", "tok-pop"}], D.Dom.span("tok-title", UZ.Ts.label()) <> View.tok.secs(UZ.Ts.sections(st, th, prov))}]
+    case False{}:
+      Nil{}
+
 def View.composer.loc(+lc: I.Loc, +draft: String, +send: String, +act: String, +label: String, +ctx: String, +picking: Bool, +ms: List<&2, String>, +model: String, +info: String, +prov: String, +es: List<&2, String>, +effort: String, +rs: List<&2, U.SkillRow>,
-    +atts: List<&2, String>, +up: String, vo: List<&2, D.Node>, +mic: String, +q: String, srch: Bool) -> D.Node:
-  D.El{"div", "", [D.At{"class", "composer"}], D.Dom.cat(
-    View.menu.loc(lc, picking, ms, model, info, prov, es, effort, q, srch), D.Dom.cat(View.skills(rs), D.Dom.cat(vo, D.Dom.cat(View.attaching.loc(lc, atts, up), [
+    +atts: List<&2, String>, +up: String, vo: List<&2, D.Node>, +mic: String, +q: String, srch: Bool, tk: List<&2, D.Node>, tp: List<&2, D.Node>, run: Bool) -> D.Node:
+  D.El{"div", "", [D.At{"class", "composer"}, D.At{"data-run", Bool.pick(String, run, "1", "")}, D.At{"data-atts", Nat.show(List.length(&2, String, atts))},
+    D.At{"data-claude", Bool.pick(String, String.eq(prov, "claude"), "1", "")}, D.At{"data-lang", I.I18n.tag(lc)}], D.Dom.cat(
+    View.menu.loc(lc, picking, ms, model, info, prov, es, effort, q, srch), D.Dom.cat(tp, D.Dom.cat(View.skills(rs), D.Dom.cat(vo, D.Dom.cat(View.attaching.loc(lc, atts, up), [
     D.El{"textarea", "composer", [D.At{"id", "composer"}, D.At{"rows", "3"}, D.At{"placeholder", MSG.T.composer.placeholder(lc)}, D.At{"value", draft}, D.On{"input", "draft"},
       D.At{"data-enter", Bool.pick(String, List.is_empty(&2, U.SkillRow, rs), "send", "skill")}, D.At{"data-enter-alt", "send-alt"}, D.At{"data-tab", Bool.pick(String, List.is_empty(&2, U.SkillRow, rs), "", "skill")}, D.At{"data-arrows", Bool.pick(String, List.is_empty(&2, U.SkillRow, rs), "", "skill-move")}, D.At{"data-esc", Bool.pick(String, List.is_empty(&2, U.SkillRow, rs), "", "skill-close")}, D.At{"data-paste", "attach"}], Nil{}},
     D.El{"div", "", [D.At{"class", "composer-foot"}], [
@@ -2272,14 +2470,14 @@ def View.composer.loc(+lc: I.Loc, +draft: String, +send: String, +act: String, +
       View.draw.loc(lc),
       D.El{"label", "", [D.At{"class", "attach"}, D.At{"title", MSG.T.composer.attach.tip(lc)}], [WI.WIcon.svg("paperclip", 16),
         D.El{"input", "attach-file", [D.At{"type", "file"}, D.At{"multiple", ""}, D.At{"data-attach", "attach"}], Nil{}}]},
-      D.El{"span", "", [D.At{"class", "foot-end"}], [View.mic.loc(lc, mic),
-        View.send.loc(lc, act, send)]}]}]))))}
+      D.El{"span", "", [D.At{"class", "foot-end"}], D.Dom.cat(tk, [View.mic.loc(lc, mic),
+        View.send.loc(lc, act, send)])}]}])))))}
 
 # the thread's header, or the one given (a bot's)
 
 def View.composer(+draft: String, +send: String, +act: String, +label: String, +ctx: String, +picking: Bool, +ms: List<&2, String>, +model: String, +info: String, +prov: String, +es: List<&2, String>, +effort: String, +rs: List<&2, U.SkillRow>,
     +atts: List<&2, String>, +up: String, vo: List<&2, D.Node>, +mic: String) -> D.Node:
-  View.composer.loc(I.En{}, draft, send, act, label, ctx, picking, ms, model, info, prov, es, effort, rs, atts, up, vo, mic, "", False{})
+  View.composer.loc(I.En{}, draft, send, act, label, ctx, picking, ms, model, info, prov, es, effort, rs, atts, up, vo, mic, "", False{}, Nil{}, Nil{}, False{})
 
 def View.send(+act: String, +send: String) -> D.Node:
   View.send.loc(I.En{}, act, send)
@@ -2300,8 +2498,10 @@ def View.top(+lc: I.Loc, hd: List<&2, D.Node>, t: M.Thread, +st: M.State, +chip:
 def View.composer.t(+lc: I.Loc, +st: M.State, +sel: String, +drafts: Map<&2, String>, +op: Map<&2, Bool>, +nf: Map<&2, String>, +turn: M.TurnState, +pr: String, +mo: String,
     +atts: List<&2, String>, +up: String, vo: List<&2, D.Node>, +mic: String) -> D.Node:
   +stop = U.Follow.stop(View.running(turn), U.Str.get(drafts, sel), atts)
-  View.composer.loc(lc, U.Str.get(drafts, sel), U.Follow.button(lc, st, sel, View.running(turn), stop, U.Str.get(drafts, sel)), U.Follow.act(stop), VLabel.model(lc, pr, mo), U.Usage.tail(st, sel), U.Flag.get(op, "models"), Nil{}, mo, U.Models.of(nf, pr), pr,
-    U.Chip.all(U.Str.get(nf, "models"), pr, mo), U.Effort.of(st, sel), U.Skills.shown(st, sel, drafts, nf), atts, up, vo, mic, U.Str.get(drafts, "@f.mq"), False{})
+  +tok = UZ.Ts.on(st)
+  View.composer.loc(lc, U.Str.get(drafts, sel), U.Follow.button(lc, st, sel, View.running(turn), stop, U.Str.get(drafts, sel)), U.Follow.act(stop), VLabel.model(lc, pr, mo), Bool.pick(String, tok, "", U.Usage.tail(st, sel)), U.Flag.get(op, "models"), Nil{}, mo, U.Models.of(nf, pr), pr,
+    U.Chip.all(U.Str.get(nf, "models"), pr, mo), U.Effort.of(st, sel), U.Skills.shown(st, sel, drafts, nf), atts, up, vo, mic, U.Str.get(drafts, "@f.mq"), False{},
+    View.tok.chip(tok, UZ.Ts.chip(st, sel), U.Flag.get(op, "tokstats")), View.tok.pop(Bool.and(tok, U.Flag.get(op, "tokstats")), st, sel, pr), View.running(turn))
 
 def View.asks.box(+lc: I.Loc, +st: M.State, +id: String, +draft: String, +nf: Map<&2, String>) -> D.Node:
   D.El{"div", "asks", [D.At{"class", "asks"}, D.At{"id", "asks"}], View.asks(lc, U.Asks.open(st, id), draft, nf)}

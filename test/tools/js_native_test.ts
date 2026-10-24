@@ -76,5 +76,20 @@ for (let i = 0; i < 200000; i++) {
   const ci = rnd(7), off = rnd(33);
   if (__bpBit(a, ci, off) !== refBit(a, ci, off)) { if (bad++ < 5) console.error("bit", JSON.stringify(a), ci, off); }
 }
+// Json.parse's memo (server only): a large text parses once and gives the
+// same value again; small texts and texts past the last 8 parse afresh
+const psrc = /PARSE_HELPER = \(\n([\s\S]*?)\n\)/.exec(py)![1]
+  .split("\n").map((l) => JSON.parse(l.trim().replace(/\\n"$/, '\\n"'))).join("");
+const { __bpParsed } = new Function(psrc + "; return { __bpParsed };")();
+let calls = 0;
+const parse = (t: string) => { calls++; return { $: "Some", value: JSON.parse(t) }; };
+const big = JSON.stringify({ models: Array.from({ length: 2000 }, (_, i) => "model-" + i) });
+const one = __bpParsed(big, parse), two = __bpParsed(big, parse);
+if (one !== two || calls !== 1 || one.value.models.length !== 2000) { bad++; console.error("parse memo: a large text was parsed again", calls); }
+__bpParsed("{}", parse); __bpParsed("{}", parse);
+if (calls !== 3) { bad++; console.error("parse memo: a small text was remembered", calls); }
+for (let i = 0; i < 9; i++) __bpParsed(big + " ".repeat(i + 1), parse);
+__bpParsed(big, parse);
+if (calls !== 13) { bad++; console.error("parse memo: kept more than 8 texts", calls); }
 if (bad) { console.error(`js_native: ${bad} mismatches`); process.exit(1); }
 console.log("js_native: ok");
