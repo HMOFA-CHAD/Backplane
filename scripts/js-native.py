@@ -45,6 +45,11 @@ render: measured 2026-10-24 on a long thread, most of a render's time. A
 parse is pure and its value never changes, so the same text gives the same
 value; smaller texts (agent lines, requests) are parsed as before.
 
+Server-only `Json.show(j)`: an iterative compact serializer preserving the
+pure encoder's exact escapes, raw number text, field order and duplicate
+keys. The original body remains the fallback for non-ASCII raw numbers.
+No memo or protocol/client changes; scripts/js-json-show.js holds the helper.
+
 Each is found by its shape and must be found exactly once, else the build
 stops (a new Bend that emits them otherwise needs this looked at again).
 With --server (scripts/build-js.sh: one bundle) that holds for every def;
@@ -121,6 +126,13 @@ PARSE_HELPER = (
     "__bpParseMemo.set(s,v)}return v}\n"
 )
 
+# Match the whole unchanged Json.show body and its exact Json.emit callee.
+# Unlike a prefix match, any body change must stop this optimization.
+SHOW = re.compile(
+    r'function (' + I + r'\$058Json\$show\$)\((' + I + r')\)\{'
+    r'return (' + I + r'\$058Json\$emit\$)\(\2,!0,""\)\}'
+)
+
 args = sys.argv[1:]
 server = "--server" in args
 files = [a for a in args if a != "--server"]
@@ -135,12 +147,19 @@ for name, rx, required in (("String.cmp", CMP, True), ("Map.bit.go", BIT, True),
     found[name] = n
 found["Cbor.Enc.text"] = sum(len(CBOR_TEXT.findall(s)) for s in srcs.values()) if server else 0
 found["Json.parse"] = sum(len(PARSE.findall(s)) for s in srcs.values()) if server else 0
+found["Json.show"] = sum(len(SHOW.findall(s)) for s in srcs.values()) if server else 0
+if server and found["Json.show"] != 1:
+    sys.exit(f"js-native: Json.show found {found['Json.show']} times, not once")
 if server and found["Json.parse"] != 1:
     sys.exit(f"js-native: Json.parse found {found['Json.parse']} times, not once")
 if server and found["Cbor.Enc.text"] != 1:
     sys.exit(f"js-native: Cbor.Enc.text found {found['Cbor.Enc.text']} times, not once")
 if server:
     for s in srcs.values():
+        for match in SHOW.finditer(s):
+            emit = match.group(1).replace("$058Json$show$", "$058Json$emit$")
+            if match.group(3) != emit or len(re.findall(r"function " + re.escape(emit) + r"\(", s)) != 1:
+                sys.exit("js-native: Json.show needs its exact Json.emit once")
         for match in CBOR_TEXT.finditer(s):
             head = match.group(1).replace("$058Enc$text$", "$058Enc$head$")
             if len(re.findall(r"function " + re.escape(head) + r"\(", s)) != 1:
@@ -163,6 +182,10 @@ for f, s in srcs.items():
     if server and PARSE.search(s):
         s = PARSE.sub(lambda m: 'function %s(%s){return __bpParsed(%s,%s$raw)}function %s$raw(%s){' % (m.group(1), m.group(2), m.group(2), m.group(1), m.group(1), m.group(2)), s)
         s = PARSE_HELPER + s
+    if server and SHOW.search(s):
+        s = SHOW.sub(lambda m: 'function %s(%s){return __bpJsonShow(%s,%s$raw)}function %s$raw(%s){return %s(%s,!0,"")}' %
+            (m.group(1), m.group(2), m.group(2), m.group(1), m.group(1), m.group(2), m.group(3), m.group(2)), s)
+        s = Path(__file__).with_name("js-json-show.js").read_text(encoding="utf-8") + "\n" + s
     # (a module's imports may come after it: they are hoisted)
     s = HELPERS + s
     open(f, "w", encoding="utf-8").write(s)
@@ -172,7 +195,8 @@ outs = "".join(open(f, encoding="utf-8").read() for f in files)
 for name, call in (("String.cmp", "snd:{$:__bpOrd("), ("Map.bit.go", "snd:__bpBit("),
                    ("String.split", "return __bpSplit("), ("List.length", 'x.$!=="Nil";x=x.tail)n++;return '),
                    ("String.starts_with", "return __bpPre("), ("String.contains", "return __bpHas("),
-                   ("Cbor.Enc.text", "return __bpCborText("), ("Json.parse", "){return __bpParsed(")):
+                   ("Cbor.Enc.text", "return __bpCborText("), ("Json.parse", "){return __bpParsed("),
+                   ("Json.show", "){return __bpJsonShow(")):
     n = outs.count(call)
     if n != found[name]:
         sys.exit(f"js-native: {name}'s native body is in the output {n} times, not {found[name]}")
