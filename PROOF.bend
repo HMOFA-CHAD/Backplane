@@ -13050,3 +13050,7 @@ def Laws.side_signals_given_eq(u):
 
 def Laws.signal_cache_epoch_miss(n, m):
   {==}
+
+def Laws.signal_given_mine(ix, u, signals, pid):
+  match ix u:
+    case U.SIx{by, asks, kids, work} U.Ui{st, se, dr, li, op, on, now, ad, pa, ve, ri, wa, er, no, nf, ob, tr}: {==}

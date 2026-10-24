@@ -11923,3 +11923,11 @@ law signal_cache_epoch_miss:
   for +n: Nat
   for m: Map<&2, Nat>
   {SGV.SignalCache.hit(SGV.SignalCache{"old", n, m, True{}}, "new", n) == False{} : Bool}
+
+# Raw numeric display decoration leaves project/keyboard membership alone.
+law signal_given_mine:
+  for +ix: U.SIx
+  for +u: U.Ui
+  for signals: Map<&2, Nat>
+  for +pid: String
+  {U.SIx.mine(U.Side.signals.ix.given(ix, u, signals), pid) == U.SIx.mine(ix, pid) : List<&2, M.Thread>}

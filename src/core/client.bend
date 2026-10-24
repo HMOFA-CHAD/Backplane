@@ -13466,6 +13466,13 @@ def Side.signals.ix(ix: SIx, +u: Ui) -> SIx:
     case SIx{by, asks, kids, work}:
       SIx{by, asks, kids, SG.Signal.cache.work(Ui.infos(u), work)}
 
+# The same fresh visibility transform, with no Nat -> String -> Nat trip.
+# The caller checks that the undecorated info has no reserved signal keys.
+def Side.signals.ix.given(ix: SIx, u: Ui, signals: Map<&2, Nat>) -> SIx:
+  match ix u:
+    case SIx{by, asks, kids, work} Ui{_, _, _, _, _, on, _, _, _, _, _, _, _, _, _, _, _}:
+      SIx{by, asks, kids, SG.Signal.work.given(Map.to_list(&2, Nat, signals), on, work)}
+
 def Side.signal.ix(+ix: SIx, t: M.Thread) -> Nat:
   SIx.work(ix, SG.Signal.key(M.Thread.id(t)))
 

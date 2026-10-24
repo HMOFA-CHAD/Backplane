@@ -631,6 +631,9 @@ def View.sidebar.frame(+lc: I.Loc, bots: List<&2, D.Node>, +u: U.Ui, +plain: U.S
 def View.sidebar.x(+lc: I.Loc, bots: List<&2, D.Node>, +u: U.Ui, +ix: U.SIx) -> D.Node:
   View.sidebar.frame(lc, bots, u, ix, U.Side.signals.ix(ix, u))
 
+def View.sidebar.indexed(+lc: I.Loc, +u: U.Ui, +ix: U.SIx, signals: Map<&2, Nat>) -> D.Node:
+  View.sidebar.frame(lc, WB.WB.side(lc, u), u, ix, U.Side.signals.ix.given(ix, u, signals))
+
 def View.sidebar.u(+lc: I.Loc, bots: List<&2, D.Node>, +u: U.Ui) -> D.Node:
   View.sidebar.x(lc, bots, u, U.Side.ix(U.Ui.state(u)))
 
@@ -3606,6 +3609,14 @@ def View.page.b(+lc: I.Loc, +bv: BI.View, +u: U.Ui) -> D.Node:
 
 def View.page.signals.sidebar(+u: U.Ui, reuse: Bool) -> D.Node:
   View.page.b.sidebar(U.Lang.loc(u), BI.BU.view(u), u, View.page.sidebar.node(reuse, U.Lang.loc(u), u))
+
+def View.page.sidebar.node.indexed(reuse: Bool, +lc: I.Loc, +u: U.Ui, signals: Map<&2, Nat>) -> D.Node:
+  match reuse:
+    case True{}: SS.Slot.placeholder()
+    case False{}: View.sidebar.indexed(lc, u, U.Side.ix(U.Ui.state(u)), signals)
+
+def View.page.signals.sidebar.indexed(+u: U.Ui, reuse: Bool, signals: Map<&2, Nat>) -> D.Node:
+  View.page.b.sidebar(U.Lang.loc(u), BI.BU.view(u), u, View.page.sidebar.node.indexed(reuse, U.Lang.loc(u), u, signals))
 
 def View.page.sidebar(u: U.Ui, reuse: Bool) -> D.Node:
   View.page.signals.sidebar(U.Side.with_signals(u), reuse)
