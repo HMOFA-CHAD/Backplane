@@ -3,7 +3,7 @@ if(process.env.BP_AGENT_UI_ISOLATED!=='1')throw Error('Private display required'
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),assert=require('node:assert/strict');
 const {_electron}=require('playwright-core'),{Service}=require('../service.cjs');
 const out=process.env.SIDEBAR_REGION_OUT;assert(out);fs.mkdirSync(out,{recursive:true});
-const candidate=path.resolve(process.env.BACKPLANE_LOCAL_STAGE),baseline=path.resolve(process.env.SIDEBAR_REGION_BASELINE),at=Math.floor(Date.now()/1000)-3600;
+const candidate=path.resolve(process.env.BACKPLANE_LOCAL_STAGE),baseline=process.env.SIDEBAR_REGION_MATCHED==='1'?candidate:path.resolve(process.env.SIDEBAR_REGION_BASELINE),at=Math.floor(Date.now()/1000)-3600;
 const base=fs.mkdtempSync(path.join(os.tmpdir(),'bp-sidebar-region-')),root=base+'/project';fs.mkdirSync(root);
 const rows=[];let step='startup';
 async function watch(page){
@@ -30,7 +30,16 @@ async function run(stage,label){
  const row={label,stage,source:info.commit,threads:2786,projects:45,active:32,timings:[],checks:[],wire:[]};rows.push(row);
  const ready=async id=>page.waitForFunction(id=>document.documentElement.dataset.backplaneRemoteReady==='true'&&document.documentElement.dataset.backplaneCached!=='true'&&document.querySelector('main[data-thread]')?.dataset.thread===id&&document.querySelector('main')?.getAttribute('aria-busy')!=='true',id);
  try{
-  step=label+'-start';await service.start();app=await _electron.launch({executablePath:stage+'/desktop/runtime/backplane-desktop',env:{...env,BACKPLANE_SERVICE:binary,BACKPLANE_WEB:web,BACKPLANE_SERVICE_VERSION:info.version}});page=await app.firstWindow();page.setDefaultTimeout(12000);await page.waitForFunction(()=>document.documentElement.dataset.backplaneRemoteReady==='true');const skip=page.locator('[data-on-click="ob-skip"]');if(await skip.count())await skip.click();await page.locator('.sidebar [data-on-click="select"][data-value="t0"]').first().click();await ready('t0');views=await watch(page);
+  step=label+'-start';await service.start();app=await _electron.launch({executablePath:stage+'/desktop/runtime/backplane-desktop',env:{...env,BACKPLANE_SERVICE:binary,BACKPLANE_WEB:web,BACKPLANE_SERVICE_VERSION:info.version}});page=await app.firstWindow();page.setDefaultTimeout(12000);await page.waitForFunction(()=>document.documentElement.dataset.backplaneRemoteReady==='true');
+  if(process.env.SIDEBAR_REGION_MATCHED==='1'){
+   // Same server, frontend and product actions in both arms. Only the new
+   // optional transport offer is disabled in the baseline constructor. No
+   // result, state, scheduling or frame is mocked; old clients omit this offer.
+   const crypto=require('node:crypto');let offers=0;
+   await page.context().route('**/chunk-*.js',async route=>{const response=await route.fetch();let body=await response.text();const offer=/sidebarRegions:\([A-Za-z_$][\w$]*\.renderer\|\|["']web["']\)===["']web["']/g,matches=[...body.matchAll(offer)];if(matches.length){assert.equal(matches.length,1);offers++;const originalSha256=crypto.createHash('sha256').update(body).digest('hex');if(label==='baseline')body=body.replace(offer,'sidebarRegions:false');row.transportOffer={enabled:label!=='baseline',constructorMatches:matches.length,originalSha256,servedSha256:crypto.createHash('sha256').update(body).digest('hex')};}const headers={...response.headers()};delete headers['content-encoding'];delete headers['content-length'];await route.fulfill({response,headers,body})});
+   await page.reload({waitUntil:'domcontentloaded'});await page.waitForFunction(()=>document.documentElement.dataset.backplaneRemoteReady==='true');assert.equal(offers,1,'Exactly one transport offer constructor per arm');
+  }
+  const skip=page.locator('[data-on-click="ob-skip"]');if(await skip.count())await skip.click();await page.locator('.sidebar [data-on-click="select"][data-value="t0"]').first().click();await ready('t0');views=await watch(page);
   await page.locator('#composer').fill('Unsent 日本語 draft');await page.evaluate(()=>{window.__regionSidebar=document.querySelector('aside.sidebar');window.__regionRows=[...document.querySelectorAll('.sidebar [data-on-click="select"]')].map(x=>x.dataset.value);});
   async function action(name,action,value,selector,condition,arg){
    step=label+'-'+name;const mark=views.mark();await page.evaluate(()=>{window.__regionClick=0;const listen=()=>{window.__regionClick=performance.now()};document.addEventListener('click',listen,{capture:true,once:true})});
@@ -46,6 +55,13 @@ async function run(stage,label){
   assert.equal(await page.locator('#composer').inputValue(),'Unsent 日本語 draft');assert.deepEqual(await page.evaluate(()=>[...document.querySelectorAll('.sidebar [data-on-click="select"]')].map(x=>x.dataset.value)),await page.evaluate(()=>window.__regionRows));row.checks.push('Each Settings/category/Back/Close click has its own successful reply; exact sidebar DOM/targets and unsent draft retained');
   if(label==='candidate'){
    assert(row.timings.some(x=>x.region?.base),'actual transport reuse must be exercised');
+   // Newly reported navigation regression: current and other row are both
+   // intentional navigation, including keyboard dispatch from Settings.
+   step='candidate-select-current';await action('settings-before-current','flag','settings','.sidebar [data-on-click="flag"][data-value="settings"]',shown);
+   await page.locator('.sidebar [data-on-click="select"][data-value="t0"]').first().click();await ready('t0');await page.locator('.settings-view').waitFor({state:'hidden'});assert.equal(await page.locator('#composer').inputValue(),'Unsent 日本語 draft');
+   step='candidate-select-other';await action('settings-before-other','flag','settings','.sidebar [data-on-click="flag"][data-value="settings"]',shown);
+   await page.locator('.sidebar [data-on-click="select"][data-value="t1"]').first().press('Enter');await ready('t1');await page.locator('.settings-view').waitFor({state:'hidden'});assert.equal(await page.locator('#composer').inputValue(),'');
+   await page.locator('.sidebar [data-on-click="select"][data-value="t0"]').first().click();await ready('t0');assert.equal(await page.locator('#composer').inputValue(),'Unsent 日本語 draft');row.checks.push('Selecting current thread by click and another by keyboard exits Settings on first action, with exact target and drafts retained');
    step='candidate-ask';await page.locator('#composer').fill('THEME-ASK fixture');await page.locator('#composer').press('Enter');await page.waitForFunction(()=>[...document.querySelectorAll('main [data-on-click="answer"]')].some(b=>!b.disabled&&b.dataset.value?.includes('|')));
    const asks=fs.readFileSync(home+'/events.jsonl','utf8').trim().split('\n').map(JSON.parse).filter(e=>e.$==='AskOpened'&&e.thread==='t0');assert(asks.length);const ask=asks.at(-1).id;
    await page.locator('#composer').fill('Still unsent 日本語');await page.locator('.sidebar [data-on-click="select"][data-value="t1"]').first().click();await ready('t1');
@@ -63,4 +79,4 @@ async function run(stage,label){
   row.wire=views.log;row.state='passed';fs.writeFileSync(out+'/'+label+'.json',JSON.stringify(row,null,2)+'\n');
  }catch(e){row.wire=views?.log||[];row.error=e.stack;row.step=step;row.state='failed';fs.writeFileSync(out+'/'+label+'-FAIL.json',JSON.stringify(row,null,2)+'\n');if(page)await page.screenshot({path:out+'/'+label+'-fail.png'}).catch(()=>{});throw e;}finally{if(app)await app.close();await service.stop();}
 }
-(async()=>{let state='passed';try{await run(baseline,'baseline');await run(candidate,'candidate');}catch(e){state='failed';console.error(e.stack)}const result={state,rows,scope:'One serial baseline/candidate production Settings sequence on identical synthetic2786-thread45-project32-active catalog. Wall clock not frozen; exact-key misses remain full. Timings are controlled packaged click-to-RAF and wire roundtrips, not user-profile INP/live speedup. Candidate suffix covers changed stream/IME/ask/draft/scroll/target boundary only; no real provider or user window.'};fs.writeFileSync(out+'/RESULT.json',JSON.stringify(result,null,2)+'\n');console.log(JSON.stringify({state,rows:rows.map(({label,state,timings,checks})=>({label,state,timings,checks}))}));if(state!=='passed')process.exitCode=1})();
+(async()=>{let state='passed';try{await run(baseline,'baseline');await run(candidate,'candidate');}catch(e){state='failed';console.error(e.stack)}const result={state,rows,scope:'One serial full/reference production Settings comparison on identical synthetic2786-thread45-project32-active catalog. With SIDEBAR_REGION_MATCHED=1 both arms use the identical candidate service/frontend; only baseline constructor transport offer is disabled through a recorded isolated response override, exactly the old-client protocol. Product UI/results/state/queue are unchanged. Wall clock not frozen; exact-key misses remain full. Timings are controlled packaged click-to-RAF and wire roundtrips, not user-profile INP/live speedup. Candidate suffix covers changed stream/IME/ask/draft/scroll/target boundary only; no real provider or user window.'};fs.writeFileSync(out+'/RESULT.json',JSON.stringify(result,null,2)+'\n');console.log(JSON.stringify({state,rows:rows.map(({label,state,timings,checks})=>({label,state,timings,checks}))}));if(state!=='passed')process.exitCode=1})();
