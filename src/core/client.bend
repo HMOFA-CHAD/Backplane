@@ -4303,10 +4303,13 @@ def Proj.machine.row.loc(+l: I.Loc, +u: Ui) -> List<&2, PItem>:
 def Proj.machine.row(+u: Ui) -> List<&2, PItem>:
   Proj.machine.row.loc(Lang.loc(u), u)
 
+# the picker's field: a form field ("bfield" "proj", @f.proj), so the
+# browser keeps what is typed and merges keystrokes instead of waiting on
+# the hub for each one (law-free: typing sets it, Bots.bfield)
 def Proj.query(u: Ui) -> String:
   match u:
     case Ui{_, _, dr, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
-      Str.get(dr, "@proj")
+      Str.get(dr, "@f.proj")
 
 def Proj.index(u: Ui) -> Nat:
   match u:
@@ -4316,7 +4319,7 @@ def Proj.index(u: Ui) -> Nat:
 def Proj.set(u: Ui, +q: String, +i: Nat) -> Ui:
   match u:
     case Ui{st, sel, +dr, live, op, on, now, ad, pa, ve, rid, w, er, note, nf, ob, tr}:
-      Ui{st, sel, Map.set(&2, String, Map.set(&2, String, dr, "@proj", q), "@proj.i", Nat.show(i)), live, op, on, now, ad, pa, ve, rid, w, er, note, nf, ob, tr}
+      Ui{st, sel, Map.set(&2, String, Map.set(&2, String, dr, "@f.proj", q), "@proj.i", Nat.show(i)), live, op, on, now, ad, pa, ve, rid, w, er, note, nf, ob, tr}
 
 def Proj.reset(u: Ui, +q: String) -> Ui:
   Ui.info_set(Proj.set(u, q, 0n), "proj.err", "")
@@ -7100,11 +7103,19 @@ def Mate.lead(+u: Ui) -> String:
 def Far.chat(u: Ui, +id: String) -> Act:
   Act{Bots.views(u, "", "", id), [Focus{"remote-send"}, ScrollEnd{}]}
 
+# the project picker's query changed: its highlight goes back to the top
+def Bots.bfield.proj(proj: Bool, u: Ui) -> Ui:
+  match proj:
+    case True{}:
+      Ui.scratch_set(u, "@proj.i", "0")
+    case False{}:
+      u
+
 # "name\u001ftext": a form field
 def Bots.bfield.k(ps: List<&2, String>, u: Ui) -> Ui:
   match ps:
-    case k <> t:
-      Ui.scratch_set(u, "@f." ++ k, String.join(t, "\u{1f}"))
+    case +k <> t:
+      Bots.bfield.proj(String.eq(k, "proj"), Ui.scratch_set(u, "@f." ++ k, String.join(t, "\u{1f}")))
     case Nil{}:
       u
 

@@ -1653,7 +1653,7 @@ def View.picker(+lc: I.Loc, open: Bool, +u: U.Ui) -> List<&2, D.Node>:
           D.Dom.div("subthread-route-note", D.Dom.when(U.ThreadTree.routing(u), D.Dom.span("", U.ThreadTree.route.note()))),
           D.Dom.div("desktop-folder", D.Dom.when(Bool.and(String.eq(U.Ui.scratch(u, "@desktop"), "1"), Bool.not(U.ThreadTree.routing(u))), D.Dom.button("", "desktop-folder", "", "Choose a local folder", "Choose folder…"))),
           D.El{"input", "proj", [D.At{"id", "proj"}, D.At{"placeholder", Bool.pick(String, U.Proj.browsing(u), MSG.T.picker.folder.placeholder(lc), MSG.T.picker.project.placeholder(lc))},
-            D.At{"autocomplete", "off"}, D.At{"value", U.Proj.query(u)}, D.On{"input", "proj-q"}, D.At{"data-enter", "proj-enter"}], Nil{}}],
+            D.At{"autocomplete", "off"}, D.At{"value", U.Proj.query(u)}, D.At{"data-bfield", "proj"}, D.On{"input", "bfield"}, D.At{"data-enter", "proj-enter"}], Nil{}}],
           D.Dom.cat(Bool.pick(List<&2, D.Node>, String.is_empty(U.Ui.info(u, "proj.err")), Nil{}, [D.El{"div", "", [D.At{"class", "perr"}], [D.Txt{U.Ui.info(u, "proj.err")}]}]),
             [D.El{"div", "", [D.At{"class", "prows"}], View.prows(u, U.Proj.items.loc(lc, u), 0n, U.Proj.index(u))}]))}]
     case False{}:
