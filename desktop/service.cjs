@@ -147,7 +147,20 @@ class Service {
     if (reconnect && origin !== browserReconnectOrigin) throw new Error('Selected Browser service origin changed');
     let info;
     try { info = await greeting(origin); }
-    catch (error) { if (error.cause?.code === 'ECONNREFUSED') return null; throw error; }
+    catch (error) {
+      if (error.cause?.code === 'ECONNREFUSED') {
+        // On Linux the resident hub writes its lock before restoring history
+        // and opening the listener. Wait for that live process rather than
+        // launching another hub, which immediately loses the home lock.
+        if (process.platform === 'linux') {
+          try { await fs.access(`/proc/${lock.posixPid}`); }
+          catch (ownerError) { if (ownerError.code === 'ENOENT') return null; throw ownerError; }
+          throw Object.assign(new Error('Service is restoring history'), { code: 'ERR_SERVICE_BUSY' });
+        }
+        return null;
+      }
+      throw error;
+    }
     if (!reconnect && this.expectedVersion && info.backplane !== this.expectedVersion) throw new Error('Service version differs from the packaged version');
     // Authenticating with this home's credential binds the discovered endpoint
     // to the selected home. The legacy lock PID is POSIX (including Cygwin),
@@ -158,7 +171,7 @@ class Service {
   }
   async start() {
     await fs.mkdir(this.home, { recursive: true, mode: 0o700 });
-    const deadline = Date.now() + 45000;
+    const deadline = Date.now() + 300000;
     // A listening service can still be recovering a large log. Keep the local
     // window visible while waiting; a busy endpoint is not permission to spawn.
     while (true) {
