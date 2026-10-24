@@ -52,6 +52,10 @@ pure encoder's exact escapes, raw number text, field order and duplicate
 keys. The original body remains the fallback for non-ASCII raw numbers.
 No memo or protocol/client changes; scripts/js-json-show.js holds the helper.
 
+Server-only Json.bytes.esc/str count code-point UTF-8 widths without slicing
+a fresh string tail per character. Exact JSON escapes, raw lexemes and Nat
+overflow remain the pure counter's; no whole-tree or cap predicate changes.
+
 Server-only ContentEq.same compares actual JSON constructors and fields, with
 an identity fast path for immutable values. It does not compare dependency
 keys or hashes. The pure wrapper, callee and source hash fence the rewrite.
@@ -148,6 +152,18 @@ CONTENT_EQ = re.compile(
 )
 CONTENT_EQ_SOURCE_SHA256 = "054cdf42cc59907d5c860754a1566b90831384cd1d9cd97918f455aa47ee653a"
 
+# Both complete emitted loop bodies, including their exact character callee,
+# are build fences. The pure module hash also guards the width/escape rules.
+def byte_loop(kind):
+    before = "($0,$1){for(;;){let _s_0=$0,_n_0=$1;if(_s_0===\"\")return _n_0;else{let _t_0=_s_0.codePointAt(0)>65535?_s_0.slice(0,2):_s_0[0],_t_1=_s_0.codePointAt(0)>65535?_s_0.slice(2):_s_0.slice(1),_x_0="
+    after = "(_t_0.codePointAt(0));$0=_t_1,$1=nat_chk(_n_0+_x_0);continue}}}"
+    return re.compile(r"function (" + I + r"\$058Json\$bytes\$" + kind + r"\$)" +
+                      re.escape(before) + "(" + I + r"\$058Json\$bytes\$" +
+                      ("chr" if kind == "esc" else "raw") + r"\$)" + re.escape(after))
+
+BYTE_ESC, BYTE_STR = byte_loop("esc"), byte_loop("str")
+JSON_BYTES_SOURCE_SHA256 = "60ea726052fded72970f3be2784d09fbff0baa4a98a47ac82d00a4a311dc242d"
+
 args = sys.argv[1:]
 server = "--server" in args
 files = [a for a in args if a != "--server"]
@@ -164,6 +180,21 @@ found["Cbor.Enc.text"] = sum(len(CBOR_TEXT.findall(s)) for s in srcs.values()) i
 found["Json.parse"] = sum(len(PARSE.findall(s)) for s in srcs.values()) if server else 0
 found["Json.show"] = sum(len(SHOW.findall(s)) for s in srcs.values()) if server else 0
 found["ContentEq.same"] = sum(len(CONTENT_EQ.findall(s)) for s in srcs.values()) if server else 0
+for name, rx in (("Json.bytes.esc", BYTE_ESC), ("Json.bytes.str", BYTE_STR)):
+    found[name] = sum(len(rx.findall(s)) for s in srcs.values()) if server else 0
+    if server and found[name] != 1:
+        sys.exit(f"js-native: {name} found {found[name]} times, not once")
+if server and hashlib.sha256(Path(__file__).parent.parent.joinpath("src/core/json.bend").read_bytes()).hexdigest() != JSON_BYTES_SOURCE_SHA256:
+    sys.exit("js-native: Json.bytes pure source changed")
+if server:
+    for s in srcs.values():
+        for rx, kind, callee in ((BYTE_ESC, "esc", "chr"), (BYTE_STR, "str", "raw")):
+            for match in rx.finditer(s):
+                expected = match.group(1).replace("$058Json$bytes$" + kind + "$", "$058Json$bytes$" + callee + "$")
+                if match.group(2) != expected or len(re.findall(r"function " + re.escape(expected) + r"\(", s)) != 1:
+                    sys.exit(f"js-native: Json.bytes.{kind} needs its exact character callee once")
+        if len(re.findall(r"function nat_chk\(", s)) != 1:
+            sys.exit("js-native: Json.bytes needs its exact Nat guard once")
 if server and found["ContentEq.same"] != 1:
     sys.exit(f"js-native: ContentEq.same found {found['ContentEq.same']} times, not once")
 if server and hashlib.sha256(Path(__file__).parent.parent.joinpath("src/server/thin-content-eq.bend").read_bytes()).hexdigest() != CONTENT_EQ_SOURCE_SHA256:
@@ -214,6 +245,10 @@ for f, s in srcs.items():
         s = CONTENT_EQ.sub(lambda m: 'function %s(%s,%s){return __bpContentEq(%s,%s,%s)}' %
             (m.group(1), m.group(2), m.group(3), m.group(2), m.group(3), m.group(4)), s)
         s = Path(__file__).with_name("js-content-eq.js").read_text(encoding="utf-8") + "\n" + s
+    if server:
+        s = BYTE_ESC.sub(lambda m: 'function %s($0,$1){return __bpJsonBytesEsc($0,$1,nat_chk)}' % m.group(1), s)
+        s = BYTE_STR.sub(lambda m: 'function %s($0,$1){return __bpJsonBytesStr($0,$1,nat_chk)}' % m.group(1), s)
+        s = Path(__file__).with_name("js-json-bytes.js").read_text(encoding="utf-8") + "\n" + s
     # (a module's imports may come after it: they are hoisted)
     s = HELPERS + s
     open(f, "w", encoding="utf-8").write(s)
@@ -224,7 +259,8 @@ for name, call in (("String.cmp", "snd:{$:__bpOrd("), ("Map.bit.go", "snd:__bpBi
                    ("String.split", "return __bpSplit("), ("List.length", 'x.$!=="Nil";x=x.tail)n++;return '),
                    ("String.starts_with", "return __bpPre("), ("String.contains", "return __bpHas("),
                    ("Cbor.Enc.text", "return __bpCborText("), ("Json.parse", "){return __bpParsed("),
-                   ("Json.show", "){return __bpJsonShow("), ("ContentEq.same", "){return __bpContentEq(")):
+                   ("Json.show", "){return __bpJsonShow("), ("ContentEq.same", "){return __bpContentEq("),
+                   ("Json.bytes.esc", "){return __bpJsonBytesEsc("), ("Json.bytes.str", "){return __bpJsonBytesStr(")):
     n = outs.count(call)
     if n != found[name]:
         sys.exit(f"js-native: {name}'s native body is in the output {n} times, not {found[name]}")
