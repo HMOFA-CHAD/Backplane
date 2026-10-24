@@ -12055,3 +12055,10 @@ law signal_text_overlay_online:
 law signal_text_overlay_fresh:
   for text: String
   {SIGREV.Signal.cache.overlay(MLeaf{"@signal.online", "1"}, MLeaf{"status", text}) == Map.set(&2, String, MLeaf{"@signal.online", "1"}, "status", text) : Map<&2, String>}
+
+# Model labels use the current provider metadata once per rendered row list.
+law model_labels_given:
+  for +info: String
+  for +provider: String
+  for +model: String
+  {U.Models.label.given(U.Models.labels(info, provider), model) == J.Json.get_str(J.Json.get_obj(U.Models.about(info, provider), "labels"), Bool.pick(String, String.is_empty(model), "default", model), "") : String}

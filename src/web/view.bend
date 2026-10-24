@@ -869,13 +869,20 @@ def View.header(+lc: I.Loc, t: M.Thread, +st: M.State, +chip: String, mini: List
 
 # the model menu's rows: each model's name, then what its CLI calls it,
 # in two columns (the names' as wide as the longest, --namew)
-def View.models.loc(+lc: I.Loc, ms: List<&2, String>, +cur: String, +info: String, +prov: String) -> List<&2, D.Node>:
+def View.models.labels.loc(+lc: I.Loc, ms: List<&2, String>, +cur: String, +labels: J.Json) -> List<&2, D.Node>:
   match ms:
     case Nil{}:
       Nil{}
     case +m <> t:
       D.El{"button", "", [D.At{"class", Bool.pick(String, String.eq(m, cur), "row on", "row")}, D.At{"title", MSG.T.model.choose(lc, Bool.pick(String, String.is_empty(m), MSG.T.model.default.article(lc), m))}, D.At{"data-value", m}, D.On{"click", "model"}],
-        [D.Dom.span("name", Bool.pick(String, String.is_empty(m), MSG.T.common.default(lc), m)), D.Dom.span("label", U.Models.label_of(info, prov, m))]} <> View.models.loc(lc, t, cur, info, prov)
+        [D.Dom.span("name", Bool.pick(String, String.is_empty(m), MSG.T.common.default(lc), m)), D.Dom.span("label", U.Models.label.given(labels, m))]} <> View.models.labels.loc(lc, t, cur, labels)
+
+# Resolve this render's provider metadata once for the bounded row list.
+# The hidden menu remains ready; no catalog or picture is retained here.
+def View.models.loc(lc: I.Loc, ms: List<&2, String>, cur: String, info: String, prov: String) -> List<&2, D.Node>:
+  match ms:
+    case Nil{}: Nil{}
+    case m <> tail: View.models.labels.loc(lc, m <> tail, cur, U.Models.labels(info, prov))
 
 def View.models(ms: List<&2, String>, +cur: String, +info: String, +prov: String) -> List<&2, D.Node>:
   View.models.loc(I.En{}, ms, cur, info, prov)

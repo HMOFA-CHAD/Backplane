@@ -13123,3 +13123,6 @@ def Laws.signal_text_overlay_online(other):
 
 def Laws.signal_text_overlay_fresh(text):
   {==}
+
+def Laws.model_labels_given(info, provider, model):
+  {==}

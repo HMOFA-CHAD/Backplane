@@ -4145,8 +4145,14 @@ def Models.cli(+info: String, +provider: String) -> String:
   J.Json.get_str(Models.about(info, provider), "cli", "")
 
 # "opus" -> "Opus 5.5 · claude-opus-5-5" ("" when unknown)
+def Models.labels(+info: String, +provider: String) -> J.Json:
+  J.Json.get_obj(Models.about(info, provider), "labels")
+
+def Models.label.given(+labels: J.Json, +model: String) -> String:
+  J.Json.get_str(labels, Bool.pick(String, String.is_empty(model), "default", model), "")
+
 def Models.label_of(+info: String, +provider: String, +model: String) -> String:
-  J.Json.get_str(J.Json.get_obj(Models.about(info, provider), "labels"), Bool.pick(String, String.is_empty(model), "default", model), "")
+  Models.label.given(Models.labels(info, provider), model)
 
 # The model picker's search (field "mq", scratch "@f.mq"): a model shows
 # when every word of the query is in its id or its label, case aside. The
