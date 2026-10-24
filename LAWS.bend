@@ -11967,3 +11967,14 @@ law signal_user_revision:
   for old: Nat
   for head: Nat
   {SIGREV.SignalRevision.advance([M.MessagePosted{th, id, M.User{}, text, at}], old, head) == head : Nat}
+
+# Signal pair traversal keeps offline activity visibility unchanged.
+law signal_pair_offline_work_hidden:
+  for +id: String
+  for +info: Map<&2, String>
+  {SIGREV.Signal.cache.pairs([(id, 1n)], False{}, info) == Map.set(&2, String, info, SIGREV.Signal.key(id), "0") : Map<&2, String>}
+
+law signal_pair_offline_block_kept:
+  for +id: String
+  for +info: Map<&2, String>
+  {SIGREV.Signal.cache.pairs([(id, 3n)], False{}, info) == Map.set(&2, String, info, SIGREV.Signal.key(id), "2") : Map<&2, String>}
