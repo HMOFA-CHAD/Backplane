@@ -1,5 +1,6 @@
 import Base
 import ./thin-signals.bend as SGV
+import ./thin-side-index.bend as SIXV
 import ./thin-mail.bend as TM
 import ./thin-sidebar.bend as SC
 import ../web/sidebar-slot.bend as SS
@@ -29,6 +30,7 @@ type Memo is Data:
   Sidebar{key: String, node: J.Json}
   SidebarWire{key: String, token: String}
   Signals{cache: SGV.SignalCache}
+  SideIndex{cache: SIXV.IndexCache}
 
 type Actor is Data:
   Actor{ui: U.Ui, view: String, target: J.Json, pending: Map<&2, String>, reads: List<&2, J.Json>, dirty: Bool, memo: List<&2, Memo>}
@@ -167,8 +169,26 @@ def Signals.get(ms: List<&2, Memo>) -> Maybe<&2, SGV.SignalCache>:
     case Signals{cache} <> _: Some{cache}
     case _ <> rest: Signals.get(rest)
 
+def SideIndex.keep(ms: List<&2, Memo>) -> List<&2, Memo>:
+  match ms:
+    case Nil{}: Nil{}
+    case SideIndex{cache} <> _: [SideIndex{cache}]
+    case _ <> rest: SideIndex.keep(rest)
+
+def SideIndex.get(ms: List<&2, Memo>) -> Maybe<&2, SIXV.IndexCache>:
+  match ms:
+    case Nil{}: None{}
+    case SideIndex{cache} <> _: Some{cache}
+    case _ <> rest: SideIndex.get(rest)
+
+def SideIndex.save(valid: Bool, a: Actor, cache: SIXV.IndexCache) -> Actor:
+  match valid a:
+    case True{} Actor{u, view, target, pending, reads, dirty, +ms}:
+      Actor{u, view, target, pending, reads, dirty, SideIndex{cache} <> List.append(&2, Memo, Sidebar.keep(ms), Signals.keep(ms))}
+    case False{} _: a
+
 def Actor.kept(+ms: List<&2, Memo>) -> List<&2, Memo>:
-  List.append(&2, Memo, Sidebar.keep(ms), Signals.keep(ms))
+  List.append(&2, Memo, Sidebar.keep(ms), List.append(&2, Memo, Signals.keep(ms), SideIndex.keep(ms)))
 
 def Signals.save(valid: Bool, a: Actor, cache: SGV.SignalCache) -> Actor:
   match valid a:
@@ -392,19 +412,20 @@ def Actor.render.web.fresh(+updated: Actor, +action: V.ActResult, +st: M.State, 
   Rendered{Sidebar.save(Bool.and(SC.Sidebar.bounded(key), SS.Slot.is(node, "aside")), updated, key, node), res}
 
 # Settings/refresh-only derived cache. The existing rendered-sidebar key
-# still includes the clock and all recipient/UI fences. Only Signal.index
-# (canonical metadata, no clock/info) can survive a clock-only refresh.
+# still includes the clock and all recipient/UI fences. Raw signals and
+# the proved plain metadata index alone survive irrelevant history changes.
 def Actor.render.web.indexed(+updated: Actor, +action: V.ActResult, +st: M.State, +index: T.Index, +p: J.Json,
-    +epoch: String, +now: Nat, +rows: List<&2, String>, +stream: TL.Stream, revision: Nat) -> Rendered:
+    +epoch: String, +now: Nat, +rows: List<&2, String>, +stream: TL.Stream, +revision: Nat) -> Rendered:
   +u = Actor.ui(updated)
   +prepared = V.Render.ui(u, st, index, J.Json.get_obj(p, "target"), rows, stream, now)
   +signals = SGV.SignalCache.obtain.revision(epoch, revision, st, Signals.get(Sidebar.memos(updated)))
+  +metadata = SIXV.IndexCache.obtain.revision(epoch, revision, st, SideIndex.get(Sidebar.memos(updated)))
   +key = SC.Sidebar.key(prepared, epoch, Sidebar.view(updated))
   +cached = Sidebar.lookup(SC.Sidebar.request(p, u), Sidebar.memos(updated), key)
   +window = V.Render.window(stream, index, V.Target.thread(st, J.Json.get_obj(p, "target")), p, epoch, rows)
-  +res = V.Obj.put(V.Render.web.prepared.indexed(action, prepared, window, cached, SGV.SignalCache.signals(signals)), "mailDraftContext", Actor.mail_context(u))
+  +res = V.Obj.put(V.Render.web.prepared.metadata(action, prepared, window, cached, SGV.SignalCache.signals(signals), SIXV.IndexCache.index(metadata)), "mailDraftContext", Actor.mail_context(u))
   +node = SS.Slot.sidebar(J.Json.get_obj(res, "shown"))
-  Rendered{Signals.save(SGV.SignalCache.bounded(signals), Sidebar.save(Bool.and(SC.Sidebar.bounded(key), SS.Slot.is(node, "aside")), updated, key, node), signals), res}
+  Rendered{SideIndex.save(SIXV.IndexCache.bounded(metadata), Signals.save(SGV.SignalCache.bounded(signals), Sidebar.save(Bool.and(SC.Sidebar.bounded(key), SS.Slot.is(node, "aside")), updated, key, node), signals), metadata), res}
 
 def Actor.render.web.select(allowed: Bool, updated: Actor, action: V.ActResult, st: M.State, index: T.Index, p: J.Json,
     epoch: String, now: Nat, rows: List<&2, String>, stream: TL.Stream, revision: Nat) -> Rendered:
@@ -596,6 +617,7 @@ def Memo.reply(ms: List<&2, Memo>, +update: Bool, +key: String, +clock: Nat, +we
     case Sidebar{_, _} <> rest: Memo.reply(rest, update, key, clock, web, stream, thread, epoch, target, lc)
     case SidebarWire{_, _} <> rest: Memo.reply(rest, update, key, clock, web, stream, thread, epoch, target, lc)
     case Signals{_} <> rest: Memo.reply(rest, update, key, clock, web, stream, thread, epoch, target, lc)
+    case SideIndex{_} <> rest: Memo.reply(rest, update, key, clock, web, stream, thread, epoch, target, lc)
     case Memo{+k, +at, +partial, +res} <> _:
       Memo.reply.k(Bool.and(update, Bool.and(String.eq(k, key), Bool.and(Nat.is_ge(clock, at), Bool.and(Nat.is_lt(Nat.sub(clock, at), 1000n),
         Bool.and(Nat.is_gt(TL.Stream.size(stream), 0n), Bool.or(Bool.and(partial, S.Splice.partial(stream)), Bool.and(Bool.not(partial), Bool.not(S.Splice.partial(stream))))))))), res, web, stream, thread, epoch, target, lc)

@@ -11978,3 +11978,34 @@ law signal_pair_offline_block_kept:
   for +id: String
   for +info: Map<&2, String>
   {SIGREV.Signal.cache.pairs([(id, 3n)], False{}, info) == Map.set(&2, String, info, SIGREV.Signal.key(id), "2") : Map<&2, String>}
+
+# The complete plain-sidebar metadata boundary includes bot/mail ownership.
+law side_ix_metadata_input:
+  for +st: M.State
+  {U.Side.ix.inputs(U.SidebarInput.of(st)) == U.Side.ix(st) : U.SIx}
+
+law side_input_activity:
+  for +st: M.State
+  for th: String
+  for act: String
+  for tone: String
+  for kind: String
+  for summary: String
+  for at: Nat
+  {U.SidebarInput.of(M.State.apply(st, M.ActivityLogged{th, act, tone, kind, summary, at})) == U.SidebarInput.of(st) : U.SidebarInput}
+
+law side_input_assistant:
+  for +st: M.State
+  for th: String
+  for id: String
+  for text: String
+  for at: Nat
+  {U.SidebarInput.of(M.State.apply(st, M.MessagePosted{th, id, M.Assistant{}, text, at})) == U.SidebarInput.of(st) : U.SidebarInput}
+
+law side_input_system:
+  for +st: M.State
+  for th: String
+  for id: String
+  for text: String
+  for at: Nat
+  {U.SidebarInput.of(M.State.apply(st, M.MessagePosted{th, id, M.System{}, text, at})) == U.SidebarInput.of(st) : U.SidebarInput}

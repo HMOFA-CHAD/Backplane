@@ -3618,6 +3618,17 @@ def View.page.sidebar.node.indexed(reuse: Bool, +lc: I.Loc, +u: U.Ui, signals: M
 def View.page.signals.sidebar.indexed(+u: U.Ui, reuse: Bool, signals: Map<&2, Nat>) -> D.Node:
   View.page.b.sidebar(U.Lang.loc(u), BI.BU.view(u), u, View.page.sidebar.node.indexed(reuse, U.Lang.loc(u), u, signals))
 
+# Server-only plain metadata projection; online/recipient signal decoration
+# remains fresh, including reserved-info compatibility handling.
+def View.page.sidebar.node.metadata(reuse: Bool, raw: Bool, +lc: I.Loc, +u: U.Ui, +plain: U.SIx, signals: Map<&2, Nat>) -> D.Node:
+  match reuse raw:
+    case True{} _: SS.Slot.placeholder()
+    case False{} True{}: View.sidebar.indexed(lc, u, plain, signals)
+    case False{} False{}: View.sidebar.x(lc, WB.WB.side(lc, u), u, plain)
+
+def View.page.signals.sidebar.metadata(+u: U.Ui, reuse: Bool, raw: Bool, plain: U.SIx, signals: Map<&2, Nat>) -> D.Node:
+  View.page.b.sidebar(U.Lang.loc(u), BI.BU.view(u), u, View.page.sidebar.node.metadata(reuse, raw, U.Lang.loc(u), u, plain, signals))
+
 def View.page.sidebar(u: U.Ui, reuse: Bool) -> D.Node:
   View.page.signals.sidebar(U.Side.with_signals(u), reuse)
 

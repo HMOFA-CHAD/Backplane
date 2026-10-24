@@ -157,6 +157,10 @@ def view_sidebar_indexed.page(raw: Bool, +u: U.Ui, reuse: Bool, +signals: Map<&2
 def view_sidebar_indexed(+u: U.Ui, reuse: Bool, signals: Map<&2, Nat>) -> D.Node:
   WS.WS.view(u, view_sidebar_indexed.page(SGR.Signal.info.raw(Map.keys(&2, String, U.Ui.infos(u))), stamp(u), reuse, signals), V.View.term.loc(U.Lang.loc(u), U.Ui.term(u, WS.WS.owner(u))))
 
+def view_sidebar_metadata(+u: U.Ui, reuse: Bool, plain: U.SIx, +signals: Map<&2, Nat>) -> D.Node:
+  WS.WS.view(u, V.View.page.signals.sidebar.metadata(U.Side.with_signals.given(stamp(u), signals), reuse,
+    SGR.Signal.info.raw(Map.keys(&2, String, U.Ui.infos(u))), plain, signals), V.View.term.loc(U.Lang.loc(u), U.Ui.term(u, WS.WS.owner(u))))
+
 def view(+u: U.Ui) -> D.Node:
   view_sidebar(u, False{})
 
