@@ -8,6 +8,7 @@ import ../core/kexport.bend as KEX
 import ../core/json.bend as J
 import ../core/kihealth.bend as KH
 import ../core/model.bend as M
+import ../core/sidebar-read.bend as SR
 import ../core/signal.bend as SG
 import ../core/i18n.bend as I
 import ./dom.bend as D
@@ -3623,8 +3624,8 @@ def View.page.signals.sidebar.indexed(+u: U.Ui, reuse: Bool, signals: Map<&2, Na
 def View.page.sidebar.node.metadata(reuse: Bool, raw: Bool, +lc: I.Loc, +u: U.Ui, +plain: U.SIx, signals: Map<&2, Nat>) -> D.Node:
   match reuse raw:
     case True{} _: SS.Slot.placeholder()
-    case False{} True{}: View.sidebar.indexed(lc, u, plain, signals)
-    case False{} False{}: View.sidebar.x(lc, WB.WB.side(lc, u), u, plain)
+    case False{} True{}: View.sidebar.indexed(lc, SR.Input.ui(u), plain, signals)
+    case False{} False{}: View.sidebar.x(lc, WB.WB.side(lc, SR.Input.ui(u)), SR.Input.ui(u), plain)
 
 def View.page.signals.sidebar.metadata(+u: U.Ui, reuse: Bool, raw: Bool, plain: U.SIx, signals: Map<&2, Nat>) -> D.Node:
   View.page.b.sidebar(U.Lang.loc(u), BI.BU.view(u), u, View.page.sidebar.node.metadata(reuse, raw, U.Lang.loc(u), u, plain, signals))

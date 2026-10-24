@@ -1,3 +1,4 @@
+import ./src/core/sidebar-read.bend as SIDEREAD
 import Base
 import ./test/sidebar_input_proof.bend as SIDEINPUTPROOF
 import ./src/core/thin.bend as THINL # S3 lazy thin index
@@ -13091,6 +13092,22 @@ def Laws.side_input_assistant(st, th, id, text, at):
     case M.State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, M.Ext{world, by, mail} <> rest}: {==}
 
 def Laws.side_input_system(st, th, id, text, at):
+  match st:
+    case M.State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, Nil{}}: {==}
+    case M.State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, M.Ext{world, by, mail} <> rest}: {==}
+
+
+def Laws.sidebar_read_activity(st, th, act, tone, kind, summary, at):
+  match st:
+    case M.State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, Nil{}}: {==}
+    case M.State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, M.Ext{world, by, mail} <> rest}: {==}
+
+def Laws.sidebar_read_assistant(st, th, id, text, at):
+  match st:
+    case M.State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, Nil{}}: {==}
+    case M.State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, M.Ext{world, by, mail} <> rest}: {==}
+
+def Laws.sidebar_read_system(st, th, id, text, at):
   match st:
     case M.State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, Nil{}}: {==}
     case M.State{ps, ts, es, n, tk, sg, qu, ak, dv, nv, M.Ext{world, by, mail} <> rest}: {==}

@@ -1,3 +1,4 @@
+import ./src/core/sidebar-read.bend as SIDEREAD
 import ./src/server/thin-signals.bend as SGV
 import ./src/core/signal.bend as SIGREV
 import Base
@@ -12009,3 +12010,30 @@ law side_input_system:
   for text: String
   for at: Nat
   {U.SidebarInput.of(M.State.apply(st, M.MessagePosted{th, id, M.System{}, text, at})) == U.SidebarInput.of(st) : U.SidebarInput}
+
+# Exact full sidebar metadata under history-only commits.
+law sidebar_read_activity:
+  for +st: M.State
+  for th: String
+  for act: String
+  for tone: String
+  for kind: String
+  for summary: String
+  for at: Nat
+  {SIDEREAD.Input.of(M.State.apply(st, M.ActivityLogged{th, act, tone, kind, summary, at})) == SIDEREAD.Input.of(st) : SIDEREAD.Input}
+
+law sidebar_read_assistant:
+  for +st: M.State
+  for th: String
+  for id: String
+  for text: String
+  for at: Nat
+  {SIDEREAD.Input.of(M.State.apply(st, M.MessagePosted{th, id, M.Assistant{}, text, at})) == SIDEREAD.Input.of(st) : SIDEREAD.Input}
+
+law sidebar_read_system:
+  for +st: M.State
+  for th: String
+  for id: String
+  for text: String
+  for at: Nat
+  {SIDEREAD.Input.of(M.State.apply(st, M.MessagePosted{th, id, M.System{}, text, at})) == SIDEREAD.Input.of(st) : SIDEREAD.Input}

@@ -420,7 +420,7 @@ def Actor.render.web.indexed(+updated: Actor, +action: V.ActResult, +st: M.State
   +prepared = V.Render.ui(u, st, index, J.Json.get_obj(p, "target"), rows, stream, now)
   +signals = SGV.SignalCache.obtain.revision(epoch, revision, st, Signals.get(Sidebar.memos(updated)))
   +metadata = SIXV.IndexCache.obtain.revision(epoch, revision, st, SideIndex.get(Sidebar.memos(updated)))
-  +key = SC.Sidebar.key(prepared, epoch, Sidebar.view(updated))
+  +key = SC.Sidebar.key.revision(prepared, epoch, Sidebar.view(updated), revision)
   +cached = Sidebar.lookup(SC.Sidebar.request(p, u), Sidebar.memos(updated), key)
   +window = V.Render.window(stream, index, V.Target.thread(st, J.Json.get_obj(p, "target")), p, epoch, rows)
   +res = V.Obj.put(V.Render.web.prepared.metadata(action, prepared, window, cached, SGV.SignalCache.signals(signals), SIXV.IndexCache.index(metadata)), "mailDraftContext", Actor.mail_context(u))
