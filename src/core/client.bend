@@ -1510,9 +1510,14 @@ def Ui.sel(u: Ui) -> String:
 def Ui.reselect(+old: String, +u: Ui) -> Ui:
   Ui.reselect.k(String.eq(old, Ui.sel(u)), u, old)
 
-# (Ui.act brings the thread's own panel); a thread chosen leaves Settings
+# a thread chosen (the one already selected too) leaves Settings; the web's
+# hub-drawn view picks threads with it too (presentation.bend's Session.select)
+def Ui.select.nav(u: Ui, +id: String) -> Ui:
+  Ui.flag_off(Ui.select.k(u, id), "settings")
+
+# (Ui.act brings the thread's own panel)
 def Ui.select(u: Ui, +id: String) -> Act:
-  Draft.stale.after(Act{Ui.flag_off(Ui.select.k(u, id), "settings"), [Focus{"composer"}, ScrollEnd{}]})
+  Draft.stale.after(Act{Ui.select.nav(u, id), [Focus{"composer"}, ScrollEnd{}]})
 
 def Ui.reselect.act(+old: String, a: Act) -> Act:
   match a:

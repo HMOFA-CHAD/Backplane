@@ -3857,6 +3857,13 @@ law idx_links_found:
 law select_leaves_settings:
   {U.Ui.flag(U.Act.ui(U.Ui.select(U.Ui.flag_on(U.Ui.init(0n), "settings"), "t1")), "settings") == False{} : Bool}
 
+# the thread already selected, picked again, leaves Settings and stays chosen
+law select_same_leaves_settings:
+  {U.Ui.flag(U.Ui.select.nav(U.Ui.flag_on(U.Ui.select.k(U.Ui.init(0n), "t1"), "settings"), "t1"), "settings") == False{} : Bool}
+
+law select_same_keeps_thread:
+  {U.Ui.sel(U.Ui.select.nav(U.Ui.flag_on(U.Ui.select.k(U.Ui.init(0n), "t1"), "settings"), "t1")) == "t1" : String}
+
 law room_leaves_settings:
   {U.Ui.flag(U.Act.ui(U.Bots.room.select(U.Ui.flag_on(U.Ui.init(0n), "settings"), "r1")), "settings") == False{} : Bool}
 

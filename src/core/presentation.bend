@@ -197,6 +197,10 @@ def Session.reading.ui(away: Bool, +u: U.Ui, +id: String, +seen: String, count: 
 def Session.reading(session: J.Json, id: String, seen: String, count: Nat, away: Bool) -> J.Json:
   Session.pack(Session.reading.ui(away, Session.adopt(U.Ui.init(0n), session), id, seen, count))
 
+# a thread picked in the hub-drawn view leaves Settings, as Ui.select does
+def Session.select(+session: J.Json, +id: String) -> J.Json:
+  Session.pack(U.Ui.select.nav(Session.adopt(U.Ui.init(0n), session), id))
+
 def Session.draft(+session: J.Json, +text: String) -> J.Json:
   Session.pack(U.Ui.scratch_set(Session.adopt(U.Ui.init(0n), session), J.Json.get_str(session, "sel", ""), text))
 

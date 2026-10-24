@@ -6335,6 +6335,12 @@ def Laws.tint_code_again():
 def Laws.select_leaves_settings():
   {==}
 
+def Laws.select_same_leaves_settings():
+  {==}
+
+def Laws.select_same_keeps_thread():
+  {==}
+
 def Laws.room_leaves_settings():
   {==}
 
