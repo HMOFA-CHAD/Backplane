@@ -81,6 +81,7 @@ import ../core/boot.bend as BT
 import ../core/store.bend as ST
 import ./hotboot.bend as HB
 import ./storeio.bend as STO
+import ./db.bend as SQ
 import ./botnet.bend as BN
 import ../core/far.bend as FR
 import ../core/fview.bend as FV
@@ -8170,7 +8171,7 @@ def Far.push.job(s: FR.Send, +epoch: String, +home: String, +url: String, +inbox
 def Far.pull.job(+link: String, +since: Nat, +epoch: String, +home: String, +url: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
     now : Nat <- Now.nat()
-    +r : BN.Resp <- BN.Bn.to_peer(home, url, link, now, "/far/log", True{}, J.Json.show(J.Json.obj([J.KV{"since", J.Json.nat(since)}, J.KV{"epoch", J.Str{epoch}}])))
+    +r : BN.Resp <- BN.Bn.to_peer(home, url, link, now, "/far/log", True{}, J.Json.show(J.Json.obj([J.KV{"since", J.Json.nat(since)}, J.KV{"epoch", J.Str{epoch}}, J.KV{"v", J.Json.nat(3n)}])))
     Far.send(inbox, FarPulled{link, since, Far.code(r), Far.body(r)})
 
 def Far.rpc.job(+client: U32, +id: String, +link: String, +body: String, +home: String, +url: String, +inbox: Chan(Msg)) -> IO(Unit):
@@ -8939,12 +8940,24 @@ def Far.start.epoch(p: FR.Fh & Hub, +ls: List<&2, String>, +seq: Nat) -> Hub:
   (fh, h) = p
   Far.with(h, FR.Fh.epoch.set(fh, Far.history.at(ls, seq)))
 
+# each project's last shared change, from the store (none without one): the
+# catalog says them before the feed (old peers only) is ever made
+def Far.lasts.rows(+db: String) -> IO(List<&2, List<&2, String>>):
+  Bool.pick(IO(List<&2, List<&2, String>>), String.is_empty(db), IO.pure(List<&2, List<&2, String>>, Nil{}),
+    SQ.Db.query(db, "SELECT scope, max(seq) FROM far_line WHERE scope <> '' GROUP BY scope", [], 1000000))
+
+def Far.lasts.put(p: FR.Fh & Hub, +m: Map<&2, Nat>) -> Hub:
+  (fh, h) = p
+  Far.with(h, FR.Fh.lasts.boot(fh, m))
+
 def Far.start(h: Hub) -> IO(Hub):
   match h:
     case Hub{+st, f, +ls, cl, as, +inbox, +cfg, note}:
       do IO<Hub>:
         Far.start.go(Far.live(BO.World.peers(M.State.bots(st))), Cfg.home(cfg), inbox)
-        return Far.start.epoch(Far.fh(Hub{st, f, ls, cl, as, inbox, cfg, note}), ls, M.State.seq(st))
+        rows : List<&2, List<&2, String>> <- Far.lasts.rows(Cfg.thin.store(cfg))
+        h2 : Hub = Far.start.epoch(Far.fh(Hub{st, f, ls, cl, as, inbox, cfg, note}), ls, M.State.seq(st))
+        return Far.lasts.put(Far.fh(h2), FR.Fr.lasts.rows(rows, Map.new(&2, Nat)))
 
 def Far.mirrors(+cfg: Cfg) -> List<&2, FR.In>:
   FR.Fh.ins(BN.Bn.far(Cfg.bn(cfg)))
@@ -12661,12 +12674,21 @@ def Hub.uber.in(h: Hub, +link: String, +o: J.Json, +reply: Chan(List<&2, U32>), 
 # POST /far/push: a batch from a linked machine (the owner's own)
 # A push from another history is only a resync hint. Ask the owner for
 # its current epoch instead of trusting a potentially late old push.
+# (a pushed project change is followed by a pull for the catalog:
+# FR.Fr.items.projects)
+def Far.taken.cat(projects: Bool, m: IO(Hub), +link: String) -> IO(Hub):
+  match projects:
+    case True{}:
+      IO.bind(Hub, Hub, m, h => Far.pull.here(h, link))
+    case False{}:
+      m
+
 def Far.push.receive.k(changed: Bool, h: Hub, +link: String, +since: Nat, +head: Nat, +xs: List<&2, FR.Item>, +name: String) -> IO(Hub):
   match changed:
     case True{}:
       Far.pull.here(h, link)
     case False{}:
-      Far.take(h, link, since, head, xs, name)
+      Far.taken.cat(FR.Fr.items.projects(xs), Far.take(h, link, since, head, xs, name), link)
 
 def Far.push.receive(r: FR.In & Hub, +epoch: String, +since: Nat, +head: Nat, +xs: List<&2, FR.Item>, +name: String) -> IO(Hub):
   (+i, h) = r
@@ -12764,11 +12786,88 @@ def Far.log.k(r: Maybe<&2, List<&2, FR.Line>> & Hub, +since: Nat, +epoch: String
   (m, h) = r
   Far.log.go(m, h, since, epoch, reply)
 
+# /far/log v3 (core/far.bend): the snapshot for a history the peer lacks,
+# else the shared lines after `since` read from the store, a page each
+def Far.v3.rows(+db: String, +since: Nat) -> IO(List<&2, List<&2, String>>):
+  SQ.Db.query.t(db, "SELECT f.seq, l.off, l.len, l.wire FROM far_line f JOIN line l ON l.seq = f.seq WHERE f.seq > ? ORDER BY f.seq LIMIT ?", [SQ.Db.nat(since), SQ.Db.nat(FR.Fr.v3.rows())], 2000)
+
+# the rows' lines read from the log in one pass (hotboot.js), the other
+# lines between them skipped
+def Far.v3.text(+home: String, +rs: List<&2, FR.FarRow>) -> IO(List<&2, String>):
+  HB.Hot.lines(Store.path(home), U32.from_nat(FR.Fr.rows.from(rs)), U32.from_nat(FR.Fr.rows.to(rs, 0n)), FR.Fr.rows.skips(rs))
+
+def Far.v3.answer(h: Hub, +from: Nat, +own: String, +page: FR.Page, +reply: Chan(List<&2, U32>)) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
+      Hub.answer(Hub{st, f, ls, cl, as, inbox, cfg, note}, reply, Bot.json("200 OK", FR.Fr.log.json(from, FR.Fr.catalog(st, FR.Fh.lasts(BN.Bn.far(Cfg.bn(cfg)))),
+        FR.Fr.with.epoch(FR.Page.json(page), own))))
+
+# (a log that does not give one line per row is never answered from: the
+# peer is told so and pulls again)
+def Far.v3.tail.k(ok: Bool, h: Hub, +since: Nat, +own: String, +rs: List<&2, FR.FarRow>, +ts: List<&2, String>, +reply: Chan(List<&2, U32>)) -> IO(Hub):
+  match ok h:
+    case True{} Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Far.v3.answer(Hub{st, f, ls, cl, as, inbox, cfg, note}, since, own,
+        FR.Fr.v3.page(FR.Fr.rows.lines(rs, ts), since, M.State.seq(st), 400000n, Nat.is_eq(List.length(&2, FR.FarRow, rs), FR.Fr.v3.rows())), reply)
+    case False{} h2:
+      do IO<Hub>:
+        Log.info("far: the log and the store disagree after " ++ Nat.show(since) ++ " (" ++ Nat.show(List.length(&2, String, ts)) ++ " lines for " ++ Nat.show(List.length(&2, FR.FarRow, rs)) ++ " rows)")
+        Hub.answer(h2, reply, W.Http.text("500 Internal Server Error", "the log and the store disagree"))
+
+def Far.v3.tail(h: Hub, +since: Nat, +own: String, +reply: Chan(List<&2, U32>)) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
+      do IO<Hub>:
+        rows : List<&2, List<&2, String>> <- Far.v3.rows(Cfg.thin.store(cfg), since)
+        +rs : List<&2, FR.FarRow> = FR.Fr.rows.of(rows, Nil{})
+        +ts : List<&2, String> <- Far.v3.text(Cfg.home(cfg), rs)
+        Far.v3.tail.k(Nat.is_eq(List.length(&2, String, ts), List.length(&2, FR.FarRow, rs)), Hub{st, f, ls, cl, as, inbox, cfg, note}, since, own, rs, ts, reply)
+
+def Far.v3.snap.k(fits: Bool, h: Hub, +cs: List<&2, M.Change>, +seq: Nat, +own: String, +reply: Chan(List<&2, U32>)) -> IO(Hub):
+  match fits:
+    case True{}:
+      Far.v3.answer(h, 0n, own, FR.Fr.snap.page(cs, seq), reply)
+    case False{}:
+      Far.v3.tail(h, 0n, own, reply)
+
+def Far.v3.snap(h: Hub, +own: String, +reply: Chan(List<&2, U32>)) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      +cs = FR.Fr.snap.shared(st)
+      Far.v3.snap.k(FR.Fr.snap.fits(cs, M.State.seq(st)), Hub{st, f, ls, cl, as, inbox, cfg, note}, cs, M.State.seq(st), own, reply)
+
+def Far.v3.k(snap: Bool, h: Hub, +since: Nat, +own: String, +reply: Chan(List<&2, U32>)) -> IO(Hub):
+  match snap:
+    case True{}:
+      Far.v3.snap(h, own, reply)
+    case False{}:
+      Far.v3.tail(h, since, own, reply)
+
+def Far.v3(h: Hub, +since: Nat, +epoch: String, +reply: Chan(List<&2, U32>)) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      +own = FR.Fh.epoch(BN.Bn.far(Cfg.bn(cfg)))
+      Far.v3.k(FR.Fr.v3.snap(since, epoch, own), Hub{st, f, ls, cl, as, inbox, cfg, note}, since, own, reply)
+
+# a peer that says v 3, from a hub with a store, is answered from it; any
+# other from the feed
+def Far.log.v(v3: Bool, h: Hub, +o: J.Json, +reply: Chan(List<&2, U32>)) -> IO(Hub):
+  match v3:
+    case True{}:
+      Far.v3(h, J.Json.get_nat(o, "since", 0n), J.Json.get_str(o, "epoch", ""), reply)
+    case False{}:
+      Far.log.k(Far.feed.of(Far.fh(h)), J.Json.get_nat(o, "since", 0n), J.Json.get_str(o, "epoch", ""), reply)
+
+def Far.log.v.h(h: Hub, +o: J.Json, +reply: Chan(List<&2, U32>)) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      Far.log.v(Bool.and(Nat.is_ge(J.Json.get_nat(o, "v", 0n), 3n), Bool.not(String.is_empty(Cfg.thin.store(cfg)))), Hub{st, f, ls, cl, as, inbox, cfg, note}, o, reply)
+
 # POST /far/log: a page of what this hub shares after `since`
 def Hub.far.log(ok: Bool, m: Maybe<&2, J.Json>, h: Hub, +reply: Chan(List<&2, U32>)) -> IO(Hub):
   match ok m:
     case True{} Some{+o}:
-      Far.log.k(Far.feed.of(Far.fh(h)), J.Json.get_nat(o, "since", 0n), J.Json.get_str(o, "epoch", ""), reply)
+      Far.log.v.h(h, o, reply)
     case True{} None{}:
       Hub.answer(h, reply, W.Http.text("400 Bad Request", "not JSON"))
     case False{} _:

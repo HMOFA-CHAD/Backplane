@@ -1010,13 +1010,23 @@ def Fr.snap.go(cs: List<&2, M.Change>, +n: Nat, acc: List<&2, Item>) -> List<&2,
 def Fr.snap.items(+cs: List<&2, M.Change>, +head: Nat) -> List<&2, Item>:
   Fr.snap.go(cs, Nat.sub(head, List.length(&2, M.Change, cs)), Nil{})
 
-def In.compact.k(+l: String, n: String, +h: Nat, +ys: List<&2, Item>, a: Bool, e: String) -> In:
+def In.compacted(+l: String, n: String, +h: Nat, +ys: List<&2, Item>, a: Bool, e: String) -> In:
   In{l, n, h, ys, a, e, 0n, Fr.apply(ys, l, M.State.empty())}
+
+# (a snapshot longer than the head has no numbers of its own below it: the
+# mirror stays as it is and tries again after another In.tail.max() items)
+def In.compact.k(fits: Bool, +l: String, n: String, +h: Nat, cs: List<&2, M.Change>, xs: List<&2, Item>, a: Bool, e: String, v: M.State) -> In:
+  match fits:
+    case True{}:
+      In.compacted(l, n, h, Fr.snap.items(cs, h), a, e)
+    case False{}:
+      In{l, n, h, xs, a, e, 0n, v}
 
 def In.compact(i: In) -> In:
   match i:
-    case In{+l, n, +h, xs, a, e, _, _}:
-      In.compact.k(l, n, h, Fr.snap.items(FS.Snap.of(Fr.items.fold(xs, M.State.empty())), h), a, e)
+    case In{+l, n, +h, +xs, a, e, _, v}:
+      +cs = FS.Snap.of(Fr.items.fold(xs, M.State.empty()))
+      In.compact.k(Nat.is_le(List.length(&2, M.Change, cs), h), l, n, h, cs, xs, a, e, v)
 
 # a mirror whose items are a demo machine's whole log (for laws)
 def Fr.demo.items(cs: List<&2, M.Change>, +n: Nat) -> List<&2, Item>:
@@ -1615,6 +1625,197 @@ def Page.json(p: Page) -> String:
     case Page{h, xs, m}:
       J.Json.show(J.Json.obj([J.KV{"head", J.Json.nat(h)}, J.KV{"items", J.Json.arr(Fr.items.json(xs))}, J.KV{"more", J.Json.bool(m)}]))
 
+# /far/log v3: an owner with a store (core/storedb.bend's far_line)
+# ----------------------------------------------------------------
+# A peer that says v 3 and holds none of this history (since 0, or another
+# epoch) is sent what is live here instead of the whole history: the
+# snapshot (farsnap.bend), only what Fr.shared lets go, numbered so it
+# ends at this log's length, in one page. Otherwise it is sent the shared
+# lines after `since`, read from the store's far_line and line tables a
+# page at a time, so the hub keeps no feed in memory. A snapshot never
+# goes into a log: it travels in this answer and in the mirror's file.
+# Old peers (no v) and a hub with no store keep the feed (Fh.feed).
+
+# rows read per page
+def Fr.v3.rows() -> Nat:
+  2000n
+
+# whether a pull gets the snapshot
+def Fr.v3.snap(+since: Nat, +peer: String, +own: String) -> Bool:
+  Bool.or(Nat.is_eq(since, 0n), Fr.epoch.changed(peer, own))
+
+def Fr.snap.keep.k(sh: Bool, c: M.Change, acc: List<&2, M.Change>) -> List<&2, M.Change>:
+  match sh:
+    case True{}:
+      c <> acc
+    case False{}:
+      acc
+
+def Fr.snap.keep(cs: List<&2, M.Change>, +s: M.State, acc: List<&2, M.Change>) -> List<&2, M.Change>:
+  match cs:
+    case Nil{}:
+      List.reverse(&2, M.Change, acc)
+    case +c <> t:
+      Fr.snap.keep(t, s, Fr.snap.keep.k(Fr.shared(s, c), c, acc))
+
+# the snapshot a peer is sent, oldest first (law far_v3_snap_shared)
+def Fr.snap.shared(+s: M.State) -> List<&2, M.Change>:
+  Fr.snap.keep(FS.Snap.of(s), s, Nil{})
+
+# a snapshot numbers each item below the log's length, so it must not be
+# longer (a tiny log with many live threads is sent its history instead)
+def Fr.snap.fits(+cs: List<&2, M.Change>, +seq: Nat) -> Bool:
+  Nat.is_le(List.length(&2, M.Change, cs), seq)
+
+# the snapshot as the one page of a pull
+def Fr.snap.page(+cs: List<&2, M.Change>, +seq: Nat) -> Page:
+  Page{seq, Fr.snap.items(cs, seq), False{}}
+
+# a row's number, its digits (no Nat.read: see AGENTS.md)
+def Fr.dig(skip: Bool, +c: U32, +acc: Nat) -> Nat:
+  match skip:
+    case True{}:
+      acc
+    case False{}:
+      Nat.add(Nat.mul(acc, 10n), U32.to_nat((c - 48 : U32)))
+
+def Fr.digits(s: String, +acc: Nat) -> Nat:
+  match s:
+    case SNil{}:
+      acc
+    case SCon{Chr{+c}, t}:
+      Fr.digits(t, Fr.dig(Bool.or(U32.is_lt(c, 48), U32.is_gt(c, 57)), c, acc))
+
+# A store row of a shared line: its number, where its text is in the log
+# (off, len: bytes), and its wire text when that is not the line's own
+type FarRow is Data:
+  FarRow{n: Nat, off: Nat, len: Nat, wire: String}
+
+def Fr.row.of(r: List<&2, String>) -> FarRow:
+  match r:
+    case n <> o <> l <> w <> _:
+      FarRow{Fr.digits(n, 0n), Fr.digits(o, 0n), Fr.digits(l, 0n), w}
+    case _:
+      FarRow{0n, 0n, 0n, ""}
+
+# the store's rows [seq, off, len, wire], oldest first
+def Fr.rows.of(rows: List<&2, List<&2, String>>, acc: List<&2, FarRow>) -> List<&2, FarRow>:
+  match rows:
+    case Nil{}:
+      List.reverse(&2, FarRow, acc)
+    case r <> t:
+      Fr.rows.of(t, Fr.row.of(r) <> acc)
+
+# the bytes of the log the rows' lines are in: from the first's start to
+# the last's end
+def Fr.rows.from(rs: List<&2, FarRow>) -> Nat:
+  match rs:
+    case FarRow{_, o, _, _} <> _:
+      o
+    case Nil{}:
+      0n
+
+def Fr.rows.to(rs: List<&2, FarRow>, +e: Nat) -> Nat:
+  match rs:
+    case Nil{}:
+      e
+    case FarRow{_, +o, +l, _} <> t:
+      Fr.rows.to(t, Nat.add(o, l))
+
+def Fr.gap.k(none: Bool, +a: Nat, +b: Nat, acc: List<&2, String>) -> List<&2, String>:
+  match none:
+    case True{}:
+      acc
+    case False{}:
+      Nat.show(b) <> Nat.show(a) <> acc
+
+def Fr.rows.gap(first: Bool, +end: Nat, +o: Nat, acc: List<&2, String>) -> List<&2, String>:
+  match first:
+    case True{}:
+      acc
+    case False{}:
+      Fr.gap.k(Nat.is_le(o, Nat.add(end, 1n)), Nat.add(end, 1n), o, acc)
+
+def Fr.rows.gaps(rs: List<&2, FarRow>, +end: Nat, first: Bool, acc: List<&2, String>) -> List<&2, String>:
+  match rs:
+    case Nil{}:
+      List.reverse(&2, String, acc)
+    case FarRow{_, +o, +l, _} <> t:
+      Fr.rows.gaps(t, Nat.add(o, l), False{}, Fr.rows.gap(first, end, o, acc))
+
+# the stretches between the rows' lines (lines of other changes), skipped
+# when the log is read: [a1, b1, ...], a <= a line's start < b
+def Fr.rows.skips(rs: List<&2, FarRow>) -> List<&2, String>:
+  Fr.rows.gaps(rs, 0n, True{}, Nil{})
+
+def Fr.row.text(+w: String, +t: String) -> String:
+  Bool.pick(String, String.is_empty(w), t, w)
+
+# the rows (newest first) beside the lines read (newest first), as feed
+# lines oldest first; a row the read did not give is left out
+def Fr.rows.zip(rs: List<&2, FarRow>, ts: List<&2, String>, acc: List<&2, Line>) -> List<&2, Line>:
+  match rs ts:
+    case FarRow{+n, _, _, +w} <> r +t <> u:
+      Fr.rows.zip(r, u, Line{n, Fr.row.text(w, t)} <> acc)
+    case _ _:
+      acc
+
+# the lines of rows (oldest first) from the text read (newest first)
+def Fr.rows.lines(+rs: List<&2, FarRow>, ts: List<&2, String>) -> List<&2, Line>:
+  Fr.rows.zip(List.reverse(&2, FarRow, rs), ts, Nil{})
+
+def Fr.v3.page.k(full: Bool, p: Page, +last: Nat) -> Page:
+  match full p:
+    case True{} Page{_, xs, False{}}:
+      Page{last, xs, True{}}
+    case _ q:
+      q
+
+def Fr.lines.last(ls: List<&2, Line>, +n: Nat) -> Nat:
+  match ls:
+    case Nil{}:
+      n
+    case Line{m, _} <> t:
+      Fr.lines.last(t, m)
+
+# a page of the shared lines after `since` (ls: the rows read, at most
+# Fr.v3.rows(); full: as many as asked, so more may follow the last)
+def Fr.v3.page(+ls: List<&2, Line>, +since: Nat, +seq: Nat, +cap: Nat, full: Bool) -> Page:
+  Fr.v3.page.k(full, Fr.page.k(ls, since, seq, cap), Fr.lines.last(ls, since))
+
+# what laws read of a page and of items
+def Page.where(p: Page) -> List<&2, Nat>:
+  match p:
+    case Page{h, xs, m}:
+      [h, List.length(&2, Item, xs), Bool.pick(Nat, m, 1n, 0n)]
+
+def Fr.items.ns(xs: List<&2, Item>) -> List<&2, Nat>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case Item{n, _} <> t:
+      n <> Fr.items.ns(t)
+
+# a batch that adds or removes a project: the peer pulls once after it,
+# for the owner's catalog (pushes carry none), which clients that join
+# later are given (Fh.cat); a v3 link otherwise pulls only when new
+def Fr.items.projects(xs: List<&2, Item>) -> Bool:
+  match xs:
+    case Nil{}:
+      False{}
+    case Item{_, +c} <> t:
+      Bool.or(String.starts_with(J.Json.get_str(c, "$", ""), "Project"), Fr.items.projects(t))
+
+# each project's last shared change, from the store's rows [scope, max]
+def Fr.lasts.rows(rows: List<&2, List<&2, String>>, m: Map<&2, Nat>) -> Map<&2, Nat>:
+  match rows:
+    case Nil{}:
+      m
+    case (+p <> +n <> _) <> t:
+      Fr.lasts.rows(t, Fr.last.put(p, Fr.digits(n, 0n), m))
+    case _ <> t:
+      Fr.lasts.rows(t, m)
+
 # What the history's identity is made of: the log's first line, and, when
 # the log holds lines this build does not decode (a newer build wrote them:
 # `len` lines against `seq` changes), how many, so the feed's numbering
@@ -1869,6 +2070,12 @@ def Fh.feed.ready(f: Fh, fd: Feed) -> Fh:
   match f fd:
     case Fh{ms, os, _, e, p, ep, Cx{la, ca, ub}} Feed{ls, +fl}:
       Fh{ms, os, Some{List.append(&2, Line, e, ls)}, Nil{}, p, ep, Cx{Fr.lasts.merge(Map.keys(&2, Nat, fl), fl, la), ca, ub}}
+
+# the projects' numbers the store had at start (Fr.lasts.rows), merged in
+def Fh.lasts.boot(f: Fh, +m: Map<&2, Nat>) -> Fh:
+  match f:
+    case Fh{ms, os, fd, e, p, ep, Cx{la, ca, ub}}:
+      Fh{ms, os, fd, e, p, ep, Cx{Fr.lasts.merge(Map.keys(&2, Nat, m), m, la), ca, ub}}
 
 # a commit's changes counted into the projects' numbers
 def Fh.lasts.add(f: Fh, cs: List<&2, M.Change>, +seq: Nat, +s: M.State) -> Fh:

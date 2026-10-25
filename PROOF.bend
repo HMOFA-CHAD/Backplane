@@ -13193,5 +13193,16 @@ def Laws.far_compact_tail(): {==}
 def Laws.far_view_put_threads(): {==}
 def Laws.far_view_put_projects(): {==}
 def Laws.far_view_compact(): {==}
+def Laws.far_v3_snap_when(): {==}
+def Laws.far_v3_snap_shared(): {==}
+def Laws.far_v3_snap_numbers(): {==}
+def Laws.far_v3_snap_page(): {==}
+def Laws.far_v3_page_full(): {==}
+def Laws.far_v3_page_empty(): {==}
+def Laws.far_v3_rows(): {==}
+def Laws.far_v3_range(): {==}
+def Laws.far_v3_skips(): {==}
+def Laws.far_v3_lasts(): {==}
+def Laws.far_items_projects(): {==}
 def Laws.hot_demo_threads(): {==}
 # ---- end F1 ----
