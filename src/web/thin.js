@@ -208,7 +208,7 @@ export class ThinViews {
     const c = this.calls.get(e.id), l = this.links.get(hub);
     if (!c || c.link !== l || c.link.hub !== hub) return null;
     this.calls.delete(e.id);
-    let current = (c.terminalInputIntent ? l.revision : l.pictureRevision) === c.revision && sameTarget(l.target, c.target);
+    let current = (c.terminalInputIntent || c.method === 'view.cancel' ? l.revision : l.pictureRevision) === c.revision && sameTarget(l.target, c.target);
     this.retireUpdate(c);
     if (e.ok !== true) return { failed: record(e.error) ? e.error.code : 'UNAVAILABLE', id: e.id, method: c.method, retry: false, cmds: [] };
     let r = e.result;
@@ -237,6 +237,7 @@ export class ThinViews {
       } catch { return { failed: 'invalid sidebar region', id: e.id, method: c.method, retry: false, cmds: [] }; }
     }
     if (this.api.validateResult && this.api.validateResult(r, c.input) !== true) return { failed: 'invalid view presentation', id: e.id, method: c.method, retry: false, cmds: [] };
+    if (c.terminalInputIntent && inputOnly) current = current && l.terminalOpen && l.terminalOwner === c.input.terminalOwner;
     // Only a fully validated, ready full fallback may promote an exempt intent
     // into picture authority. Its original ordinal cannot overtake navigation.
     if (c.terminalInputIntent && !inputOnly && record(r.shown) && r.remoteReady === true &&

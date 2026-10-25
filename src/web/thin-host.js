@@ -72,7 +72,7 @@ export class ThinHost {
     if (result.id) {
       const request = result.cmds.find(c => c.type === 'request')?.request;
       this.pending.set(result.id, { viewerRevision: this.viewerRevision, revision: this.localRevision, target: request?.p.target, wireRevision: request?.p.requestRevision,
-        pictureAuthority: this.client.calls?.get(result.id)?.terminalInputIntent !== true, input: request?.p, acks: [], ...metadata });
+        pictureAuthority: request?.m !== 'view.cancel' && this.client.calls?.get(result.id)?.terminalInputIntent !== true, input: request?.p, acks: [], ...metadata });
     }
     try {
       for (const item of result.cmds || []) {

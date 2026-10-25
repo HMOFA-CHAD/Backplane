@@ -66,4 +66,16 @@ check('wire-stale picture-current read errors remain actionable in the host',()=
  assert.equal(ThinHost.prototype.isCurrent.call({client:f.client,hub:'h'},{wireRevision:read.p.requestRevision,target,pictureAuthority:false}),false);
 });
 check('disconnect discards old read and input authority',()=>{const f=setup(),read=f.read(),key=f.input();f.client.disconnect('h');assert.equal(f.client.reply('h',f.reply(read)),null);assert.equal(f.client.reply('h',f.reply(key,{compact:true})),null)});
+check('cancel remains wire-current after compact input leaves the picture fence behind',()=>{
+ const f=setup(),key=f.input();f.client.reply('h',f.reply(key,{compact:true}));assert(f.link.revision>f.link.pictureRevision);
+ f.client.request('h','view.cancel',{});const cancel=f.sent.at(-1);assert(f.client.reply('h',f.reply(cancel)).current);
+ assert(ThinHost.prototype.isCurrent.call({client:f.client,hub:'h'},{wireRevision:cancel.p.requestRevision,target,pictureAuthority:false}));
+});
+for(const [name,changed] of [['closes',{open:{}}],['changes owner',{drafts:{...session.drafts,'@terminal.owner':'b'}}]])check('same-view full read '+name+' before old input ACK cannot reopen or reassign the popup',()=>{
+ const f=setup(),read=f.read(),key=f.input();
+ assert(f.client.reply('h',f.reply(read,{extra:{session:{...copy(session),...changed}}})).current);
+ const old=f.client.reply('h',f.reply(key,{compact:true,extra:{cmds:[{type:'send',text:JSON.stringify({id:11,m:'term.input',p:{thread:'a',b:[97]}})}]}}));
+ assert(old.inputOnly&&!old.current);assert.equal(old.session,null);assert.equal(old.cmds.length,1);assert.equal(f.client.reply('h',f.reply(key,{compact:true})),null);
+ assert.equal(f.link.terminalOpen,changed.open?false:true);assert.equal(f.link.terminalOwner,changed.open?'a':'b');
+});
 console.log('terminal picture authority focused cases: '+count);
