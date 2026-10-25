@@ -10,6 +10,8 @@ import { installUsageTabs } from "./usage-tabs.js";
 import { installWorkspaceKeys } from "./workspace-keys.js";
 import { installFloatingTerminal } from "./floating-terminal.js";
 installUsageTabs();
+import { installWorkspaceMenus } from "./workspace-menus.js";
+installWorkspaceMenus();
 import { installSubagentInspector } from "./subagent-inspector.js";
 installSubagentInspector();
 import { installViewerFeedback } from "./viewer-feedback.js";
