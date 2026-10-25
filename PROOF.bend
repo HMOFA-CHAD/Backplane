@@ -13184,16 +13184,6 @@ def Laws.sidebar_draft_scratch_input(key, value, rest, h):
   SIDEDRAFTPROOF.scratch_keep(key, value, rest, h)
 def Laws.sidebar_draft_settings_separate(u, epoch, view, revision):
   SIDEDRAFTPROOF.settings_separate(u, epoch, view, revision)
-# ---- F1: far mirrors ----
-def Laws.far_snap_live(): {==}
-def Laws.far_snap_fix(): {==}
-def Laws.far_compact_live(): {==}
-def Laws.far_compact_head(): {==}
-def Laws.far_compact_tail(): {==}
-def Laws.far_fact_shared(): {==}
-def Laws.far_fact_private(): {==}
-def Laws.hot_demo_threads(): {==}
-# ---- end F1 ----
 # ---- secret box ----
 import ./test/secret_proof.bend as SECPROOF
 def Laws.sec_mask_total(v, s, h):
