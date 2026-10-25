@@ -61,6 +61,13 @@ def main() -> IO(Unit):
     C.Check.str("Files asks for the folder", sent(U.Ui.act(base(), "fm", "")), "{\"id\":1,\"m\":\"files.dir\",\"p\":{\"thread\":\"t1\",\"path\":\"\"}}")
     C.Check.str("the viewer shows Files", U.Ui.view_get(act(base(), "fm", ""), "view.kind"), "files")
     C.Check.str("not ready before the hub answers", Bool.show(U.Fm.ready(act(base(), "fm", ""))), "False")
+    C.Check.str("answered empty root is ready", Bool.show(U.Fm.ready(listed(act(base(), "fm", ""), "", ""))), "True")
+    C.Check.str("answered empty nested folder is ready", Bool.show(U.Fm.ready(listed(act(act(base(), "fm", ""), "fm-cd", "hw"), "hw", ""))), "True")
+    C.Check.str("empty old root cannot satisfy another folder", Bool.show(U.Fm.ready(listed(act(act(base(), "fm", ""), "fm-cd", "hw"), "", ""))), "False")
+    C.Check.str("invalidated root answer is not current", Bool.show(U.Fm.ready(U.Ui.info_drop(listed(act(base(), "fm", ""), "", ""), "fm.dir:t1"))), "False")
+    C.Check.str("reconnect refreshes the empty root path", sent(U.Fm.again(True{}, U.Act{act(base(), "fm", ""), Nil{}})), "{\"id\":2,\"m\":\"files.dir\",\"p\":{\"thread\":\"t1\",\"path\":\"\"}}")
+    C.Check.str("ordinary reply does not relist root", sent(U.Fm.again(False{}, U.Act{act(base(), "fm", ""), Nil{}})), "")
+    C.Check.str("reconnect without a folder request does not invent one", sent(U.Fm.again(True{}, U.Act{base(), Nil{}})), "")
     C.Check.str("the rows, folders first", String.join(labels(U.Fm.rows(listed(act(base(), "fm", ""), "", "d\t0\thw\nf\t2048\tboard.kicad_pcb\nf\t5\tnotes.txt\n"))), "|"),
       "hw:fm-cd:folder:|board.kicad_pcb:fm-open:board:2 KB|notes.txt:::5 B")
     C.Check.str("a folder below", sent(U.Ui.act(act(base(), "fm", ""), "fm-cd", "hw/main")), "{\"id\":2,\"m\":\"files.dir\",\"p\":{\"thread\":\"t1\",\"path\":\"hw/main\"}}")

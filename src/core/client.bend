@@ -5024,7 +5024,9 @@ def Fm.again.one(want: Bool, +k: String, a: Act) -> Act:
 def Fm.again.k(+k: String, a: Act) -> Act:
   match a:
     case Act{+u, cs}:
-      Fm.again.one(Bool.and(String.starts_with(k, "fm.want:"), Bool.not(String.is_empty(Ui.info(u, k)))), k, Act{u, cs})
+      # This key came from Map.keys: an empty value is the project root,
+      # not an absent request. Reconnect must refresh that folder too.
+      Fm.again.one(String.starts_with(k, "fm.want:"), k, Act{u, cs})
 
 def Fm.again.go(ks: List<&2, String>, a: Act) -> Act:
   match ks:
@@ -5169,8 +5171,19 @@ def Fm.rows.go(es: List<&2, FM.FEnt>, +dir: String) -> List<&2, FmRow>:
       Fm.row(e, dir) <> Fm.rows.go(t, dir)
 
 # whether the listing on screen is the folder asked for
+def Fm.received.k(r: Map<&2, String> & Bool) -> Bool:
+  (_, found) = r
+  found
+
+def Fm.received(u: Ui) -> Bool:
+  match u:
+    case Ui{_, sel, _, _, _, _, _, _, _, _, _, _, _, _, nf, _, _}:
+      Fm.received.k(Map.has(&2, String, nf, "fm.dir:" ++ sel))
+
 def Fm.ready(+u: Ui) -> Bool:
-  Bool.and(String.eq(Ui.info(u, "fm.dir:" ++ Ui.sel(u)), Fm.dir(u)), Bool.not(String.is_empty(Ui.info(u, "fm.dir:" ++ Ui.sel(u)) ++ Ui.info(u, "fm.list:" ++ Ui.sel(u)))))
+  # An answered empty root has both strings empty. Presence distinguishes
+  # that successful reply from a missing or invalidated listing.
+  Bool.and(Fm.received(u), String.eq(Ui.info(u, "fm.dir:" ++ Ui.sel(u)), Fm.dir(u)))
 
 # the folder's rows, once the hub has listed it
 def Fm.rows(+u: Ui) -> List<&2, FmRow>:
