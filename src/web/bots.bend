@@ -199,22 +199,28 @@ def WB.pages.menu(+lc: I.Loc, +ts: List<&2, String>, +cur: String) -> D.Node:
 # a bot's header (BU.head, the same for a bot here, one mirrored from a
 # linked machine and one only reported by one): its cat, its name with
 # where it lives, its mood, then sub (its model) and tools (Stop)
-def WB.header.loc(+lc: I.Loc, hd: BI.Head, sub: List<&2, D.Node>, tools: List<&2, D.Node>) -> D.Node:
+def WB.header.layout(rail: Bool, +lc: I.Loc, hd: BI.Head, sub: List<&2, D.Node>, tools: List<&2, D.Node>) -> D.Node:
   match hd:
     case BI.Head{+title, +look, +mood, +note, +tabs, +tab, _, _}:
       D.El{"header", "", [D.At{"class", "thread-head bot-head"}], [
         D.Dom.button("back", "select", "", MSG.T.tour.back(lc), "‹"),
         WC.WCat.img(look, mood, 72),
         WB.div("bot-id", D.Dom.span("bot-title", title) <> D.Dom.span(WB.mood.cls(mood), note) <> sub),
-        D.El{"div", "", [D.At{"class", "tools"}], List.append(&2, D.Node, tools, [WB.pages.menu(lc, tabs, BI.BU.nav.parent(tabs, tab))])}]}
+        D.El{"div", "", [D.At{"class", "tools"}], List.append(&2, D.Node, tools, D.Dom.when(rail, WB.pages.menu(lc, tabs, BI.BU.nav.parent(tabs, tab))))}]}
+
+def WB.header.loc(+lc: I.Loc, hd: BI.Head, sub: List<&2, D.Node>, tools: List<&2, D.Node>) -> D.Node:
+  WB.header.layout(True{}, lc, hd, sub, tools)
 
 def WB.header(hd: BI.Head, sub: List<&2, D.Node>, tools: List<&2, D.Node>) -> D.Node:
   WB.header.loc(I.En{}, hd, sub, tools)
 
-def WB.head.t.loc(+lc: I.Loc, t: M.Thread, +hd: BI.Head) -> D.Node:
+def WB.head.t.layout(rail: Bool, +lc: I.Loc, t: M.Thread, +hd: BI.Head) -> D.Node:
   match t:
     case M.Thread{_, _, _, _, _, turn, _, _, _, _, _, _, _, _, _, +pr, +mo, _, _, _, _}:
-      WB.header.loc(lc, hd, [D.Dom.span("bot-model", pr ++ " · " ++ Bool.pick(String, String.is_empty(mo), MSG.T.common.default(lc), mo))], D.Dom.when(Bool.and(WB.running(turn), Bool.not(String.eq(BI.Head.tab(hd), "chat"))), D.Dom.button("", "interrupt", "", MSG.T.composer.stop.tip(lc), MSG.T.composer.stop(lc))))
+      WB.header.layout(rail, lc, hd, [D.Dom.span("bot-model", pr ++ " · " ++ Bool.pick(String, String.is_empty(mo), MSG.T.common.default(lc), mo))], D.Dom.when(Bool.and(WB.running(turn), Bool.not(String.eq(BI.Head.tab(hd), "chat"))), D.Dom.button("", "interrupt", "", MSG.T.composer.stop.tip(lc), MSG.T.composer.stop(lc))))
+
+def WB.head.t.loc(+lc: I.Loc, t: M.Thread, +hd: BI.Head) -> D.Node:
+  WB.head.t.layout(True{}, lc, t, hd)
 
 # the bot's header: its cat, name, mood and model
 
@@ -222,7 +228,7 @@ def WB.head.t(t: M.Thread, hd: BI.Head) -> D.Node:
   WB.head.t.loc(I.En{}, t, hd)
 
 def WB.head.loc(+lc: I.Loc, +u: U.Ui, +b: BT.Bot, hd: BI.Head) -> D.Node:
-  WB.head.t.loc(lc, U.Ui.thread(U.Ui.state(u), BT.Bot.thread(b)), hd)
+  WB.head.t.layout(String.eq(U.Ui.info(u, "local.workspace.layout"), "rail-v1"), lc, U.Ui.thread(U.Ui.state(u), BT.Bot.thread(b)), hd)
 
 def WB.head(+u: U.Ui, +b: BT.Bot, hd: BI.Head) -> D.Node:
   WB.head.loc(I.En{}, u, b, hd)

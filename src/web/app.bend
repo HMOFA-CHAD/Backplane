@@ -25,8 +25,9 @@ def lang(u: U.Ui) -> String:
 def lang_preview(u: U.Ui) -> U.Ui:
   U.Ui.scratch_set(u, "@lang.preview", "1")
 
-def stamp(u: U.Ui) -> U.Ui:
-  U.Ui.info_set(u, "local.mailroom", "on")
+def stamp(+u: U.Ui) -> U.Ui:
+  U.Ui.info_set(U.Ui.info_set(u, "local.mailroom", "on"), "local.workspace.layout",
+    Bool.pick(String, String.is_empty(U.Ui.info(u, "local.workspace.layout")), "rail-v1", U.Ui.info(u, "local.workspace.layout")))
 
 def ready(a: U.Act) -> U.Act:
   match a:

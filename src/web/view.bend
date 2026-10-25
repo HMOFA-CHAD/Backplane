@@ -49,6 +49,11 @@ import ../core/tz.bend as TZ
 import ../core/stamp.bend as STP
 import ../core/order.bend as OR
 
+# Each web connection explicitly opts into the rail's DOM/CSS contract.
+# An old loaded host must keep the flat layout its stylesheet understands.
+def View.rail(+u: U.Ui) -> Bool:
+  String.eq(U.Ui.info(u, "local.workspace.layout"), "rail-v1")
+
 # Ui -> Node. Every decision (order, shelf, status) comes from core defs
 # with laws behind them; this file only lays them out.
 
@@ -871,6 +876,19 @@ def View.header(+lc: I.Loc, t: M.Thread, +st: M.State, +chip: String, mini: List
               D.Dom.when(U.ThreadTree.can_route(st, id), D.Dom.button("", "thread-child", id, "Create a conversation beneath this thread", "+ New subthread")),
               [D.Dom.span("control-label", View.group.label(lc, True{}))], List.take(&2, D.Node, View.snoozes.loc(lc, True{}), 3n)])}]}])}]])}
 
+
+def View.header.legacy(+lc: I.Loc, t: M.Thread, +st: M.State, +chip: String, mini: List<&2, TO.Tool>, +panel: Bool, snoozed: Bool, picking: Bool, term: Bool, +diff: Bool, del: Bool, +ren: String, +rtext: String) -> D.Node:
+  match t:
+    case M.Thread{+id, +p, title, _, _, turn, _, archived, override, +sa, +ua, pinned, _, +branch, _, _, model, _, _, _, _}:
+      D.El{"header", "", [D.At{"class", "thread-head"}, D.At{"style", "--tint:" ++ BG.Badge.css_of(st, p)}], List.concat(&2, D.Node, [[
+        D.Dom.button("back", "select", "", MSG.T.tour.title.threads(lc), "‹"),
+        D.El{"span", "", [D.At{"class", "badge"}], [WI.WIcon.svg(BG.Badge.icon(st, p), 16)]},
+        D.El{"div", "", [D.At{"class", "title-box"}], View.title.k.loc(lc, String.eq(ren, id), id, U.Label.title(st, id, TTL.Title.shown(lc, title)), rtext)},
+        D.Dom.span("meta", Bool.pick(String, String.is_empty(branch), "", branch))], View.boat.chip.loc(lc, chip), [
+        D.El{"div", "", [D.At{"class", "tools thread-controls"}], D.Dom.span("control-label", View.group.label(lc, False{})) <> List.append(&2, D.Node,
+          View.header.tools(lc, List.append(&2, TO.Tool, mini, TO.Tools.head.loc(lc, TO.Head{False{}, TO.Tools.settled(override, Nat.is_gt(sa, ua)), pinned, snoozed, archived, del,
+            Bool.not(String.is_empty(M.Fork.source(st, id))), term, panel}, "flag", "snooze", "term-toggle", "@term-size"))),
+          D.Dom.span("control-label", View.group.label(lc, True{})) <> List.take(&2, D.Node, View.snoozes.loc(lc, True{}), 3n))}]])}
 
 # the model menu's rows: each model's name, then what its CLI calls it,
 # in two columns (the names' as wide as the longest, --namew)
@@ -2506,11 +2524,16 @@ def View.send(+act: String, +send: String) -> D.Node:
   View.send.loc(I.En{}, act, send)
 
 # the thread's header, or the one given (a bot's)
-def View.top(+lc: I.Loc, hd: List<&2, D.Node>, t: M.Thread, +st: M.State, +chip: String, mini: List<&2, TO.Tool>, +panel: Bool, snoozed: Bool, picking: Bool, term: Bool, +diff: Bool, +del: Bool, +ren: String, +rtext: String) -> List<&2, D.Node>:
+def View.top.header(rail: Bool, +lc: I.Loc, +t: M.Thread, +st: M.State, +chip: String, +mini: List<&2, TO.Tool>, +panel: Bool, +snoozed: Bool, +picking: Bool, +term: Bool, +diff: Bool, +del: Bool, +ren: String, +rtext: String) -> List<&2, D.Node>:
+  match rail:
+    case True{}: [View.header(lc, t, st, chip, mini, panel, snoozed, picking, term, diff, del, ren, rtext)]
+    case False{}: [View.header.legacy(lc, t, st, chip, mini, panel, snoozed, picking, term, diff, del, ren, rtext)]
+
+def View.top(rail: Bool, +lc: I.Loc, hd: List<&2, D.Node>, t: M.Thread, +st: M.State, +chip: String, mini: List<&2, TO.Tool>, +panel: Bool, snoozed: Bool, picking: Bool, term: Bool, +diff: Bool, +del: Bool, +ren: String, +rtext: String) -> List<&2, D.Node>:
 
   match hd:
     case Nil{}:
-      [View.header(lc, t, st, chip, mini, panel, snoozed, picking, term, diff, del, ren, rtext)]
+      View.top.header(rail, lc, t, st, chip, mini, panel, snoozed, picking, term, diff, del, ren, rtext)
     case h <> r:
       h <> r
 
@@ -2674,6 +2697,25 @@ def View.tabs.loc(+lc: I.Loc, +cur: String) -> D.Node:
   D.El{"nav", "", [D.At{"class", "viewer-tabs"}, D.At{"aria-label", MSG.T.thread.viewer(lc)}], [
     View.workspace.menu(lc, cur, False{}), WI.WIcon.button("icon", "panel", "", MSG.T.viewer.close(lc), "x", 18, MSG.T.viewer.close(lc))]}
 
+def View.workspace.legacy(+lc: I.Loc, +cur: String, +panel: Bool, term: Bool) -> D.Node:
+  D.El{"nav", "workspace", [D.At{"class", "workspace-bar"}, D.At{"data-loading", MSG.T.viewer.loading(lc)}, D.At{"aria-label", MSG.T.thread.viewer(lc)}],
+    View.tool(TO.Tools.term.loc(lc, term, "term-toggle", "@term-size")) <>
+    D.Dom.button("commands", "ws-palette-open", "", "Command palette · Ctrl+Shift+P / Cmd+Shift+P", View.commands.label(lc)) <>
+    List.append(&2, D.Node, View.destinations(lc, Bool.pick(String, panel, cur, "")),
+      List.append(&2, D.Node, D.Dom.when(panel, D.Dom.button("viewer-close", "panel", "", MSG.T.viewer.close(lc), MSG.T.viewer.close(lc))), [D.El{"span", "viewer-feedback", [D.At{"class", "workspace-feedback"}, D.At{"role", "status"}], Nil{}}]))}
+
+def View.workspace.for(rail: Bool, +lc: I.Loc, +cur: String, +panel: Bool, +term: Bool) -> D.Node:
+  match rail:
+    case True{}: View.workspace(lc, cur, panel, term)
+    case False{}: View.workspace.legacy(lc, cur, panel, term)
+
+def View.tabs.for(rail: Bool, +lc: I.Loc, +cur: String) -> D.Node:
+  match rail:
+    case True{}: View.tabs.loc(lc, cur)
+    case False{}:
+      D.El{"nav", "", [D.At{"class", "viewer-tabs"}, D.At{"aria-label", MSG.T.thread.viewer(lc)}],
+        List.append(&2, D.Node, View.destinations(lc, cur), [WI.WIcon.button("icon", "panel", "", MSG.T.viewer.close(lc), "x", 16, "")])}
+
 def View.work.label(lc: I.Loc) -> String:
   match lc:
     case I.En{}: "Work"
@@ -2698,14 +2740,20 @@ def View.thread.workbar(+lc: I.Loc, summary: Bool, +info: Map<&2, String>, +id: 
 def View.tabs(+cur: String) -> D.Node:
   View.tabs.loc(I.En{}, cur)
 
-def View.thread.p(+lc: I.Loc, u: U.Ui, t: M.Thread, pend: List<&2, String>, +atts: List<&2, String>, +up: String, +term: Bool, hd: List<&2, D.Node>, vo: List<&2, D.Node>, +mic: String, fab: List<&2, D.Node>, rd: List<&2, D.Node>, mini: List<&2, TO.Tool>, +pill: String) -> D.Node:
+def View.thread.frame(rail: Bool, +attrs: List<&2, D.Attr>, +nav: D.Node, +content: List<&2, D.Node>) -> D.Node:
+  match rail:
+    case True{}:
+      D.El{"main", "thread", attrs, [nav, D.El{"div", "thread-content", [D.At{"class", "thread-content"}], content}]}
+    case False{}:
+      D.El{"main", "thread", attrs, nav <> content}
+
+def View.thread.p(+lc: I.Loc, +u: U.Ui, t: M.Thread, pend: List<&2, String>, +atts: List<&2, String>, +up: String, +term: Bool, hd: List<&2, D.Node>, vo: List<&2, D.Node>, +mic: String, fab: List<&2, D.Node>, rd: List<&2, D.Node>, mini: List<&2, TO.Tool>, +pill: String) -> D.Node:
   match u t:
     case U.Ui{+st, +sel, +drafts, +live, +op, _, +now, _, +panel, _, _, _, _, _, +nf, _, +tr} M.Thread{+id, p, ti, c, a, +turn, pe, ar, o, sa, ua, pi, en, br, wt, +pr, +mo, rm, im, se, de}:
-      D.El{"main", "thread", [D.At{"class", Bool.pick(String, term, "thread-view workspace-thread with-term", "thread-view workspace-thread") ++ Bool.pick(String, U.Flag.get(op, "drop"), " dropping", "")},
-        D.At{"data-thread", id}, D.At{"data-drop", "attach"}, D.At{"data-drop-hover", "drop-hover"}], [
-        View.workspace(lc, U.Fm.tab(U.Str.get(nf, "view.kind:" ++ id)), panel, term),
-        D.El{"div", "thread-content", [D.At{"class", "thread-content"}], List.concat(&2, D.Node, [
-        View.top(lc, hd, M.Thread{id, p, ti, c, a, turn, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, st, UZ.Chip.of(st, id, now), mini, panel, M.Snooze.on(now, U.Side.until(st, id)), U.Flag.get(op, "snooze"), term, String.eq(U.Str.get(nf, "view.kind:" ++ id), "diff"), String.eq(U.Str.get(drafts, "@del"), id), U.Str.get(drafts, "@ren"), U.Str.get(drafts, "@f.title")),
+      View.thread.frame(View.rail(u), [D.At{"class", Bool.pick(String, View.rail(u), Bool.pick(String, term, "thread-view workspace-thread with-term", "thread-view workspace-thread"), Bool.pick(String, term, "thread-view with-term", "thread-view")) ++ Bool.pick(String, U.Flag.get(op, "drop"), " dropping", "")},
+        D.At{"data-thread", id}, D.At{"data-drop", "attach"}, D.At{"data-drop-hover", "drop-hover"}],
+        View.workspace.for(View.rail(u), lc, U.Fm.tab(U.Str.get(nf, "view.kind:" ++ id)), panel, term), List.concat(&2, D.Node, [
+        View.top(View.rail(u), lc, hd, M.Thread{id, p, ti, c, a, turn, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, st, UZ.Chip.of(st, id, now), mini, panel, M.Snooze.on(now, U.Side.until(st, id)), U.Flag.get(op, "snooze"), term, String.eq(U.Str.get(nf, "view.kind:" ++ id), "diff"), String.eq(U.Str.get(drafts, "@del"), id), U.Str.get(drafts, "@ren"), U.Str.get(drafts, "@f.title")),
         View.kx.note(U.KX.note(nf, sel), nf, sel), View.kn.loc(lc, U.KN.thread(nf, st, sel), True{}),
         View.thread.workbar(lc, BI.BU.chat.summary(st, id), nf, id, View.running(turn)),
         View.thread.subs(lc, st, nf, id, now),
@@ -2717,7 +2765,7 @@ def View.thread.p(+lc: I.Loc, u: U.Ui, t: M.Thread, pend: List<&2, String>, +att
          View.asks.box(lc, st, id, U.Str.get(drafts, sel), nf),
          View.todos(lc, nf, id, U.Todos.shown(st, id, View.running(turn))),
          View.queued(lc, M.Queue.context(M.Queue.items(st, id)), View.running(turn))],
-        rd, [View.composer.t(lc, st, sel, drafts, op, nf, turn, pr, mo, atts, up, vo, mic)]])}]}
+        rd, [View.composer.t(lc, st, sel, drafts, op, nf, turn, pr, mo, atts, up, vo, mic)]]))
 
 def View.thread.h(+lc: I.Loc, +u: U.Ui, +t: M.Thread, hd: List<&2, D.Node>) -> D.Node:
   View.thread.p(lc, u, t, U.Ui.pending(u, U.Ui.sel(u)), U.Ui.atts(u, U.Ui.sel(u)), U.Ui.uploading(u, U.Ui.sel(u)), U.Ui.flag(u, "term"), hd, D.Dom.cat(View.btw(lc, u), View.voice.loc(lc, u, U.Ui.sel(u))), View.mic.of(u, U.Ui.sel(u)), View.fab(u), View.ready(u), U.Fab.mini.tools(u), U.Hold.pill(u, M.Thread.id(t)))
@@ -2924,8 +2972,20 @@ def View.boards.selector(fs: List<&2, String>, +path: String, +own: String, +roo
           D.El{"div", "", [D.At{"class", "board-options"}], View.board.rows(f <> t, cur, own, Nil{})},
           D.El{"p", "", [D.At{"class", "board-no-match"}, D.At{"hidden", ""}], [D.Txt{"No matching boards"}]}]}]}]
 
+def View.board.legacy(fs: List<&2, String>, +cur: String) -> List<&2, D.Node>:
+  match fs:
+    case Nil{}: Nil{}
+    case +f <> t:
+      D.Dom.button(Bool.pick(String, U.Bd.on(cur, f), "on", ""), "board-pick", f, f, U.Bd.name(f)) <> View.board.legacy(t, cur)
+
+def View.boards.for(rail: Bool, +u: U.Ui, +what: String) -> List<&2, D.Node>:
+  match rail:
+    case True{}: View.boards.selector(U.Bd.files(u), U.Bd.shown(u, U.Ui.view_get(u, "view.path")), U.Ui.info(u, "fab.board:" ++ U.Ui.sel(u)), U.Ui.root(u))
+    case False{}:
+      Bool.pick(List<&2, D.Node>, U.Bd.many(u), View.board.legacy(U.Bd.files(u), U.Bd.shown(u, U.Ui.view_get(u, "view.path"))), [D.Dom.span("what", what)])
+
 def View.boards(+u: U.Ui, +what: String) -> List<&2, D.Node>:
-  View.boards.selector(U.Bd.files(u), U.Bd.shown(u, U.Ui.view_get(u, "view.path")), U.Ui.info(u, "fab.board:" ++ U.Ui.sel(u)), U.Ui.root(u))
+  View.boards.for(View.rail(u), u, what)
 
 def View.sheet.chips(rs: List<&2, HI.Row>, +i: Nat, +cur: String) -> List<&2, D.Node>:
   View.sheet.chips.loc(I.En{}, rs, i, cur)
@@ -3622,7 +3682,7 @@ def View.split() -> D.Node:
 
 def View.aside(+lc: I.Loc, +kind: String, +u: U.Ui) -> D.Node:
   D.El{"aside", "viewer", [D.At{"class", "viewer " ++ Bool.pick(String, String.is_empty(kind), "board", kind)}, D.At{"id", "viewer"}],
-    View.split.loc(lc) <> View.tabs.loc(lc, Bool.pick(String, U.Mpage.onpart(u), "mech", U.Fm.tab(U.Solid.kind(u)))) <> View.aside.k(lc, View.aside.n(kind), u)}
+    View.split.loc(lc) <> View.tabs.for(View.rail(u), lc, Bool.pick(String, U.Mpage.onpart(u), "mech", U.Fm.tab(U.Solid.kind(u)))) <> View.aside.k(lc, View.aside.n(kind), u)}
 
 def View.aside.if(+lc: I.Loc, open: Bool, +kind: String, +u: U.Ui) -> List<&2, D.Node>:
   match open:
