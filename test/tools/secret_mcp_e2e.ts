@@ -1,7 +1,7 @@
 // The secret box's MCP tools through a real hub's gates (docs/secrets.md).
-// A stand-in claude writes down its arguments (the hub's MCP address, with
-// its key and the process's generation, is in --mcp-config) and ends; the
-// driver then calls the tools at that address as the agent would.
+// A stand-in claude writes down its arguments and remains alive behind a bounded release gate;
+// the driver calls the captured MCP address while that generation is live,
+// then releases the process before checking the next generation.
 //   A. a hub on a copied log (BACKPLANE_COPY=1): secret_run is refused and
 //      runs nothing; secret_list still answers (names only).
 //   B. an ordinary hub: secret_run runs, its output masked; after the
@@ -24,8 +24,26 @@ const root = mkdtempSync(join(tmpdir(), "bp-secret-mcp-"));
 const fake = join(root, "bin");
 const argvLog = join(root, "claude.argv");
 const ran = join(root, "ran");
+const pidLog = join(root, "agent.pid");
+const release = () => writeFileSync(join(root, `release-${readFileSync(pidLog, "utf8").trim()}`), "release\n");
 mkdirSync(fake);
-writeFileSync(join(fake, "claude"), `#!/bin/sh\nprintf '%s\\n' "$@" >> ${argvLog}\nprintf '%s\\n' '---' >> ${argvLog}\ncat > /dev/null &\nsleep 1\nexit 0\n`);
+writeFileSync(join(fake, "claude"), `#!/bin/sh
+agent=0
+for arg in "$@"; do
+  case "$arg" in --mcp-config) agent=1;; esac
+done
+if [ "$agent" = 0 ]; then printf '%s\\n' 'fixture-version'; exit 0; fi
+printf '%s\\n' "$$" > ${pidLog}
+printf '%s\\n' "$@" >> ${argvLog}
+printf '%s\\n' '---' >> ${argvLog}
+cat > /dev/null &
+i=0
+while [ "$i" -lt 600 ] && [ ! -f "${root}/release-$$" ]; do
+  sleep 0.05
+  i=$((i+1))
+done
+exit 0
+`);
 chmodSync(join(fake, "claude"), 0o755);
 for (const n of ["codex", "grok", "muse"]) {
   writeFileSync(join(fake, n), "#!/bin/sh\nexit 1\n");
@@ -103,7 +121,6 @@ const turn = async (h: any, n: number) => {
   const before = urls().length;
   h.send("turn.start", { thread: h.th?.id, text: `turn ${n}`, msg: `m-${n}-${Date.now()}` });
   const u = await until(15000, () => urls().length > before ? urls().at(-1) : undefined);
-  await sleep(1500);
   return u;
 };
 const stop = async (h: any) => { try { h.ws.close(); } catch {} process.kill(h.proc.pid, "SIGKILL"); await h.proc.exited; };
@@ -132,6 +149,10 @@ try {
     check(!r.isError && r.text.includes('"code":0') && r.text.includes(BUL) && !r.text.includes(VALUE), `secret_run runs, its output masked (${r.text.slice(0, 120)})`);
     check(existsSync(ran), "and ran");
     rmSync(ran, { force: true });
+    const mark = h.seen.length;
+    release();
+    const ended = await until(5000, () => h.seen.slice(mark).find((x: any) => x.$ === "TurnChanged" && x.thread === h.th.id && x.state?.$ !== "Running"));
+    if (!ended) throw new Error("released stand-in did not finish its turn");
     const u2 = await turn(h, 2);
     check(!!u2 && u2 !== u1, "the next turn is a new process with a new address");
     const s = await call(u1, "secret_run", { command: `touch ${ran}`, env: { X: "fixture-mcp" } });
