@@ -15,14 +15,16 @@
 //   lost       a session Pi no longer has is said once
 //   stop       turn.interrupt ends a running turn
 // Oh My Pi: a stand-in `omp` (test/tools/omp_standin.ts) shaped as omp
-// 18.12.6's ACP server, because omp is not installed here.
+// 18.12.6's RPC mode, loading Backplane's real extension (its tools over
+// the hub's MCP); no model runs.
 //   models     `omp models --json`, its labels and thinking levels
-//   turn       --approval-mode always-ask, --append-system-prompt, elicitation
-//              offered, session/new with Backplane's MCP, model and thinking
-//              set, the prompt is the text alone
-//   resume     session/resume; a lost session renewed and said
-//   asks       request_permission, a write approval (elicitation), a
-//              question, Backplane's own tool allowed without asking
+//   turn       --mode rpc-ui, --approval-mode always-ask, --append-system-prompt,
+//              the model and thinking as flags, the thread's session folder,
+//              the RPC exchange, the prompt is the text alone, Backplane's
+//              tools registered by the extension, the turn's usage and cost
+//   resume     the session goes on (--continue); a lost one starts afresh, said
+//   asks       a bash approval (select, Approve), a write approval declined
+//              (Deny), a question, Backplane's own tool through the extension
 //
 //   bun test/tools/pi_omp_e2e.ts [BINARY] [WIREDIR]
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -232,29 +234,38 @@ try {
   let t = olines().slice(mark);
   check(turns(ot).at(-1) === "completed" && said(ot).includes("ECHO: hello omp"), `omp turn: completes with the reply (${turns(ot).join(",")})`);
   const args = JSON.parse((t.find((l) => l.startsWith("ARGS ")) ?? "ARGS []").slice(5));
-  check(args[0] === "acp" && args.includes("--approval-mode") && args[args.indexOf("--approval-mode") + 1] === "always-ask", `omp turn: supervised is always-ask (${args.slice(0, 3).join(" ")})`);
-  check(args.includes("--append-system-prompt") && String(args[args.indexOf("--append-system-prompt") + 1]).length > 100, "omp turn: Backplane's instructions as the system prompt");
+  const arg = (f: string) => args[args.indexOf(f) + 1];
+  check(arg("--mode") === "rpc-ui" && arg("--approval-mode") === "always-ask", `omp turn: RPC with tool dialogs, supervised is always-ask (${args.slice(0, 4).join(" ")})`);
+  check(String(arg("--append-system-prompt")).length > 100, "omp turn: Backplane's instructions as the system prompt");
+  check(arg("--model") === "standin/fake-omp" && arg("--thinking") === "high", "omp turn: the thread's model and thinking level");
+  check(String(arg("--session-dir")).includes("/omp/sessions/") && args.includes("--continue"), "omp turn: the thread's own session folder");
   const reqs = t.filter((l) => l.startsWith("REQ ")).map((l) => l.split(" ")[1]);
-  check(reqs.join(",") === "initialize,session/new,session/set_config_option,session/set_config_option,session/prompt", `omp turn: the ACP exchange (${reqs.join(",")})`);
-  check(t.some((l) => l.startsWith("REQ initialize") && l.includes('"elicitation":{"form":{}}')), "omp turn: forms offered");
-  check(t.some((l) => l.startsWith("REQ session/new") && l.includes("/mcp/")), "omp turn: Backplane's MCP is in the session");
-  check(t.some((l) => l.includes('"configId":"model","value":"standin/fake-omp"')) && t.some((l) => l.includes('"configId":"thinking","value":"high"')), "omp turn: the thread's model and thinking level");
-  check(t.some((l) => l.startsWith("REQ session/prompt") && !l.includes("backplane_instructions")), "omp turn: the prompt is the text alone");
-  check(acts(ot).some((s) => s.includes("Read notes/a.txt")), "omp turn: its tool call is logged by title");
+  check(reqs.join(",") === "set_event_filter,get_state,prompt,get_session_stats", `omp turn: the RPC exchange (${reqs.join(",")})`);
+  check(t.some((l) => l.startsWith("REQ prompt") && !l.includes("backplane_instructions")), "omp turn: the prompt is the text alone");
+  check(t.some((l) => l.startsWith("ENV ") && l.includes("/mcp/")), "omp turn: the thread's Backplane MCP for the extension");
+  check(t.some((l) => l.startsWith("TOOLS ") && l.includes("mcp__backplane__thread_list")), "omp turn: Backplane's tools registered by the extension");
+  check(acts(ot).some((s) => s.includes("ls notes")), "omp turn: its tool call is logged");
+  await until(5000, () => seen.some((x) => x.$ === "TurnUsage" && x.thread === ot) ? true : undefined);
+  const tu = seen.find((x) => x.$ === "TurnUsage" && x.thread === ot);
+  check(!!tu && tu.provider === "omp" && tu.input === 1000 && tu.output === 20 && String(tu.known).includes("c") && tu.cost === 2000000, `omp usage: the turn's tokens and cost (${JSON.stringify(tu)})`);
+  check(seen.some((x) => x.$ === "UsageSet" && x.thread === ot && x.used === 1020), "omp usage: its context fill");
 
   mark = olines().length;
   send("turn.start", { thread: ot, text: "again", msg: "o-2" });
   await ended(ot, 2);
   t = olines().slice(mark);
-  check(t.some((l) => l.startsWith("REQ session/resume")) && !t.some((l) => l.startsWith("REQ session/new")), "omp resume: the session goes on");
+  const st = (t.find((l) => l.startsWith("STATE ")) ?? "STATE - 0").split(" ");
+  check(Number(st[2]) > 0 && st[1] === seen.filter((x) => x.$ === "SessionSet" && x.id === ot).at(-1)?.session, `omp resume: the session goes on (${st.slice(1).join(" ")})`);
+  const tus = seen.filter((x) => x.$ === "TurnUsage" && x.thread === ot);
+  check(tus.length === 2 && tus[1].input === 1000 && tus[1].cost === 2000000, `omp usage: the second turn counts its own share (${tus.map((x) => x.input).join(",")})`);
 
   const k3 = asks();
   send("turn.start", { thread: ot, text: "perm please", msg: "o-3" });
   const p1 = await nextAsk(k3);
-  check(!!p1 && p1.kind === "approval" && String(p1.detail).includes("rm -rf junk"), `omp permission: reaches the person (${p1?.tool}: ${p1?.detail})`);
+  check(!!p1 && p1.kind === "approval" && p1.tool === "bash" && String(p1.detail).includes("rm -rf junk"), `omp approval: reaches the person (${p1?.tool}: ${p1?.detail})`);
   if (p1) send("ask.answer", { id: p1.id, answer: "accept" });
   await ended(ot, 3);
-  check(olines().some((l) => l.startsWith("PERMIT") && l.includes('"optionId":"allow_once"')), "omp permission: accept allows once");
+  check(olines().some((l) => l.startsWith("UI") && l.includes('"value":"Approve"')), "omp approval: accept approves once");
 
   const k4 = asks();
   send("turn.start", { thread: ot, text: "write please", msg: "o-4" });
@@ -262,7 +273,7 @@ try {
   check(!!e1 && e1.kind === "approval" && e1.tool === "write" && String(e1.detail).includes("notes/a.txt"), `omp write approval: reaches the person (${e1?.tool}: ${e1?.detail})`);
   if (e1) send("ask.answer", { id: e1.id, answer: "decline" });
   await ended(ot, 4);
-  check(olines().some((l) => l.startsWith("ELICIT") && l.includes('"value":"Deny"')), "omp write approval: decline answers Deny");
+  check(olines().some((l) => l.startsWith("UI") && l.includes('"value":"Deny"')), "omp write approval: decline answers Deny");
 
   const k5 = asks();
   send("turn.start", { thread: ot, text: "ask please", msg: "o-5" });
@@ -270,19 +281,21 @@ try {
   check(!!q && q.kind === "input" && String(q.detail).includes("Which colour?") && String(q.options).includes("Blue"), `omp question: reaches the person (${q?.kind}: ${q?.detail} / ${q?.options})`);
   if (q) send("ask.answer", { id: q.id, answer: "Blue" });
   await ended(ot, 5);
-  check(olines().some((l) => l.startsWith("ELICIT") && l.includes('"q0":"Blue"')), "omp question: the answer goes back");
+  check(olines().some((l) => l.startsWith("UI") && l.includes('"value":"Blue"')), "omp question: the answer goes back");
 
   const k6 = asks();
   send("turn.start", { thread: ot, text: "bp tool", msg: "o-6" });
   await ended(ot, 6);
-  check(asks() === k6 && olines().some((l) => l.startsWith("AUTO") && l.includes('"value":"Approve"')), "omp: Backplane's own tool is allowed without an ask");
+  check(asks() === k6 && olines().some((l) => l.startsWith("BP ") && !l.includes("no such tool") && !l.includes('"isError":true')), "omp: Backplane's own tool runs through the extension, unasked");
+  check(acts(ot).some((s) => s.includes("backplane thread_list")), "omp: a Backplane tool reached through omp's xd:// is logged by name");
 
-  writeFileSync(join(root, "omp-sessions"), "");
+  const odir = String(arg("--session-dir"));
+  rmSync(odir, { recursive: true, force: true });
   send("turn.start", { thread: ot, text: "after loss", msg: "o-7" });
   await ended(ot, 7);
-  check(acts(ot).filter((s) => s.includes("Oh My Pi could not resume its session")).length === 1 && turns(ot).at(-1) === "completed", "omp lost: renewed, said once, completes");
+  check(acts(ot).filter((s) => s.includes("Oh My Pi had no saved conversation")).length === 1 && turns(ot).at(-1) === "completed", "omp lost: starts afresh, said once, completes");
 
-  writeFileSync(join(out,"RESULT.json"),JSON.stringify({state:"passed",source:process.env.PI_OMP_SOURCE,checks,realPi:true,ompStandin:true,scope:"Actual service runner with real Pi against an isolated local model and OMP ACP stand-in. No user profile, credentials, real model provider or GUI."},null,2)+"\n");
+  writeFileSync(join(out,"RESULT.json"),JSON.stringify({state:"passed",source:process.env.PI_OMP_SOURCE,checks,realPi:true,ompStandin:true,scope:"Actual service runner with real Pi against an isolated local model and OMP RPC stand-in. No user profile, credentials, real model provider or GUI."},null,2)+"\n");
 } catch(e:any) {
   writeFileSync(join(out,"FAIL.json"),JSON.stringify({state:"failed",source:process.env.PI_OMP_SOURCE,checks,error:e.stack,home:root,scope:"Isolated synthetic runner; completed prefix retained; no real provider or user UI"},null,2)+"\n");
   console.error(e.stack);fail++;

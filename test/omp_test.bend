@@ -5,21 +5,12 @@ import ../src/core/omp.bend as O
 import ../src/core/dialog.bend as D
 import ../src/core/json.bend as J
 
-# Oh My Pi's ACP turn (src/core/omp.bend) and its form elicitations
-# (src/core/dialog.bend). Lines shaped as omp 18.12.6's ACP server
-# (src/modes/acp/acp-agent.ts, acp-client-bridge.ts, tools/approval.ts)
-# sends them.
+# Oh My Pi's RPC turn (src/core/omp.bend) and its approval answers
+# (src/core/dialog.bend). Lines shaped as omp 18.12.6's `--mode rpc-ui`
+# writes them (recorded 2026-10-25 from the real omp).
 
-def acp(+sid: String, ask: Bool) -> A.AcpTurn:
-  A.AcpTurn{"/tmp/p", "http://127.0.0.1:1/mcp/t?token=x", "", "hello", sid, ask}
-
-def turn(+sid: String, +model: String, +effort: String) -> O.OmpTurn:
-  O.OmpTurn{acp(sid, True{}), model, effort}
-
-def outs(o: A.AcpOut) -> String:
-  match o:
-    case A.AcpOut{_, send, emit, _}:
-      String.join(List.append(&2, String, send, emit), " | ")
+def turn(+sid: String, ask: Bool) -> O.OmpTurn:
+  O.OmpTurn{A.AcpTurn{"/tmp/p", "http://127.0.0.1:1/mcp/t?token=x", "", "hello", sid, ask}, "", ""}
 
 def emits(o: A.AcpOut) -> String:
   match o:
@@ -41,12 +32,6 @@ def st(o: A.AcpOut) -> A.Acp:
     case A.AcpOut{a, _, _, _}:
       a
 
-def method(+line: String) -> String:
-  J.Json.get_str(Maybe.default(&2, J.Json, J.Json.parse(line), J.Null{}), "method", "")
-
-def rid(+line: String) -> String:
-  J.Json.as_raw(J.Json.get(Maybe.default(&2, J.Json, J.Json.parse(line), J.Null{}), "id"), "")
-
 def done(a: A.Acp) -> String:
   match a:
     case A.Acp{_, _, True{}, _}:
@@ -57,83 +42,52 @@ def done(a: A.Acp) -> String:
 def has(+s: String, +x: String) -> String:
   Bool.pick(String, String.contains(s, x), "yes", "no")
 
-def upd(+u: String) -> String:
-  "{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"S0\",\"update\":" ++ u ++ "}}"
+def state(+count: String) -> String:
+  "{\"id\":\"1\",\"type\":\"response\",\"command\":\"get_state\",\"success\":true,\"data\":{\"sessionId\":\"01a1740d\",\"messageCount\":" ++ count ++ ",\"systemPrompt\":\"long\"}}"
 
-def elicit(+props: String, +msg: String) -> String:
-  "{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"elicitation/create\",\"params\":{\"mode\":\"form\",\"sessionId\":\"S0\",\"message\":\"" ++ msg ++ "\",\"requestedSchema\":{\"type\":\"object\",\"properties\":" ++ props ++ ",\"required\":[\"value\"]}}}"
+def approval() -> String:
+  "{\"type\":\"extension_ui_request\",\"id\":\"15b4\",\"method\":\"select\",\"title\":\"Allow tool: bash\\nCommand: echo omp-ok\",\"options\":[\"Approve\",\"Approve bash for this session\",\"Deny\"]}"
+
+def stats() -> String:
+  "{\"id\":\"3\",\"type\":\"response\",\"command\":\"get_session_stats\",\"success\":true,\"data\":{\"sessionId\":\"01a1740d\",\"tokens\":{\"input\":16504,\"output\":102,\"reasoning\":0,\"cacheRead\":40,\"cacheWrite\":0,\"total\":16606},\"cost\":0.0127605,\"contextUsage\":{\"tokens\":8287,\"contextWindow\":1048576,\"percent\":0.79}}}"
 
 def main() -> IO(Unit):
-  +a0 = A.Acp.new()
-  +init = {"{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":1,\"agentInfo\":{\"name\":\"omp\",\"version\":\"18.12.6\"},\"authMethods\":[{\"id\":\"agent\"}],\"agentCapabilities\":{\"loadSession\":true,\"sessionCapabilities\":{\"resume\":{}}}}}" : String}
-  +ofresh = O.Omp.line(a0, turn("", "", ""), init)
-  +oold = O.Omp.line(a0, turn("S0", "", ""), init)
-  +nplain = O.Omp.line(a0, turn("", "", ""), "{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"sessionId\":\"S1\",\"configOptions\":[]}}")
-  +nmodel = O.Omp.line(a0, turn("", "anthropic/claude-opus-5-5", "high"), "{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"sessionId\":\"S1\",\"configOptions\":[]}}")
-  +neff = O.Omp.line(a0, turn("", "", "auto"), "{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"sessionId\":\"S1\"}}")
-  +rres = O.Omp.line(a0, turn("S0", "", ""), "{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"configOptions\":[]}}")
-  +m4 = O.Omp.line(st(nmodel), turn("", "anthropic/claude-opus-5-5", "high"), "{\"jsonrpc\":\"2.0\",\"id\":4,\"result\":{\"configOptions\":[]}}")
-  +m5 = O.Omp.line(st(nmodel), turn("", "anthropic/claude-opus-5-5", "high"), "{\"jsonrpc\":\"2.0\",\"id\":5,\"result\":{\"configOptions\":[]}}")
-  +m4bad = O.Omp.line(st(nmodel), turn("", "x/y", ""), "{\"jsonrpc\":\"2.0\",\"id\":4,\"error\":{\"code\":-32603,\"message\":\"Unknown ACP model: x/y\"}}")
-  +lost = O.Omp.line(a0, turn("S0", "", ""), "{\"jsonrpc\":\"2.0\",\"id\":2,\"error\":{\"code\":-32603,\"message\":\"ACP session not found: S0\"}}")
-  +boom = O.Omp.line(a0, turn("S0", "", ""), "{\"jsonrpc\":\"2.0\",\"id\":2,\"error\":{\"code\":-32603,\"message\":\"boom\"}}")
-  +renew = O.Omp.line(a0, turn("S0", "", ""), "{\"jsonrpc\":\"2.0\",\"id\":7,\"result\":{\"sessionId\":\"S2\"}}")
-  +nokey = O.Omp.line(st(rres), turn("S0", "", ""), "{\"jsonrpc\":\"2.0\",\"id\":3,\"error\":{\"code\":-32603,\"message\":\"No API key found for anthropic.\"}}")
-  +chunk = O.Omp.line(st(rres), turn("S0", "", ""), upd("{\"sessionUpdate\":\"agent_message_chunk\",\"content\":{\"type\":\"text\",\"text\":\"Hi\"}}"))
-  +tool = O.Omp.line(st(rres), turn("S0", "", ""), upd("{\"sessionUpdate\":\"tool_call\",\"toolCallId\":\"c1\",\"title\":\"Run ls -la\",\"kind\":\"execute\",\"status\":\"pending\",\"rawInput\":{\"command\":\"ls -la\"}}"))
-  +tdone = O.Omp.line(st(rres), turn("S0", "", ""), upd("{\"sessionUpdate\":\"tool_call_update\",\"toolCallId\":\"c1\",\"status\":\"completed\"}"))
-  +end = O.Omp.line(st(chunk), turn("S0", "", ""), "{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"stopReason\":\"end_turn\"}}")
-  +perm = O.Omp.line(st(rres), turn("S0", "", ""), "{\"jsonrpc\":\"2.0\",\"id\":0,\"method\":\"session/request_permission\",\"params\":{\"sessionId\":\"S0\",\"toolCall\":{\"toolCallId\":\"c4\",\"title\":\"rm -rf build\",\"kind\":\"execute\",\"rawInput\":{\"command\":\"rm -rf build\"}},\"options\":[{\"optionId\":\"allow_once\",\"kind\":\"allow_once\",\"name\":\"Allow once\"},{\"optionId\":\"allow_always\",\"kind\":\"allow_always\",\"name\":\"Always allow\"},{\"optionId\":\"reject_once\",\"kind\":\"reject_once\",\"name\":\"Reject\"},{\"optionId\":\"reject_always\",\"kind\":\"reject_always\",\"name\":\"Always reject\"}]}}")
-  +apr = O.Omp.line(st(rres), turn("S0", "", ""), elicit("{\"value\":{\"type\":\"string\",\"enum\":[\"Approve\",\"Approve write for this session\",\"Deny\"]}}", "Allow tool: write\\nPath: notes/a.txt"))
-  +abp = O.Omp.line(st(rres), turn("S0", "", ""), elicit("{\"value\":{\"type\":\"string\",\"enum\":[\"Approve\",\"Deny\"]}}", "Allow tool: mcp__backplane__thread_list\\nOrigin: MCP server tool"))
-  +afree = O.Omp.line(st(rres), O.OmpTurn{acp("S0", False{}), "", ""}, elicit("{\"value\":{\"type\":\"string\",\"enum\":[\"Approve\",\"Deny\"]}}", "Allow tool: eval"))
-  +q0 = O.Omp.line(st(rres), turn("S0", "", ""), elicit("{\"q0\":{\"type\":\"string\",\"title\":\"Which colour?\",\"anyOf\":[{\"const\":\"Red\",\"title\":\"Red\"},{\"const\":\"Blue\",\"title\":\"Blue\"}]}}", "Questions"))
-  +q2 = O.Omp.line(st(rres), turn("S0", "", ""), elicit("{\"q0\":{\"type\":\"string\"},\"q1\":{\"type\":\"string\"}}", "Questions"))
-  +yn = O.Omp.line(st(rres), turn("S0", "", ""), elicit("{\"value\":{\"type\":\"boolean\"}}", "Clear the plan?"))
   do IO<Unit>:
-    C.Check.str("omp init offers forms", has(O.Omp.init(), "\"elicitation\":{\"form\":{}}"), "yes")
-    C.Check.str("omp init method", method(O.Omp.init()), "initialize")
-    C.Check.str("omp fresh new", method(sends(ofresh)), "session/new")
-    C.Check.str("omp fresh mcp", has(sends(ofresh), "\"mcpServers\":[{\"type\":\"http\",\"name\":\"backplane\""), "yes")
-    C.Check.str("omp old resumes", method(sends(oold)), "session/resume")
-    C.Check.str("omp old keeps session", has(sends(oold), "\"sessionId\":\"S0\""), "yes")
-    C.Check.str("omp plain prompts", method(sends(nplain)), "session/prompt")
-    C.Check.str("omp prompt is the text only", has(sends(nplain), "\"prompt\":[{\"type\":\"text\",\"text\":\"hello\"}]"), "yes")
-    C.Check.str("omp started", emits(nplain), "{\"type\":\"thread.started\",\"thread_id\":\"S1\"}")
-    C.Check.str("omp model first", sends(nmodel), "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"session/set_config_option\",\"params\":{\"sessionId\":\"S1\",\"configId\":\"model\",\"value\":\"anthropic/claude-opus-5-5\"}}")
-    C.Check.str("omp thinking without model", has(sends(neff), "\"configId\":\"thinking\",\"value\":\"auto\""), "yes")
-    C.Check.str("omp thinking after model", has(sends(m4), "\"configId\":\"thinking\",\"value\":\"high\""), "yes")
-    C.Check.str("omp thinking id", rid(sends(m4)), "5")
-    C.Check.str("omp prompt after thinking", method(sends(m5)), "session/prompt")
-    C.Check.str("omp bad model hint", outs(m4bad), "{\"type\":\"turn.failed\",\"message\":\"Unknown ACP model: x/y (pick another Oh My Pi model in the composer)\"}")
-    C.Check.str("omp resumed started", emits(rres), "{\"type\":\"thread.started\",\"thread_id\":\"S0\"}")
-    C.Check.str("omp lost renews", method(sends(lost)), "session/new")
-    C.Check.str("omp lost renew id", rid(sends(lost)), "7")
-    C.Check.str("omp lost no notice yet", emits(lost), "")
-    C.Check.str("omp lost not ended", done(st(lost)), "open")
-    C.Check.str("omp other error fails", outs(boom), "{\"type\":\"turn.failed\",\"message\":\"boom\"}")
-    C.Check.str("omp renewed notice", emits(renew), "{\"type\":\"thread.started\",\"thread_id\":\"S2\"} | {\"type\":\"notice\",\"message\":\"Oh My Pi could not resume its session S0, so it started a new one without the earlier conversation. This thread's history in Backplane is kept.\"}")
-    C.Check.str("omp renewed prompts", method(sends(renew)), "session/prompt")
-    C.Check.str("omp no key hint", outs(nokey), "{\"type\":\"turn.failed\",\"message\":\"No API key found for anthropic. (sign Oh My Pi in once: run `omp` and use /login, or set the provider's API key)\"}")
-    C.Check.str("omp text streams", outs(chunk), "{\"type\":\"item.delta\",\"text\":\"Hi\"}")
-    C.Check.str("omp tool logged", outs(tool), "{\"type\":\"item.completed\",\"item\":{\"type\":\"command_execution\",\"id\":\"c1\",\"command\":\"Run ls -la\"}}")
-    C.Check.str("omp tool done", outs(tdone), "{\"type\":\"tool.done\",\"id\":\"c1\"}")
-    C.Check.str("omp turn ends", outs(end), "{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"Hi\"}} | {\"type\":\"turn.completed\"}")
-    C.Check.str("omp turn ends state", done(st(end)), "done")
-    C.Check.str("omp permission parks", method(asks(perm)), "session/request_permission")
-    C.Check.str("omp approval parks", method(asks(apr)), "bp/ask")
-    C.Check.str("omp approval card", has(asks(apr), "\"kind\":\"approval\",\"proto\":\"elicit\",\"tool\":\"write\",\"detail\":\"Path: notes/a.txt\""), "yes")
-    C.Check.str("omp approval sends nothing", outs(apr), "")
-    C.Check.str("omp approval once", D.Dlg.reply(asks(apr), "accept"), "{\"jsonrpc\":\"2.0\",\"id\":9,\"result\":{\"action\":\"accept\",\"content\":{\"value\":\"Approve\"}}}")
-    C.Check.str("omp approval session", D.Dlg.reply(asks(apr), "session"), "{\"jsonrpc\":\"2.0\",\"id\":9,\"result\":{\"action\":\"accept\",\"content\":{\"value\":\"Approve write for this session\"}}}")
-    C.Check.str("omp approval decline", D.Dlg.reply(asks(apr), "decline"), "{\"jsonrpc\":\"2.0\",\"id\":9,\"result\":{\"action\":\"accept\",\"content\":{\"value\":\"Deny\"}}}")
-    C.Check.str("omp backplane tool allowed", sends(abp), "{\"jsonrpc\":\"2.0\",\"id\":9,\"result\":{\"action\":\"accept\",\"content\":{\"value\":\"Approve\"}}}")
-    C.Check.str("omp backplane tool no ask", asks(abp), "")
-    C.Check.str("omp full access allowed", has(sends(afree), "\"value\":\"Approve\""), "yes")
-    C.Check.str("omp question parks", has(asks(q0), "\"kind\":\"question\",\"proto\":\"elicit\",\"tool\":\"Oh My Pi\",\"detail\":\"Which colour?\",\"options\":\"Red\\nBlue\",\"key\":\"q0\""), "yes")
-    C.Check.str("omp question answer", D.Dlg.reply(asks(q0), "Blue"), "{\"jsonrpc\":\"2.0\",\"id\":9,\"result\":{\"action\":\"accept\",\"content\":{\"q0\":\"Blue\"}}}")
-    C.Check.str("omp question dismissed", D.Dlg.reply(asks(q0), ""), "{\"jsonrpc\":\"2.0\",\"id\":9,\"result\":{\"action\":\"cancel\"}}")
-    C.Check.str("omp several declined", sends(q2), "{\"jsonrpc\":\"2.0\",\"id\":9,\"result\":{\"action\":\"decline\"}}")
-    C.Check.str("omp several said", has(emits(q2), "\"type\":\"notice\""), "yes")
-    C.Check.str("omp yes or no", D.Dlg.reply(asks(yn), "Yes"), "{\"jsonrpc\":\"2.0\",\"id\":9,\"result\":{\"action\":\"accept\",\"content\":{\"value\":true}}}")
-    C.Check.str("omp yes or no detail", has(asks(yn), "\"detail\":\"Clear the plan?\",\"options\":\"Yes\\nNo\""), "yes")
+    C.Check.str("first lines: deltas only, then the session", O.Omp.init(),
+      "{\"id\":\"0\",\"type\":\"set_event_filter\",\"events\":null,\"messageUpdates\":\"delta\"}\n{\"id\":\"1\",\"type\":\"get_state\"}")
+    +a0 : A.Acp = A.Acp.new()
+    +o1 : A.AcpOut = O.Omp.line(a0, turn("", True{}), state("0"))
+    C.Check.str("the session opens: the prompt goes", sends(o1), "{\"id\":\"2\",\"type\":\"prompt\",\"message\":\"hello\"}")
+    C.Check.str("and its id is the thread's", emits(o1), "{\"type\":\"thread.started\",\"thread_id\":\"01a1740d\"}")
+    C.Check.str("a resumed thread with no conversation left is told once", has(emits(O.Omp.line(a0, turn("01a1740d", True{}), state("0"))), "no saved conversation"), "yes")
+    C.Check.str("a resumed thread with its conversation is not", has(emits(O.Omp.line(a0, turn("01a1740d", True{}), state("5"))), "notice"), "no")
+    +a1 : A.Acp = st(o1)
+    C.Check.str("text streams", emits(O.Omp.line(a1, turn("", True{}), "{\"type\":\"message_update\",\"messageId\":\"m\",\"message\":{\"role\":\"assistant\"},\"assistantMessageEvent\":{\"type\":\"text_delta\",\"contentIndex\":0,\"delta\":\"Hi\"}}")),
+      "{\"type\":\"item.delta\",\"text\":\"Hi\"}")
+    C.Check.str("a tool call is logged by what it does", emits(O.Omp.line(a1, turn("", True{}), "{\"type\":\"tool_execution_start\",\"toolCallId\":\"c1\",\"toolName\":\"bash\",\"args\":{\"command\":\"echo omp-ok\"}}")),
+      "{\"type\":\"item.completed\",\"item\":{\"type\":\"command_execution\",\"id\":\"c1\",\"command\":\"echo omp-ok\"}}")
+    C.Check.str("a Backplane tool through omp's xd:// by its name", has(emits(O.Omp.line(a1, turn("", True{}), "{\"type\":\"tool_execution_start\",\"toolCallId\":\"c2\",\"toolName\":\"write\",\"args\":{\"content\":\"{}\",\"path\":\"xd://mcp__backplane__thread_list\"}}")), "backplane thread_list"), "yes")
+    +ap : A.AcpOut = O.Omp.line(a1, turn("", True{}), approval())
+    C.Check.str("an approval goes to the person", has(asks(ap), "\"kind\":\"approval\""), "yes")
+    C.Check.str("with the tool and what it would do", has(asks(ap), "\"tool\":\"bash\",\"detail\":\"Command: echo omp-ok\""), "yes")
+    C.Check.str("accepted: Approve", D.Dlg.reply(asks(ap), "accept"), "{\"type\":\"extension_ui_response\",\"id\":\"15b4\",\"value\":\"Approve\"}")
+    C.Check.str("for the session: its label", D.Dlg.reply(asks(ap), "session"), "{\"type\":\"extension_ui_response\",\"id\":\"15b4\",\"value\":\"Approve bash for this session\"}")
+    C.Check.str("declined: Deny", D.Dlg.reply(asks(ap), "decline"), "{\"type\":\"extension_ui_response\",\"id\":\"15b4\",\"value\":\"Deny\"}")
+    C.Check.str("in a mode that asks nothing: approved at once", sends(O.Omp.line(a1, turn("", False{}), approval())), "{\"type\":\"extension_ui_response\",\"id\":\"15b4\",\"value\":\"Approve\"}")
+    +qq : A.AcpOut = O.Omp.line(a1, turn("", True{}), "{\"type\":\"extension_ui_request\",\"id\":\"q1\",\"method\":\"select\",\"title\":\"Which colour?\",\"options\":[\"Red\",\"Blue\"]}")
+    C.Check.str("an ask is a question", has(asks(qq), "\"kind\":\"question\""), "yes")
+    C.Check.str("answered with its choice", D.Dlg.reply(asks(qq), "Blue"), "{\"type\":\"extension_ui_response\",\"id\":\"q1\",\"value\":\"Blue\"}")
+    +done1 : A.AcpOut = O.Omp.line(a1, turn("", True{}), "{\"type\":\"prompt_result\",\"id\":\"2\",\"agentInvoked\":true,\"status\":\"completed\",\"sessionSettled\":true}")
+    C.Check.str("the run completed: the session's totals are asked", sends(done1), "{\"id\":\"3\",\"type\":\"get_session_stats\"}")
+    +a2 : A.Acp = st(O.Omp.line(a1, turn("", True{}), "{\"type\":\"message_update\",\"messageId\":\"m\",\"message\":{\"role\":\"assistant\"},\"assistantMessageEvent\":{\"type\":\"text_delta\",\"contentIndex\":0,\"delta\":\"Hi\"}}"))
+    +said : A.AcpOut = O.Omp.line(st(O.Omp.line(a2, turn("", True{}), "{\"type\":\"prompt_result\",\"id\":\"2\",\"agentInvoked\":true,\"status\":\"completed\",\"sessionSettled\":true}")), turn("", True{}), stats())
+    C.Check.str("the reply, whole, before the turn ends", has(emits(said), "{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"Hi\"}}"), "yes")
+    +end : A.AcpOut = O.Omp.line(st(done1), turn("", True{}), stats())
+    C.Check.str("then the turn ends", done(st(end)), "done")
+    C.Check.str("with its context fill and the session's totals as Codex's", emits(end),
+      "{\"type\":\"context.usage\",\"used\":8287,\"window\":1048576} | {\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":16544,\"cached_input_tokens\":40,\"cache_write_input_tokens\":0,\"output_tokens\":102,\"reasoning_output_tokens\":0,\"cost_usd\":0.0127605}}")
+    +bad : A.AcpOut = O.Omp.line(a1, turn("", True{}), "{\"type\":\"prompt_result\",\"id\":\"2\",\"agentInvoked\":true,\"status\":\"error\",\"error\":{\"message\":\"No API key found\",\"retryable\":false},\"sessionSettled\":true}")
+    C.Check.str("a failed run fails the turn, with how to fix it", has(emits(bad), "sign Oh My Pi in once"), "yes")
+    C.Check.str("a builtin command ends the turn at once", done(st(O.Omp.line(a1, turn("", True{}), "{\"id\":\"2\",\"type\":\"response\",\"command\":\"prompt\",\"success\":true,\"data\":{\"agentInvoked\":false}}"))), "done")
+    C.Check.str("the conversation in a line is not read", emits(O.Omp.line(a1, turn("", True{}), "{\"type\":\"agent_end\",\"messages\":[{\"role\":\"user\"}]}")), "")
+    C.Check.str("the extension registers Backplane's tools under Claude's names", has(O.Omp.ext(), "'mcp__backplane__' + t.name"), "yes")

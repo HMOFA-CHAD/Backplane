@@ -1,24 +1,30 @@
 // A stand-in `omp` (Oh My Pi 18.12.6) for test/tools/pi_omp_e2e.ts. It runs
 // no model. It answers `omp --version`, `omp models --json`, and
-// `omp acp [flags]` the way omp's ACP server does (src/modes/acp/acp-agent.ts,
-// acp-client-bridge.ts, tools/approval.ts at 18.12.6). Every request goes to
-// OMP_LOG as "REQ <method> <params>". The client's answers go there as
-// PERMIT, ELICIT and AUTO lines. Sessions persist in OMP_STATE so a later
-// process can resume them.
+// `omp --mode rpc-ui [flags]` the way omp's RPC mode does (docs/rpc.md at
+// 18.12.6; frames recorded from the real omp 18.12.6 on 2026-10-25): a
+// ready frame, then responses, message_update deltas, tool_execution_*,
+// message_end with usage, extension_ui_request dialogs, prompt_result and
+// get_session_stats. It loads the extension Backplane passes with `-e` the
+// way omp does (its default export called with a registerTool API), so
+// Backplane's own tools are the real ones, called over the hub's MCP.
+// Every command goes to OMP_LOG as "REQ <type> <json>"; the flags as ARGS;
+// the dialog answers as UI lines; a Backplane tool's result as BP. A
+// thread's session is a file in its --session-dir (--continue takes the
+// newest up again).
 //
-// A prompt's text picks what the turn does: "perm please" (bash through
-// session/request_permission), "write please" (a write approval through
-// form elicitation), "bp tool" (an approval for a Backplane MCP tool),
-// "ask please" (an `ask` question), "slow" (waits 30 s, for Stop), or
-// anything else (a tool call, then "ECHO: <text>").
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+// A prompt's text picks what the turn does: "perm please" (a bash approval,
+// a select titled "Allow tool: bash"), "write please" (a write approval),
+// "ask please" (an `ask` question as a select), "bp tool" (Backplane's
+// thread_list through the extension), "slow" (waits 30 s, for Stop), or
+// anything else (a bash call, then "ECHO: <text>").
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 const argv = process.argv.slice(2);
 const log = process.env.OMP_LOG ?? "/dev/null";
-const state = process.env.OMP_STATE ?? "/tmp/omp-standin-sessions";
 const say = (s: string) => appendFileSync(log, s + "\n");
 
-if (argv[0] === "--version") { console.log("omp 18.12.6-standin"); process.exit(0); }
+if (argv[0] === "--version") { console.log("omp/18.12.6-standin"); process.exit(0); }
 if (argv[0] === "models") {
   console.log(JSON.stringify({ models: [
     { provider: "standin", kind: "chat", id: "fake-omp", selector: "standin/fake-omp", name: "Fake OMP", reasoning: true, thinking: ["low", "high"], input: ["text"] },
@@ -26,76 +32,86 @@ if (argv[0] === "models") {
   ] }));
   process.exit(0);
 }
-if (argv[0] !== "acp") { console.error("omp stand-in: only --version, models, acp"); process.exit(2); }
+const flag = (f: string) => { const i = argv.indexOf(f); return i >= 0 ? argv[i + 1] : undefined; };
+if (flag("--mode") !== "rpc-ui") { console.error("omp stand-in: only --version, models, --mode rpc-ui"); process.exit(2); }
 say("ARGS " + JSON.stringify(argv));
+say("ENV " + JSON.stringify({ mcp: process.env.BACKPLANE_OMP_MCP ?? "" }));
 
-const sessions = (): string[] => (existsSync(state) ? readFileSync(state, "utf8").split("\n").filter(Boolean) : []);
 const out = (o: object) => process.stdout.write(JSON.stringify(o) + "\n");
-const update = (sessionId: string, u: object) => out({ jsonrpc: "2.0", method: "session/update", params: { sessionId, update: u } });
-let next = 100;
-const waiting = new Map<number, (r: any) => void>();
-const ask = (method: string, params: object) => new Promise<any>((res) => { const id = next++; waiting.set(id, res); out({ jsonrpc: "2.0", id, method, params }); });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const yolo = flag("--approval-mode") === "yolo";
 
-async function prompt(id: number, p: any) {
-  const sid = p.sessionId;
-  const text = (p.prompt ?? []).map((b: any) => b.text ?? "").join("\n");
+// the session: the newest file in the folder (--continue), else a new one
+const dir = flag("--session-dir") ?? "/tmp/omp-standin-sessions";
+mkdirSync(dir, { recursive: true });
+const files = argv.includes("--continue") ? readdirSync(dir).filter((f) => f.endsWith(".json")).sort() : [];
+const file = files.length ? join(dir, files.at(-1)!) : join(dir, `${Date.now()}_omp-${Math.floor(Math.random() * 1e6)}.json`);
+const session = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : { id: file.split("_").at(-1)!.replace(".json", ""), messages: 0, input: 0, output: 0, cost: 0 };
+const save = () => writeFileSync(file, JSON.stringify(session));
+
+// the extension's tools
+const tools: any[] = [];
+const ext = flag("-e");
+if (ext) await (await import(ext)).default({ registerTool: (t: any) => tools.push(t), on: () => {} });
+say("TOOLS " + tools.map((t) => t.name).join(","));
+
+let ui = 0;
+const waiting = new Map<string, (r: any) => void>();
+const dialog = (o: object) => new Promise<any>((res) => { const id = "ui-" + ++ui; waiting.set(id, res); out({ type: "extension_ui_request", id, ...o }); });
+const approve = async (tool: string, detail: string) => {
+  if (yolo) return { value: "Approve" };
+  const r = await dialog({ method: "select", title: `Allow tool: ${tool}\n${detail}`, options: ["Approve", `Approve ${tool} for this session`, "Deny"] });
+  say("UI " + JSON.stringify(r));
+  return r;
+};
+const call = (name: string, args: object) => {
+  const id = "c" + Math.floor(Math.random() * 1e6);
+  out({ type: "tool_execution_start", toolCallId: id, toolName: name, args });
+  out({ type: "tool_execution_end", toolCallId: id, toolName: name, isError: false });
+};
+
+async function prompt(id: string, text: string) {
   if (text.includes("perm please")) {
-    update(sid, { sessionUpdate: "tool_call", toolCallId: "c-perm", title: "rm -rf junk", kind: "execute", status: "pending", rawInput: { command: "rm -rf junk" } });
-    const r = await ask("session/request_permission", { sessionId: sid, toolCall: { toolCallId: "c-perm", title: "rm -rf junk", kind: "execute", status: "pending", rawInput: { command: "rm -rf junk" } },
-      options: [{ optionId: "allow_once", name: "Allow once", kind: "allow_once" }, { optionId: "allow_always", name: "Always allow", kind: "allow_always" },
-        { optionId: "reject_once", name: "Reject", kind: "reject_once" }, { optionId: "reject_always", name: "Always reject", kind: "reject_always" }] });
-    say("PERMIT " + JSON.stringify(r.result ?? r.error));
-    update(sid, { sessionUpdate: "tool_call_update", toolCallId: "c-perm", status: "completed" });
-  } else if (text.includes("write please") || text.includes("bp tool")) {
-    const tool = text.includes("bp tool") ? "mcp__backplane__thread_list" : "write";
-    const r = await ask("elicitation/create", { mode: "form", sessionId: sid, message: `Allow tool: ${tool}\nPath: notes/a.txt`,
-      requestedSchema: { type: "object", properties: { value: { type: "string", enum: ["Approve", `Approve ${tool} for this session`, "Deny"] } }, required: ["value"] } });
-    say((text.includes("bp tool") ? "AUTO " : "ELICIT ") + JSON.stringify(r.result ?? r.error));
+    if ((await approve("bash", "Command: rm -rf junk")).value !== "Deny") call("bash", { command: "rm -rf junk" });
+  } else if (text.includes("write please")) {
+    if ((await approve("write", "Path: notes/a.txt")).value !== "Deny") call("write", { path: "notes/a.txt" });
   } else if (text.includes("ask please")) {
-    const r = await ask("elicitation/create", { mode: "form", sessionId: sid, message: "Questions",
-      requestedSchema: { type: "object", properties: { q0: { type: "string", title: "Which colour?", anyOf: [{ const: "Red", title: "Red" }, { const: "Blue", title: "Blue" }] } }, required: ["q0"] } });
-    say("ELICIT " + JSON.stringify(r.result ?? r.error));
+    say("UI " + JSON.stringify(await dialog({ method: "select", title: "Which colour?", options: ["Red", "Blue"] })));
+  } else if (text.includes("bp tool")) {
+    const t = tools.find((x) => x.name === "mcp__backplane__thread_list");
+    const r = t ? await t.execute("c-bp", {}, undefined) : { content: [{ type: "text", text: "no such tool" }] };
+    say("BP " + JSON.stringify(r).slice(0, 300));
+    call("write", { path: "xd://mcp__backplane__thread_list" });
   } else if (text.includes("slow")) {
     await sleep(30000);
   } else {
-    update(sid, { sessionUpdate: "tool_call", toolCallId: "c1", title: "Read notes/a.txt", kind: "read", status: "pending", rawInput: { path: "notes/a.txt" } });
-    update(sid, { sessionUpdate: "tool_call_update", toolCallId: "c1", status: "completed" });
+    call("bash", { command: "ls notes" });
   }
-  update(sid, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "ECHO: " + text.slice(0, 40) } });
-  out({ jsonrpc: "2.0", id, result: { stopReason: "end_turn" } });
+  const reply = "ECHO: " + text.slice(0, 40);
+  out({ type: "message_update", messageId: "m1", message: { role: "assistant" }, assistantMessageEvent: { type: "text_start", contentIndex: 0 } });
+  out({ type: "message_update", messageId: "m1", message: { role: "assistant" }, assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: reply } });
+  out({ type: "message_end", message: { role: "assistant", stopReason: "stop", usage: { input: 1000, output: 20, cacheRead: 0, cacheWrite: 0, totalTokens: 1020, cost: { total: 0.002 } } } });
+  session.messages += 2; session.input += 1000; session.output += 20; session.cost += 0.002; save();
+  out({ type: "prompt_result", id, agentInvoked: true, status: "completed", sessionSettled: true });
+  out({ type: "session_settled" });
 }
 
 function handle(o: any) {
-  if (o.method === undefined) { const w = waiting.get(o.id); if (w) { waiting.delete(o.id); w(o); } return; }
-  say("REQ " + o.method + " " + JSON.stringify(o.params ?? {}));
-  const reply = (result: object) => out({ jsonrpc: "2.0", id: o.id, result });
-  const fail = (message: string) => out({ jsonrpc: "2.0", id: o.id, error: { code: -32603, message } });
-  switch (o.method) {
-    case "initialize":
-      return reply({ protocolVersion: 1, agentInfo: { name: "omp", title: "omp", version: "18.12.6" }, authMethods: [{ id: "agent", name: "Use existing local credentials" }],
-        agentCapabilities: { loadSession: true, mcpCapabilities: { http: true, sse: true }, promptCapabilities: { embeddedContext: true, image: true }, sessionCapabilities: { list: {}, fork: {}, resume: {}, close: {} } } });
-    case "session/new": {
-      const sid = "omp-" + Date.now() + "-" + Math.floor(Math.random() * 1e6);
-      writeFileSync(state, sessions().concat([sid]).join("\n") + "\n");
-      return reply({ sessionId: sid, configOptions: [], modes: { currentModeId: "default", availableModes: [] } });
-    }
-    case "session/resume":
-      if (!sessions().includes(o.params.sessionId)) return fail(`ACP session not found: ${o.params.sessionId}`);
-      return reply({ configOptions: [], modes: { currentModeId: "default", availableModes: [] } });
-    case "session/set_config_option":
-      if (o.params.configId === "model" && !String(o.params.value).startsWith("standin/")) return fail(`Unknown ACP model: ${o.params.value}`);
-      return reply({ configOptions: [] });
-    case "session/prompt":
-      void prompt(o.id, o.params);
-      return;
-    case "session/cancel":
-      return;
-    default:
-      return fail(`Method not found: ${o.method}`);
+  if (o.type === "extension_ui_response") { const w = waiting.get(o.id); if (w) { waiting.delete(o.id); w(o); } return; }
+  say("REQ " + o.type + " " + JSON.stringify(o));
+  const reply = (data: object) => out({ id: o.id, type: "response", command: o.type, success: true, data });
+  switch (o.type) {
+    case "set_event_filter": return reply({ events: null, messageUpdates: o.messageUpdates ?? "full" });
+    case "get_state": say(`STATE ${session.id} ${session.messages}`); return reply({ sessionId: session.id, messageCount: session.messages, systemPrompt: "x".repeat(2000) });
+    case "prompt": reply({}); void prompt(o.id, String(o.message ?? "")); return;
+    case "get_session_stats":
+      return reply({ sessionId: session.id, tokens: { input: session.input, output: session.output, reasoning: 0, cacheRead: 0, cacheWrite: 0, total: session.input + session.output },
+        cost: session.cost, contextUsage: { tokens: 1020, contextWindow: 200000, percent: 0.51 } });
+    default: return out({ id: o.id, type: "response", command: o.type, success: false, error: `Unknown command: ${o.type}` });
   }
 }
 
+out({ type: "ready", protocolVersion: 1, supportedProtocolVersions: [1, 2], maxFrameBytes: 1048576, maxReassembledFrameBytes: 67108864 });
 let buf = "";
 process.stdin.on("data", (d) => {
   buf += d.toString();
