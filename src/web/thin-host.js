@@ -3,6 +3,7 @@ import { validateThinResult, MessageParts } from './thin-results.js';
 import { compactRoute, utf8Bytes } from './thin.js';
 import { viewerChoice } from './viewer-feedback.js';
 import { terminalInputRequest } from './terminal-input.js';
+import { terminalOutputFrame } from './terminal-output.js';
 import { modelMenuRequest } from './model-menu-input.js';
 
 const clone = value => typeof structuredClone === 'function' ? structuredClone(value) : JSON.parse(JSON.stringify(value));
@@ -56,6 +57,7 @@ export class ThinHost {
     if (!Number.isSafeInteger(rid) || rid < 0 || rid >= 2 ** 47) throw Error('Invalid ordinary request counter');
     this.session.rid = Math.max(rid, Date.now());
     this.viewerRevision = 0;this.localRevision = 0;this.selectionRevision = 0;this.drafts = new Map();this.draftChanges = new Map();this.fields = new Map();this.pending = new Map();this.actions = [];this.active = null;
+    this.terminalBytes = 0;
     this.messages = new MessageParts();this.ordinary = new Map();this.refreshScheduled = null;
     this.client = new Views({ now: api.now,
       sidebarRegions: (api.renderer || 'web') === 'web',
@@ -89,19 +91,37 @@ export class ThinHost {
     this.select(this.api.target(this.session));
   }
   select(target) {
+    this.retireTerminal('Queued terminal input was cancelled when the view changed.');
     this.refreshScheduled = null;
     this.viewerRevision++;this.api.viewerChoice?.(null);
     this.selectionRevision++;
     // Unstarted intentions from another view never acquire the new target.
     // The already travelling action keeps its independent original lifetime.
     for (const operation of this.actions) operation.settled?.(false);
-    this.actions = [];this.fields.clear();
+    this.actions = [];this.terminalBytes = 0;this.fields.clear();
     this.messages.clear();this.target = target;
     this.ready = false;this.window = null;this.cursor = '';this.back = [];this.api.state({ phase: 'loading', remoteReady: false });
     this.api.selection?.(target, this.session);
     return this.flush(this.client.select(this.hub, target, requestSession(this.session, false, target), this.api.cid), { selection: true });
   }
+  terminalScope() {
+    const link = this.client.links.get(this.hub);
+    return JSON.stringify([link?.greeting.generation, link?.greeting.epoch, link?.viewId, this.target?.kind, this.target?.id,
+      this.session.drafts?.['@terminal.owner'], this.api.terminalLifetime?.() || '']);
+  }
+  operationScope(action, value) {
+    return action === 'term-key' || action === 'term-paste' ? this.terminalScope() : this.api.operationScope?.(action, value);
+  }
+  retireTerminal(reason) {
+    let retired = false;
+    this.actions = this.actions.filter(op => { if (!op.terminal) return true;op.settled?.(false);retired = true;return false; });
+    this.terminalBytes = 0;
+    if (retired) this.api.warning?.(reason);
+  }
   request(action, value, settled) {
+    const terminalInput = action === 'term-key' || action === 'term-paste';
+    const retire = ['select','bot','bot-tab','uber','uber-bot','remote','ws-term-hide','term-toggle','ws-term-here'].includes(action) || action === 'ws-go' && value === 'term';
+    if (retire) this.retireTerminal('Queued terminal input was cancelled when the view changed.');
     if (action === 'draft' || action === 'select') {
       this.localRevision++;
       this.session = this.api.choice(this.session, action, value);
@@ -132,7 +152,7 @@ export class ThinHost {
       const name = value.slice(0, split), tail = this.actions.at(-1);
       // Only adjacent unsent edits coalesce. A Send is a hard ordering fence:
       // later text never changes the value captured before that Send.
-      if (!(tail?.action === 'bfield' && tail.field === name) && this.actions.length >= 7) { settled?.(false);this.api.blocked();return false; }
+      if (!(tail?.action === 'bfield' && tail.field === name) && this.actions.filter(op => !op.terminal).length >= 7) { settled?.(false);this.api.blocked();return false; }
       const revision = ++this.localRevision;
       const scope = this.api.operationScope?.(action, value);
       this.fields.set(name, { revision, text: value.slice(split + 1), scope });
@@ -149,7 +169,8 @@ export class ThinHost {
       const tail = this.actions.at(-1);
       if (tail?.viewer) { this.actions.pop();tail.settled?.(false); }
     }
-    if (this.actions.length >= 7) { settled?.(false);this.api.blocked();return true; }
+    const normalQueued = this.actions.filter(op => !op.terminal).length;
+    if (!terminalInput && normalQueued >= 7) { settled?.(false);this.api.blocked();return true; }
     if (viewer) { this.viewerRevision++;this.api.viewerChoice?.({ action, value }); }
     if (action === 'send' || action === 'send-alt' || action === 'mail-send') {
       const active = this.pending.get(this.active)?.operation;
@@ -159,7 +180,25 @@ export class ThinHost {
         settled?.(false);this.api.blocked();return true;
       }
     }
-    this.actions.push({ action, value, viewer, viewerRevision: this.viewerRevision, input: clone(this.session), revision: this.localRevision, settled, scope: this.api.operationScope?.(action, value) });
+    const scope = this.operationScope(action, value);
+    if (terminalInput) {
+      const owner = this.session.drafts?.['@terminal.owner'];
+      if (!owner || this.session.open?.term !== true) { settled?.(false);this.api.warning?.('Terminal input was not sent: the terminal is closed.');return true; }
+      // Input preparation uses the current authoritative session. Capture only
+      // its intended terminal and scope; never clone a large chat draft per key.
+      const input = { sel: this.session.sel, drafts: { '@terminal.owner': owner }, open: { term: true } };
+      const bytes = utf8Bytes(value) + utf8Bytes(scope) + utf8Bytes(JSON.stringify(input));
+      if (this.terminalBytes + bytes > 131072 || this.actions.filter(op => op.terminal).length >= 1024) {
+        settled?.(false);this.api.warning?.('Terminal input was not sent: its queue is full. Wait for it to catch up.');return true;
+      }
+      this.terminalBytes += bytes;
+      this.actions.push({ action, value, input, terminal: true, bytes, scope, revision: this.localRevision, settled });
+    } else {
+      const operation = { action, value, viewer, viewerRevision: this.viewerRevision, input: clone(this.session), revision: this.localRevision, settled, scope };
+      // Stop and explicit close/switch controls remain responsive during input.
+      if (retire || action === 'stop' || action === 'interrupt') this.actions.unshift(operation);
+      else this.actions.push(operation);
+    }
     this.pump(true);return true;
   }
   fieldValue(name, fallback) {
@@ -185,7 +224,8 @@ export class ThinHost {
     if (this.active || !this.ready || !this.actions.length) return;
     if (this.actions[0].action === 'bfield' && !flushFields) return;
     const operation = this.actions.shift();
-    if (operation.scope !== this.api.operationScope?.(operation.action, operation.value)) {
+    if (operation.terminal) this.terminalBytes -= operation.bytes;
+    if (operation.scope !== this.operationScope(operation.action, operation.value)) {
       operation.settled?.(false);this.api.warning?.('Conversation changed before the action was sent');this.pump(flushFields);return;
     }
     const input = this.api.prepare(this.session, operation.input, operation.action);
@@ -291,6 +331,16 @@ export class ThinHost {
     return this.flush(this.client.request(this.hub, 'view.update', { session: requestSession(this.session, false, this.target), anchor: this.api.anchor(), viewRevision: link.viewRevision }));
   }
   receive(envelope) {
+    if (envelope?.t === 'view.terminal') {
+      const link = this.client.links.get(this.hub);
+      if (!this.ready || !terminalOutputFrame(envelope, link, this.session)) return true;
+      try {
+        this.validatePresentation({ session: this.session, view: envelope.pane, cmds: [] });
+        const shown = this.api.terminal?.(this.api.decode(envelope.pane), envelope);
+        if (shown === false) this.update(); // missing/replaced pane: normal bounded snapshot fallback
+      } catch { /* Invalid display fragments have no effects or log credit. */ }
+      return true;
+    }
     if (envelope?.t === 'view.changed') {
       if (this.ready) {
         const result = this.client.changed(this.hub, envelope, requestSession(this.session, false, this.target), this.api.anchor(),
@@ -450,6 +500,7 @@ export class ThinHost {
     return !!metadata && !!link && metadata.wireRevision === link.revision && metadata.target?.kind === link.target?.kind && metadata.target?.id === link.target?.id;
   }
   fail(reason) {
+    this.retireTerminal('Queued terminal input was not sent because the connection failed.');
     this.refreshScheduled = null;
     this.api.viewerChoice?.(null);
     for (const metadata of this.pending.values()) metadata.operation?.settled?.(false);
@@ -457,6 +508,7 @@ export class ThinHost {
     this.ready = false;this.api.state({ phase: 'error', remoteReady: false, reason });
   }
   disconnect() {
+    this.retireTerminal('Queued terminal input was not sent because the connection closed.');
     this.refreshScheduled = null;
     this.api.viewerChoice?.(null);
     for (const metadata of this.pending.values()) metadata.operation?.settled?.(false);

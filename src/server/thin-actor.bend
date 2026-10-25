@@ -1,4 +1,5 @@
 import Base
+import ./terminal-output.bend as TO
 import ./thin-signals.bend as SGV
 import ./thin-signal-text.bend as SGT
 import ./thin-side-index.bend as SIXV
@@ -47,6 +48,16 @@ type Rendered is Data:
 def Actor.ui( +a: Actor) -> U.Ui:
   match a:
     case Actor{u, _, _, _, _, _, _}: u
+
+def Actor.terminal.fallback(a: Actor) -> Actor:
+  match a:
+    case Actor{u, view, target, pending, reads, _, _}:
+      Actor{U.Ui.info_set(u, "local.terminal.pending", ""), view, target, pending, reads, True{}, Nil{}}
+
+def Actor.terminal.offered(a: Actor, ordinal: Nat) -> Actor:
+  match a:
+    case Actor{u, view, target, pending, reads, dirty, memo}:
+      Actor{TO.Output.offered(u, ordinal), view, target, pending, reads, dirty, memo}
 
 def Actor.scope(+target: J.Json) -> String:
   J.Json.show(V.Target.json(J.Json.get_str(target, "kind", ""), J.Json.get_str(target, "id", "")))
@@ -387,7 +398,8 @@ def Actor.followup(+command: J.Json) -> Bool:
 def Actor.pending_put( +send: Bool, +command: J.Json, +pending: Map<&2, String>, +scope: String) -> Map<&2, String>:
   match send:
     case False{}: pending
-    case True{}: Map.set(&2, String, pending, J.Json.as_raw(J.Json.get(Actor.rpc(command), "id"), ""), scope)
+    case True{}: Map.set(&2, String, pending, J.Json.as_raw(J.Json.get(Actor.rpc(command), "id"), ""),
+      Bool.pick(String, String.eq(J.Json.get_str(Actor.rpc(command), "m", ""), "term.input"), "term-input:" ++ scope, scope))
 
 def Actor.note( +cs: List<&2, J.Json>, +pending: Map<&2, String>, +scope: String) -> Map<&2, String>:
   match cs:
@@ -579,7 +591,8 @@ def Actor.render(a: Actor, web: Bool, +st: M.State, index: T.Index, p: J.Json, e
   Actor.render.revision(a, web, st, index, p, epoch, now, rows, stream, M.State.seq(st))
 
 def Actor.pending_scope( +pending: Map<&2, String>, +id: String) -> String:
-  U.Str.get(pending, id)
+  +value = U.Str.get(pending, id)
+  Bool.pick(String, String.starts_with(value, "term-input:"), String.drop(value, 11n), value)
 
 def Actor.receive( +web: Bool, +u: U.Ui, +key: String, +now: Nat, +o: J.Json) -> V.ActResult:
   match web:
@@ -594,10 +607,23 @@ def Actor.now( +u: U.Ui) -> Nat:
   match u:
     case U.Ui{_, _, _, _, _, _, now, _, _, _, _, _, _, _, _, _, _}: now
 
+# Terminal display bytes invalidate only the picture memo. Preserve existing
+# unrelated dirtiness and queued device replies; never suppress a real change.
+def Actor.terminal.picture(fast: Bool, +pid: String, a: Actor) -> Actor:
+  match fast a:
+    case True{} Actor{u, view, target, pending, reads, dirty, memo}:
+      Actor{TO.Output.next(U.Ui.info_set(u, "local.terminal.pid", pid)), view, target, pending, reads, dirty, Actor.kept(memo)}
+    case False{} _: Actor.mark_dirty(a)
+
 def Actor.reply_if( +owned: Bool, +a: Actor, +web: Bool, +key: String, +o: J.Json) -> Actor:
   match owned:
     case False{}: a
     case True{}: Actor.mark_dirty(Actor.accept(a, Actor.receive(web, Actor.ui(a), key, Actor.now(Actor.ui(a)), o), True{}))
+
+def Actor.terminal.feed(owned: Bool, +fast: Bool, +a: Actor, +web: Bool, +key: String, +o: J.Json) -> Actor:
+  match owned:
+    case False{}: a
+    case True{}: Actor.terminal.picture(fast, J.Json.as_raw(J.Json.get(o, "pid"), ""), Actor.accept(a, Actor.receive(web, Actor.ui(a), key, Actor.now(Actor.ui(a)), o), True{}))
 
 # Terminal bytes belong in the connection-owned Ui, just like RPC replies.
 # Only its selected thread (including that thread's inline terminals) and
@@ -607,15 +633,25 @@ def Actor.terminal(+a: Actor, +web: Bool, +key: String, +o: J.Json) -> Actor:
   +thread = V.Target.thread(U.Ui.state(Actor.ui(a)), V.Target.after(Actor.ui(a)))
   +source = J.Json.get_str(o, "thread", "")
   +floating = U.Ui.scratch(Actor.ui(a), "@terminal.owner")
-  Actor.reply_if(Bool.and(String.eq(J.Json.get_str(o, "t", ""), "term"), Bool.or(
+  Actor.terminal.feed(Bool.and(String.eq(J.Json.get_str(o, "t", ""), "term"), Bool.or(
     Bool.and(Bool.not(String.is_empty(thread)), Bool.or(String.eq(source, thread), String.starts_with(source, E.Emb.key(thread, "")))),
-    Bool.and(Bool.not(String.is_empty(floating)), String.eq(source, floating)))), a, web, key, o)
+    Bool.and(Bool.not(String.is_empty(floating)), String.eq(source, floating)))), TO.Output.enabled(web, Actor.ui(a), source), a, web, key, o)
+
+# A successful term.input ACK carries no display state. Do not schedule a
+# second conversation render after the already-delivered pane; errors still
+# follow the ordinary actionable-error path.
+def Actor.terminal.ack(owned: Bool, quiet: Bool, +a: Actor, +web: Bool, +key: String, +o: J.Json) -> Actor:
+  match owned quiet:
+    case False{} _: a
+    case True{} True{}: Actor.accept(a, Actor.receive(web, Actor.ui(a), key, Actor.now(Actor.ui(a)), o), True{})
+    case True{} False{}: Actor.reply_if(True{}, a, web, key, o)
 
 def Actor.reply(+a: Actor, +web: Bool, +key: String, +o: J.Json) -> Actor:
   match a:
-    case Actor{u, view, +target, +pending, reads, dirty, memo}:
+    case Actor{+u, view, +target, +pending, reads, dirty, memo}:
       +id = J.Json.as_raw(J.Json.get(o, "id"), "")
-      Actor.reply_if(Bool.and(String.eq(J.Json.get_str(o, "t", ""), "reply"), String.eq(Actor.pending_scope(pending, id), Actor.scope(target))),
+      Actor.terminal.ack(Bool.and(String.eq(J.Json.get_str(o, "t", ""), "reply"), String.eq(Actor.pending_scope(pending, id), Actor.scope(target))),
+        Bool.and(TO.Output.enabled(web, u, U.Ui.scratch(u, "@terminal.owner")), Bool.and(String.starts_with(U.Str.get(pending, id), "term-input:"), Bool.and(J.Json.get_bool(o, "ok", False{}), String.is_empty(J.Json.get_str(o, "error", ""))))),
         Actor{u, view, target, Map.del(&2, String, pending, id), reads, dirty, memo}, web, key, o)
 
 # A sent receipt is not a render cache: keep only its bounded value so a

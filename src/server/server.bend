@@ -51,6 +51,7 @@ import ../core/cbor.bend as CB
 import ../mobile/session.bend as MSE
 import ./thin-view.bend as TV
 import ./thin-actor.bend as TA
+import ./terminal-output.bend as TOUT
 import ./thin-sidebar-wire.bend as TSW
 import ../core/thin-pace.bend as TPACE
 import ./thin-mail.bend as TMAIL
@@ -161,6 +162,8 @@ type Wire is Data:
   # a message as its JSON tree with its charge (a thin view's reply): the
   # writer encodes the tree, never printing and parsing it again
   WJson{json: J.Json, charge: Nat}
+  # At most one floating pane in flight; its writer reports credit at once.
+  WTerminal{json: J.Json, charge: Nat}
 
 type Msg is Data:
   Desktop{client: U32, kind: String, text: String, out: Chan(String), epoch: String, lease: String}
@@ -217,7 +220,7 @@ type Msg is Data:
   Push{client: U32, text: String}
   # a message for one client, already CBOR
   PushBin{client: U32, cbor: List<&2, U32>}
-  TermOut{thread: String, data: List<&2, U32>}
+  TermOut{thread: String, pid: U32, data: List<&2, U32>}
   # a chat terminal's snapshot for a client (TM.Et.all(): every client)
   TermTo{client: U32, key: String, cols: U32, rows: U32, data: List<&2, U32>}
   # a line for a thread's agent built off the hub (a message with images)
@@ -861,6 +864,7 @@ def Wire.charged(native: Bool, w: Wire, n: Nat) -> Wire:
     case False{} WText{t}: WCharged{t, n}
     case False{} WCharged{t, _}: WCharged{t, n}
     case False{} WJson{j, _}: WJson{j, n}
+    case False{} WTerminal{j, _}: WTerminal{j, n}
     case _ _: w
 
 def Wire.offer.k(c: Client, w: Wire, +n: Nat) -> IO(Maybe<&2, Client>):
@@ -1398,6 +1402,10 @@ def Conn.out.items(s: Socket, +hd: String, +pl: String, +sp: String, +xs: List<&
     H.Sock.send_items(s, hd, pl, sp, xs, tl, Bool.pick(U32, ends, 1, 0), U32.from_nat(OB.Join.most()), U32.from_nat(OB.Join.bytes()), Conn.keys(), Conn.words(), Conn.deadline()),
     r => Conn.sent.k(r, out, s2 => k(s2, 0n)))
 
+def Conn.json(+j: J.Json, +charge: Nat, s: Socket, +out: Chan(Wire), k: Socket -> Nat -> IO(Unit)) -> IO(Unit):
+  +bs = W.Ws.encode(2, CB.Cbor.encode(j))
+  Conn.out(s, bs, out, s2 => Conn.written(s2, List.length(&2, U32, bs), charge, k))
+
 def Conn.write(m: Maybe<&1, Wire>, s: Socket, +out: Chan(Wire), k: Socket -> Nat -> IO(Unit)) -> IO(Unit):
   match m:
     case Some{WText{t}}:
@@ -1420,9 +1428,8 @@ def Conn.write(m: Maybe<&1, Wire>, s: Socket, +out: Chan(Wire), k: Socket -> Nat
       k(s, 0n)
     case Some{WItems{hd, pl, sp, xs, tl, ends}}:
       Conn.out.items(s, hd, pl, sp, xs, tl, ends, out, k)
-    case Some{WJson{j, charge}}:
-      +bs = W.Ws.encode(2, CB.Cbor.encode(j))
-      Conn.out(s, bs, out, s2 => Conn.written(s2, List.length(&2, U32, bs), charge, k))
+    case Some{WJson{j, charge}}: Conn.json(j, charge, s, out, k)
+    case Some{WTerminal{j, charge}}: Conn.json(j, charge, s, out, k)
     case None{}:
       Socket.close(s)
 
@@ -1437,11 +1444,19 @@ def Conn.told(due: Bool, +w: OB.Wr, +id: U32, +gen: U32, +inbox: Chan(Msg)) -> I
     case False{}:
       IO.pure(OB.Wr, w)
 
-def Conn.wrote(s: Socket, +n: Nat, w: OB.Wr, +id: U32, +gen: U32, +inbox: Chan(Msg), k: Socket -> OB.Wr -> IO(Unit)) -> IO(Unit):
+def Conn.wrote(+force: Bool, s: Socket, +n: Nat, w: OB.Wr, +id: U32, +gen: U32, +inbox: Chan(Msg), k: Socket -> OB.Wr -> IO(Unit)) -> IO(Unit):
   do IO<Unit>:
     +w2 : OB.Wr = OB.Wr.put(w, n)
-    w3 : OB.Wr <- Conn.told(OB.Wr.due(w2), w2, id, gen, inbox)
+    w3 : OB.Wr <- Conn.told(Bool.or(force, OB.Wr.due(w2)), w2, id, gen, inbox)
     k(s, w3)
+
+def Conn.writer.one(m: Maybe<&1, Wire>, s: Socket, +out: Chan(Wire), +w: OB.Wr, +id: U32, +gen: U32, +inbox: Chan(Msg), k: Socket -> OB.Wr -> IO(Unit)) -> IO(Unit):
+  match m:
+    case Some{WTerminal{j, charge}}:
+      Conn.write(Some{WJson{j, charge}}, s, out, s2 => n => Conn.wrote(True{}, s2, n, w, id, gen, inbox, k))
+    case Some{other}:
+      Conn.write(Some{other}, s, out, s2 => n => Conn.wrote(False{}, s2, n, w, id, gen, inbox, k))
+    case None{}: Socket.close(s)
 
 # frames from the hub, until it closes our channel
 def Conn.writer(fuel: Nat, s: Socket, +out: Chan(Wire), w: OB.Wr, +id: U32, +gen: U32, +inbox: Chan(Msg)) -> IO(Unit):
@@ -1450,7 +1465,7 @@ def Conn.writer(fuel: Nat, s: Socket, +out: Chan(Wire), w: OB.Wr, +id: U32, +gen
       Socket.close(s)
     case 1n+f:
       IO.bind(Maybe<&1, Wire>, Unit, Chan.recv(Wire, out),
-        m => Conn.write(m, s, out, s2 => n => Conn.wrote(s2, n, w, id, gen, inbox, s3 => w2 => Conn.writer(f, s3, out, w2, id, gen, inbox))))
+        m => Conn.writer.one(m, s, out, w, id, gen, inbox, s3 => w2 => Conn.writer(f, s3, out, w2, id, gen, inbox)))
 
 def Conn.leave(s: Socket, +id: U32, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
@@ -4193,9 +4208,9 @@ def Cfg.tm(c: Cfg) -> Maybe<&2, Chan(TM.TMsg)>:
 # a shell's output, to the hub (which sends it to every client)
 def Term.fwd.got(m: Maybe<&1, TM.TOut>, +inbox: Chan(Msg), k: Unit -> IO(Unit)) -> IO(Unit):
   match m:
-    case Some{TM.TOut{th, bs}}:
+    case Some{TM.TOut{th, pid, bs}}:
       do IO<Unit>:
-        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, TermOut{th, bs})
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, TermOut{th, pid, bs})
         k(Unit{})
     case Some{TM.TTo{c, key, co, ro, bs}}:
       do IO<Unit>:
@@ -4820,13 +4835,91 @@ def Preview.is(+o: J.Json) -> Bool:
 def Preview.shows(+o: J.Json) -> Bool:
   Bool.or(String.eq(J.Json.get_str(J.Json.get_obj(o, "params"), "name", ""), "preview_open"), String.eq(J.Json.get_str(J.Json.get_obj(o, "params"), "name", ""), "preview_navigate"))
 
+# Push only the already-folded, opted-in floating pane. Legacy, phones and
+# inline terminals retain their normal bounded-view invalidation path.
+def Wire.terminal.fallback(c: Client) -> Client:
+  match c:
+    case Client{id, out, look, cr, sock, legacy, ThinStart{mode, ThinContext{hub, cid, target, view, revision, anchor, actor <> _, control} <> _} <> _}:
+      Client{id, out, look, cr, sock, legacy, [ThinStart{mode, [ThinContext{hub, cid, target, view, revision, anchor, [TA.Actor.terminal.fallback(actor)], control}]}]}
+    case _: c
+
+def Wire.terminal.offered(c: Client, ordinal: Nat) -> Client:
+  match c:
+    case Client{id, out, look, cr, sock, legacy, ThinStart{mode, ThinContext{hub, cid, target, view, revision, anchor, actor <> _, control} <> _} <> _}:
+      Client{id, out, look, cr, sock, legacy, [ThinStart{mode, [ThinContext{hub, cid, target, view, revision, anchor, [TA.Actor.terminal.offered(actor, ordinal)], control}]}]}
+    case _: c
+
+def Wire.terminal.written(cr: OB.Cr) -> Nat:
+  match cr:
+    case OB.Cr{_, _, a, _, _, _, _, _, _, _, _, _}: a
+
+def Wire.terminal.fits(fits: Bool, +c: Client, +json: J.Json, +text: String, ordinal: Nat) -> IO(Maybe<&2, Client>):
+  match fits:
+    case False{}: IO.pure(Maybe<&2, Client>, Some{Wire.terminal.fallback(c)})
+    case True{}: Wire.offer(Wire.terminal.offered(c, ordinal), WTerminal{json, Wire.text.charge(text)}, Wire.text.charge(text))
+
+def Wire.terminal.text(+c: Client, +json: J.Json, ordinal: Nat) -> IO(Maybe<&2, Client>):
+  +text = J.Json.show(json)
+  Wire.terminal.fits(TVW.Wire.within(text, 262144n), c, json, text, ordinal)
+
+def Wire.terminal.ready(fast: Bool, +c: Client, u: UC.Ui, owner: String, generation: String, epoch: String, view: String, target: J.Json, ordinal: Nat) -> IO(Maybe<&2, Client>):
+  match fast:
+    case False{}: IO.pure(Maybe<&2, Client>, Some{c})
+    case True{}: Wire.terminal.text(c, TOUT.Output.message(u, owner, generation, epoch, view, target), ordinal)
+
+def Wire.terminal.one(+c: Client, +owner: String, +epoch: String) -> IO(Maybe<&2, Client>):
+  match c:
+    case Client{_, _, _, +cr, _, _, ThinStart{mode, ThinContext{_, _, target, view, _, _, +actor <> _, _} <> _} <> _}:
+      +actual = Bool.pick(String, String.is_empty(owner), UC.Ui.scratch(TA.Actor.ui(actor), "@terminal.owner"), owner)
+      Wire.terminal.ready(Bool.and(Bool.not(String.is_empty(view)), TOUT.Output.pending(String.eq(mode, "view-web"), TA.Actor.ui(actor), actual, Wire.terminal.written(cr))), c,
+        TA.Actor.ui(actor), actual, U32.show(OB.Cr.gen(cr)), epoch, view, target, Nat.add(OB.Cr.sent(cr), 1n))
+    case _: IO.pure(Maybe<&2, Client>, Some{c})
+
+def Wire.terminal.panes(cs: List<&2, Client>, +owner: String, +epoch: String) -> IO(List<&2, Client>):
+  match cs:
+    case Nil{}: IO.pure(List<&2, Client>, Nil{})
+    case c <> rest:
+      do IO<List<&2, Client>>:
+        one : Maybe<&2, Client> <- Wire.terminal.one(c, owner, epoch)
+        tail : List<&2, Client> <- Wire.terminal.panes(rest, owner, epoch)
+        return Clients.add(one, tail)
+
+def Wire.terminal.drain_one(same: Bool, c: Client, epoch: String) -> IO(Maybe<&2, Client>):
+  match same:
+    case False{}: IO.pure(Maybe<&2, Client>, Some{c})
+    case True{}: Wire.terminal.one(c, "", epoch)
+
+def Wire.terminal.same(c: Client, +id: U32, +gen: U32) -> Bool:
+  match c:
+    case Client{i, _, _, cr, _, _, _}: Bool.and(U32.is_eq(i, id), U32.is_eq(OB.Cr.gen(cr), gen))
+
+def Wire.terminal.drained(cs: List<&2, Client>, +id: U32, +gen: U32, +epoch: String) -> IO(List<&2, Client>):
+  match cs:
+    case Nil{}: IO.pure(List<&2, Client>, Nil{})
+    case +c <> rest:
+      do IO<List<&2, Client>>:
+        tail : List<&2, Client> <- Wire.terminal.drained(rest, id, gen, epoch)
+        one : Maybe<&2, Client> <- Wire.terminal.drain_one(Wire.terminal.same(c, id, gen), c, epoch)
+        return Clients.add(one, tail)
+
+def Term.json.pid(+thread: String, +pid: U32, bs: List<&2, U32>) -> String:
+  "{\"t\":\"term\",\"thread\":" ++ J.Json.show(J.Str{thread}) ++ ",\"pid\":" ++ U32.show(pid) ++ ",\"b\":[" ++ String.join(Term.nums(bs), ",") ++ "]}"
+
+# Raw terminal CBOR is unnecessary when every socket folds privately.
+# Mixed legacy/native clients still receive the original ordered byte stream.
+def Wire.terminal.raw_socket(cs: List<&2, Client>) -> Bool:
+  match cs:
+    case Nil{}: False{}
+    case +c <> rest: Bool.or(Bool.and(Bool.not(Client.thin(c)), Bool.not(Wire.native(c))), Wire.terminal.raw_socket(rest))
+
 # a shell's output goes to every client (each keeps its own screen)
-def Hub.term_out(h: Hub, +thread: String, data: List<&2, U32>) -> IO(Hub):
+def Hub.term_out(h: Hub, +thread: String, +pid: U32, data: List<&2, U32>) -> IO(Hub):
   match h:
     case Hub{st, f, ls, cl, as, inbox, cfg, note}:
       do IO<Hub>:
-        cl2 : List<&2, Client> <- Wire.all(cl, Term.json(thread, data))
-        return Hub{st, f, ls, cl2, as, inbox, cfg, note}
+        cl2 : List<&2, Client> <- Wire.all.k(Wire.terminal.raw_socket(cl), cl, Term.json.pid(thread, pid, data), All{0n, Nil{}, 0n, 0n, Nil{}})
+        cl3 : List<&2, Client> <- Wire.terminal.panes(cl2, thread, Cfg.thin.epoch(cfg))
+        return Hub{st, f, ls, cl3, as, inbox, cfg, note}
 
 # a chat terminal from the start: a blank cols x rows screen, then bytes
 def Term.json.reset(+key: String, +cols: U32, +rows: U32, bs: List<&2, U32>) -> String:
@@ -9959,7 +10052,9 @@ def Hub.boot(h: Hub, +client: U32, +gen: U32) -> IO(Hub):
 def Hub.drained(h: Hub, +client: U32, +gen: U32, +n: Nat, +b: Nat) -> IO(Hub):
   match h:
     case Hub{st, f, ls, cl, as, inbox, cfg, note}:
-      Hub.kick(Hub{st, f, ls, Clients.cr(cl, client, gen, n, b), as, inbox, cfg, note}, client)
+      do IO<Hub>:
+        cl2 : List<&2, Client> <- Wire.terminal.drained(Clients.cr(cl, client, gen, n, b), client, gen, Cfg.thin.epoch(cfg))
+        Hub.kick(Hub{st, f, ls, cl2, as, inbox, cfg, note}, client)
 
 def Far.rpc.may(ok: Bool, h: Hub, +client: U32, +id: String, +link: String, +body: String, +now: Nat) -> IO(Hub):
   match ok h:
@@ -14835,7 +14930,7 @@ def Msg.kind(m: Msg) -> String:
       "push"
     case PushBin{_, _}:
       "push_bin"
-    case TermOut{_, _}:
+    case TermOut{_, _, _}:
       "term_out"
     case TermTo{_, _, _, _, _}:
       "term_to"
@@ -16125,8 +16220,8 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.push(h, client, text)
     case PushBin{client, bs}:
       Hub.push.bin(h, client, bs)
-    case TermOut{thread, data}:
-      Hub.term_out(h, thread, data)
+    case TermOut{thread, pid, data}:
+      Hub.term_out(h, thread, pid, data)
     case TermTo{c, key, co, ro, data}:
       Hub.term_to(h, c, key, co, ro, data)
     case KProbe{force}: Hub.kcheck(h, force)
