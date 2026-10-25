@@ -41,4 +41,4 @@ def prompt(metas: String) -> String:
   S.Sec.prompt(S.Sec.metas(metas))
 
 def main() -> IO(Unit):
-  IO.print(mask("tskey-auth-k1abcdef", "key is tskey-auth-k1abcdef ok"))
+  IO.print(mask("SECRET-FIXTURE-1", "the value SECRET-FIXTURE-1 here"))

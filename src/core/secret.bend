@@ -91,8 +91,10 @@ def Sec.clean(v: Vault, +s: String) -> Bool:
 # The mask
 # --------
 # Sec.fine covers each character inside an occurrence of a stored value
-# with U+2022, keeping the rest and the length ("tskey-auth-k1ab..." in a
-# log line reads "••••••••••••..."). Its result is checked: should it ever
+# with U+2022, keeping the rest and the length (in the hub's bundle its
+# body is native, scripts/js-native.py: the same cover by indexOf, checked
+# against this definition by test/tools/secret.mjs): "SECRET-FIXTURE-1" in
+# a log line reads "••••••••••••••••". Its result is checked: should it ever
 # leave a value, the whole text becomes bullets. So Sec.mask's laws hold
 # whatever Sec.fine does (sec_mask_total), and clean text is never walked.
 
@@ -156,12 +158,16 @@ def Sec.mask.f(ok: Bool, +f: String) -> String:
     case False{}:
       Sec.bul(String.length(f))
 
+# (f: the fine mask's answer, computed once)
+def Sec.mask.g(+vs: List<&2, SecVal>, +f: String) -> String:
+  Sec.mask.f(Sec.clean.go(vs, f), f)
+
 def Sec.mask.c(clean: Bool, +vs: List<&2, SecVal>, +s: String) -> String:
   match clean:
     case True{}:
       s
     case False{}:
-      Sec.mask.f(Sec.clean.go(vs, Sec.fine(vs, s)), Sec.fine(vs, s))
+      Sec.mask.g(vs, Sec.fine(vs, s))
 
 def Sec.mask.go(+vs: List<&2, SecVal>, +s: String) -> String:
   Sec.mask.c(Sec.clean.go(vs, s), vs, s)
