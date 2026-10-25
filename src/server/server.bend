@@ -4619,10 +4619,11 @@ def PiRun.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: Str
         Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss), model, Hub.effort_of(st, thread)),
       MS.PPi{AC.AcpTurn{cwd, "", "", AG.Mention.expand("pi", text, ss), session, Grok.asks(r)}}, cwd, thread, gen, inbox)
 
-# Oh My Pi: `omp acp` with its approval mode; the instructions go with
-# --append-system-prompt; the model and thinking level are set over ACP
-# (core/omp.bend). omp's own sign-in, settings and sessions (~/.omp) are
-# used as they are.
+# Oh My Pi: `omp --mode rpc-ui` with its approval mode; the instructions
+# go with --append-system-prompt, the model and thinking level as flags
+# (core/omp.bend). omp's own sign-in and settings (~/.omp) are used as
+# they are; a thread's sessions live in Backplane's home
+# (<home>/omp/sessions/<thread>).
 def OmpRun.mode(r: M.RuntimeMode) -> String:
   match r:
     case M.Supervised{}:
@@ -4634,16 +4635,30 @@ def OmpRun.mode(r: M.RuntimeMode) -> String:
     case M.FullAccess{}:
       OP.Omp.mode.k(3n)
 
-def OmpRun.args(+mode: String, +prompt: String) -> List<&2, String>:
-  ["acp", "--approval-mode", mode, "--append-system-prompt", prompt]
+def OmpRun.ext(+home: String) -> String:
+  home ++ "/omp/backplane.js"
 
-# one Oh My Pi turn: Grok's runner over omp's ACP
+# the extension written whole and moved into place (turns of several
+# threads may start at once)
+def OmpRun.write(+home: String) -> IO(P.Ran):
+  P.Proc.run("sh", ["-c", "mkdir -p \"$1\" && printf '%s' \"$2\" > \"$1/.backplane.js.$$\" && mv -f \"$1/.backplane.js.$$\" \"$1/backplane.js\"", "sh", home ++ "/omp", OP.Omp.ext()], "/")
+
+# omp in its RPC mode with tool dialogs (rpc-ui); the thread's own session
+# folder, its newest session taken up again (--continue; a new one in an
+# empty folder); Backplane's tools through the extension
+def OmpRun.args(+mcp: String, +mode: String, +dir: String, +ext: String, +prompt: String, +model: String, +effort: String) -> List<&2, String>:
+  List.concat(&2, String, [["BACKPLANE_OMP_MCP=" ++ mcp, "omp", "--mode", "rpc-ui", "--approval-mode", mode, "--session-dir", dir, "--continue", "-e", ext, "--append-system-prompt", prompt],
+    Codex.opt("--model", PiRun.model(model)), Codex.opt("--thinking", AG.Effort.of("omp", effort))])
+
+# one Oh My Pi turn: Grok's runner over omp's RPC (core/omp.bend)
 def OmpRun.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +text: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
     +fs : K.Files <- Files.prepared(thread, cwd, inbox)
     +ss : List<&2, AG.USkill> <- Skills.scan(cwd)
     +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
-    Grok.run(OmpRun.args(OmpRun.mode(r), Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss)),
+    w : P.Ran <- OmpRun.write(Cfg.home(cfg))
+    Grok.run(OmpRun.args(Hub.mcp_url.g(cfg, thread, gen), OmpRun.mode(r), OP.Omp.dir(Cfg.home(cfg), thread), OmpRun.ext(Cfg.home(cfg)),
+        Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss), model, Hub.effort_of(st, thread)),
       MS.POmp{OP.OmpTurn{AC.AcpTurn{cwd, Hub.mcp_url.g(cfg, thread, gen), "", AG.Mention.expand("omp", text, ss), session, Grok.asks(r)}, PiRun.model(model), AG.Effort.of("omp", Hub.effort_of(st, thread))}}, cwd, thread, gen, inbox)
 
 # one Muse turn: Grok's runner over MSP; the turn's gen makes its command

@@ -4,8 +4,8 @@ import ./json.bend as J
 # Agents' dialogs
 # ---------------
 # Asks a runner hands the hub that are neither ACP permission requests nor
-# Muse approvals: Pi's extension dialogs (pi.bend) and Oh My Pi's form
-# elicitations (omp.bend). Each becomes one envelope line, method
+# Muse approvals: Pi's and Oh My Pi's extension dialogs (pi.bend,
+# omp.bend), and ACP form elicitations. Each becomes one envelope line, method
 # "bp/ask", with what the approval or question card shows and what the
 # answer must be written back as. The hub opens the ask (mcp.bend's
 # Bp.permit) and, once the person answers, Dlg.reply makes the agent's
@@ -63,10 +63,26 @@ def Dlg.pi.question(empty: Bool, yn: Bool, id: J.Json, +answer: String) -> Strin
     case False{} False{}:
       Dlg.pi.line(id, J.KV{"value", J.Str{answer}})
 
+# the label an approval's answer picks: allow for the session (else once),
+# allow once, or deny
+def Dlg.label(+p: J.Json, +answer: String) -> String:
+  Bool.pick(String, String.eq(answer, "session"), Dlg.or(J.Json.get_str(p, "session", ""), J.Json.get_str(p, "once", "")),
+    Bool.pick(String, String.eq(answer, "accept"), J.Json.get_str(p, "once", ""), J.Json.get_str(p, "deny", "Deny")))
+
+# an approval Pi's extension asked as a confirm: yes or no; one Oh My Pi
+# asked as a select (its choices in once, session, deny): the label the
+# answer picks
+def Dlg.pi.approval(confirm: Bool, +p: J.Json, id: J.Json, +answer: String) -> String:
+  match confirm:
+    case True{}:
+      Dlg.pi.line(id, J.KV{"confirmed", J.Flag{Dlg.allows(answer)}})
+    case False{}:
+      Dlg.pi.line(id, J.KV{"value", J.Str{Dlg.label(p, answer)}})
+
 def Dlg.pi(approval: Bool, +p: J.Json, id: J.Json, +answer: String) -> String:
   match approval:
     case True{}:
-      Dlg.pi.line(id, J.KV{"confirmed", J.Flag{Dlg.allows(answer)}})
+      Dlg.pi.approval(String.is_empty(J.Json.get_str(p, "once", "")), p, id, answer)
     case False{}:
       Dlg.pi.question(String.is_empty(answer), J.Json.get_bool(p, "bool", False{}), id, answer)
 
@@ -76,12 +92,6 @@ def Dlg.result(id: J.Json, r: J.Json) -> String:
 
 def Dlg.accept(+key: String, v: J.Json) -> J.Json:
   J.Json.obj([J.KV{"action", J.Str{"accept"}}, J.KV{"content", J.Json.obj([J.KV{key, v}])}])
-
-# the label an approval's answer picks: allow for the session (else once),
-# allow once, or deny
-def Dlg.label(+p: J.Json, +answer: String) -> String:
-  Bool.pick(String, String.eq(answer, "session"), Dlg.or(J.Json.get_str(p, "session", ""), J.Json.get_str(p, "once", "")),
-    Bool.pick(String, String.eq(answer, "accept"), J.Json.get_str(p, "once", ""), J.Json.get_str(p, "deny", "Deny")))
 
 def Dlg.elicit.question(empty: Bool, yn: Bool, +p: J.Json, id: J.Json, +answer: String) -> String:
   match empty yn:

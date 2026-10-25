@@ -382,7 +382,7 @@ def Msp.mode.k(i: Nat) -> String:
 # `env`, its config in OPENCODE_CONFIG_CONTENT; its own resume, tool
 # calls and failures in opencode.bend), Pi over its own RPC (pi.bend,
 # through `env`: its MCP endpoint and approval mode go to Backplane's
-# extension) or Oh My Pi over its own ACP (omp.bend): the same process
+# extension) or Oh My Pi over its own RPC (omp.bend): the same process
 # handling, its own lines, command and words.
 
 type Proto is Data:
@@ -437,7 +437,7 @@ def Proto.cmd(p: Proto) -> String:
     case PPi{_}:
       "env"
     case POmp{_}:
-      "omp"
+      "env"
 
 # its name in what the person reads
 def Proto.name(p: Proto) -> String:
