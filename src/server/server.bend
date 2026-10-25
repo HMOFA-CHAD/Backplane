@@ -1291,6 +1291,12 @@ def Agent.wrote(r: Socket & Result<&1, &1, U32 & String, Unit>, k: Socket -> IO(
   (s, _) = r
   k(s)
 
+# every agent process starts here: its arguments masked first (vault.bend's
+# Vx.args), so no stored value reaches a provider's command line, whatever
+# out or step carried the text (a Codex turn, an ACP runner, the writer)
+def Spawn.agent(+cmd: String, args: List<&2, String>, +cwd: String, +err: U32) -> IO(Result<&1, &1, U32 & String, U32 & Socket>):
+  IO.bind(List<&2, String>, Result<&1, &1, U32 & String, U32 & Socket>, VX.Vx.args(args), xs => H.Proc.spawn(cmd, xs, cwd, err))
+
 # each line to an agent's stdin (prompts, turn text, answers) masked
 def Agent.write.m(+line: String, s: Socket, k: Socket -> IO(Unit)) -> IO(Unit):
   IO.bind(String, Unit, VX.Vx.mask(line), l => IO.bind(Socket & Result<&1, &1, U32 & String, Unit>, Unit, H.Sock.send_text(s, l ++ "\n"), r => Agent.wrote(r, k)))
@@ -2604,7 +2610,7 @@ def OneShot.done(r: Socket & Result<&1, &1, U32 & String, Unit>, +pid: U32, +pro
 
 def OneShot.started(started: U32 & Socket, +input: String, +provider: String) -> IO(String):
   (+pid, s) = started
-  IO.bind(Socket & Result<&1, &1, U32 & String, Unit>, String, H.Sock.send_text(s, input), r => OneShot.done(r, pid, provider))
+  IO.bind(String, String, VX.Vx.mask(input), m => IO.bind(Socket & Result<&1, &1, U32 & String, Unit>, String, H.Sock.send_text(s, m), r => OneShot.done(r, pid, provider)))
 
 def OneShot.spawned(r: Result<&1, &1, U32 & String, U32 & Socket>, +input: String, +provider: String) -> IO(String):
   match r:
@@ -2615,7 +2621,7 @@ def OneShot.spawned(r: Result<&1, &1, U32 & String, U32 & Socket>, +input: Strin
 
 # the writer's answer to one text under a system prompt, in /tmp
 def OneShot.run(+tx: AG.Tx, +system: String, +input: String) -> IO(String):
-  IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, String, H.Proc.spawn("sh", PT.Port.timeout(AG.OneShot.args(tx, system)), "/tmp", 0),
+  IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, String, Spawn.agent("sh", PT.Port.timeout(AG.OneShot.args(tx, system)), "/tmp", 0),
     r => OneShot.spawned(r, AG.OneShot.input(AG.Tx.provider(tx), system, input), AG.Tx.provider(tx)))
 
 # a thread's first message: the writer titles it, and the hub keeps the
@@ -3288,7 +3294,7 @@ def Codex.refuse(+thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
     return Unit{}
 
 def Codex.run(+args: List<&2, String>, +cwd: String, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
-  Keyring.gate("codex", IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, H.Proc.spawn("codex", args, cwd, 3), r => Codex.started(r, thread, gen, inbox)),
+  Keyring.gate("codex", IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, Spawn.agent("codex", args, cwd, 3), r => Codex.started(r, thread, gen, inbox)),
     Codex.refuse(thread, gen, inbox))
 
 def Grok.stop(s: Socket, +pid: U32, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
@@ -3401,7 +3407,7 @@ def Grok.refuse(+t: MS.Proto, +thread: String, +gen: String, +inbox: Chan(Msg)) 
     return Unit{}
 
 def Grok.run(+args: List<&2, String>, +t: MS.Proto, +cwd: String, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
-  Keyring.gate(MS.Proto.name(t), IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, H.Proc.spawn(MS.Proto.cmd(t), args, cwd, 3), r => Grok.started(r, t, thread, gen, inbox)),
+  Keyring.gate(MS.Proto.name(t), IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, Spawn.agent(MS.Proto.cmd(t), args, cwd, 3), r => Grok.started(r, t, thread, gen, inbox)),
     Grok.refuse(t, thread, gen, inbox))
 
 # Updates
@@ -9049,7 +9055,7 @@ def Claude.job(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: S
     +fs : K.Files <- K.Files.read(cwd)
     ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, AutoView{thread, fs})
     +keys : String <- Hub.keys.prompt(Cfg.home(cfg))
-    Keyring.gate("claude", IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, H.Proc.spawn("env", "MCP_TOOL_TIMEOUT=86400000" <> "CLAUDE_CODE_ENABLE_TODO_TOOLS=1" <> "claude" <> Hub.agent_args(cfg, thread, model, session, r, i, Hub.prompt(cfg, st, thread, cwd, fs, keys), effort, gen, M.Think.on(st)), cwd, 3),
+    Keyring.gate("claude", IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, Spawn.agent("env", "MCP_TOOL_TIMEOUT=86400000" <> "CLAUDE_CODE_ENABLE_TODO_TOOLS=1" <> "claude" <> Hub.agent_args(cfg, thread, model, session, r, i, Hub.prompt(cfg, st, thread, cwd, fs, keys), effort, gen, M.Think.on(st)), cwd, 3),
       res => Claude.started(res, thread, gen, cwd, input, inbox)), Claude.fail(thread, gen, KR.Keyring.refusal("claude"), inbox))
 
 def Agents.pid.k(same: Bool, a: Agent, +pid: U32) -> Agent:
@@ -14898,6 +14904,18 @@ def SecMcp.ran(+r: J.Json, +id: J.Json, +reply: Chan(String)) -> IO(Unit):
 def SecMcp.run.job(+spec: String, +id: J.Json, +reply: Chan(String)) -> IO(Unit):
   IO.bind(String, Unit, VX.Vx.run(spec), r => SecMcp.ran(Maybe.default(&2, J.Json, J.Json.parse(r), J.Json.obj([J.KV{"error", J.Str{"the run failed"}}])), id, reply))
 
+# a hub on a copied log (BACKPLANE_COPY=1) runs no secret command: copied
+# private fixtures get no new way to a shell or the network (core/copy.bend)
+def SecMcp.run.k(copy: Bool, +spec: String, +id: J.Json, +reply: Chan(String)) -> IO(Unit):
+  match copy:
+    case True{}:
+      SecMcp.say(reply, id, False{}, J.Json.obj([J.KV{"error", J.Str{"a hub on a copied log (BACKPLANE_COPY=1) runs no secret commands"}}]))
+    case False{}:
+      SecMcp.run.job(spec, id, reply)
+
+def SecMcp.run.gate(+spec: String, +id: J.Json, +reply: Chan(String)) -> IO(Unit):
+  IO.bind(Bool, Unit, P.Proc.copy(), copy => SecMcp.run.k(copy, spec, id, reply))
+
 def SecMcp.run.spec(+a: J.Json, +cwd: String, +thread: String) -> String:
   J.Json.show(J.Json.obj([J.KV{"command", J.Str{J.Json.get_str(a, "command", "")}}, J.KV{"env", J.Json.get_obj(a, "env")}, J.KV{"files", J.Json.get_obj(a, "files")},
     J.KV{"cwd", J.Str{Bool.pick(String, String.is_empty(J.Json.get_str(a, "cwd", "")), cwd, J.Json.get_str(a, "cwd", ""))}},
@@ -14915,7 +14933,7 @@ def SecMcp.go(i: Nat, h: Hub, +thread: String, +o: J.Json, +reply: Chan(String),
         return h
     case _ Hub{+st, f, ls, cl, as, inbox, cfg, note}:
       do IO<Hub>:
-        IO.spawn(Unit, SecMcp.run.job(SecMcp.run.spec(J.Json.get_obj(J.Json.get_obj(o, "params"), "arguments"), B.Hub.cwd(st, B.Hub.thread(st, thread)), thread), J.Json.get_obj(o, "id"), reply))
+        IO.spawn(Unit, SecMcp.run.gate(SecMcp.run.spec(J.Json.get_obj(J.Json.get_obj(o, "params"), "arguments"), B.Hub.cwd(st, B.Hub.thread(st, thread)), thread), J.Json.get_obj(o, "id"), reply))
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
 
 def SecMcp.pos(+o: J.Json) -> Nat:

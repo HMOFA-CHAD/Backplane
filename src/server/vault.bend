@@ -84,3 +84,16 @@ def Vx.prompt() -> IO(String):
 # secret_run: the run, its answer masked
 def Vx.run(+spec: String) -> IO(String):
   IO.bind(String, String, VaultFx.run(spec), r => Vx.mask(r))
+
+# each launch argument of an agent masked (every provider's spawn: Claude,
+# Codex, the ACP/MSP/RPC runners, the writer's one-shot); the prompt, the
+# turn's text and any instructions ride in them
+def Vx.args.go(xs: List<&2, String>, +v: S.Vault, acc: List<&2, String>) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      List.reverse(&2, String, acc)
+    case +x <> t:
+      Vx.args.go(t, v, S.Sec.mask(v, x) <> acc)
+
+def Vx.args(xs: List<&2, String>) -> IO(List<&2, String>):
+  IO.bind(S.Vault, List<&2, String>, Vx.vault(), v => IO.pure(List<&2, String>, Vx.args.go(xs, v, Nil{})))

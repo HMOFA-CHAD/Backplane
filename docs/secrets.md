@@ -15,7 +15,11 @@ The person gives an agent an API key, an auth key, a token or a password without
 |---|---|
 | `secret_request {name, purpose}` | `{secret, set}`. When it isn't set yet, end the turn: a message arrives once it is. |
 | `secret_list {}` | `[{secret, set, purpose, usedAt}]` |
-| `secret_run {command, env?, files?, cwd?, timeout?}` | `{code, stdout, stderr}`, masked. `env {VAR: name}` puts the value in the command's environment. `files {VAR: name}` writes it to a 0600 file in a 0700 folder, removed after the run, and puts the file's path in VAR (`tailscale up --auth-key=file:$TS`). |
+| `secret_run {command, env?, files?, cwd?, timeout?}` | `{code, timedOut, stdout, stderr}`, masked. `env {VAR: name}` puts the value in the command's environment. `files {VAR: name}` writes it to a 0600 file in a 0700 folder, removed after the run, and puts the file's path in VAR (`tailscale up --auth-key=file:$TS`). |
+
+`secret_run` gets no new authority. It passes the same stale-generation, standing-rules and mail-charter gates as any tool, and the charter counts it among the shell tools. A hub on a copied log (`BACKPLANE_COPY=1`) refuses it.
+
+The command runs in its own process group. Output is captured as it streams, keeping the last 64K characters of each stream. Once the command exits, its streams get 2 s, then the group is killed. At the timeout the group gets SIGTERM, then SIGKILL 2 s later, and the run is settled 3 s after that whatever still holds a pipe. Only the child's own group is signalled; an empty, 0 or 1 PID never is. The real exit code is kept, or 124 on a timeout. The answer is masked with the values this run injected, and their JSON-escaped and percent-encoded forms, as well as every current value. So a value replaced or deleted while the run works stays masked.
 
 Every prompt carries a `<secrets>` block: the names set, how to use them, and "never ask for a secret in chat; use secret_request".
 
@@ -24,6 +28,8 @@ Every prompt carries a `<secrets>` block: the names set, how to use them, and "n
 - The vault is `<home>/secrets/vault.json` (0600, folder 0700). Its metadata (name, purpose, who asked, when set, last use and by which thread) is plaintext. Each value is sealed with AES-256-GCM, with the name as associated data.
 - The master key lives in the OS keychain: Secret Service (`secret-tool`) on Linux, the login keychain (`security`, written through its stdin) on macOS, DPAPI on Windows. Otherwise it's in `<home>/secrets/vault.key` (0600).
 - The backend is fixed at the first save. If it later stops answering, the vault reports locked. It is never re-keyed.
+- **Fail closed.** These all lock the vault: a `vault.json` that can't be read, isn't JSON, has another version, names an unknown key store, isn't shaped as `{v:1, key, items:[{name, iv, ct, …}]}`, names a secret twice, or holds a value that doesn't open with the key. Only a missing file counts as a new vault. A locked vault keeps what it read: every name for Settings, and every value that did open for masking. It refuses saves, deletes and runs, so nothing is written over the evidence.
+- **Staged writes.** A save or delete writes a temporary file, flushes it, renames it over `vault.json` and flushes the folder. Only then does the change replace what's in memory, and with it the masking set. A failed write leaves memory, disk and masking as they were (tested with injected write, fsync and rename faults).
 - `BACKPLANE_VAULT_KEYRING=file` forces the key file (tests).
 - The hub opens the vault before any turn resumes. Values stay in the effect's memory (`src/server/effects/vault.js`), and Bend reads them only to mask (`Vx.vault`).
 
@@ -41,8 +47,11 @@ Every prompt carries a `<secrets>` block: the names set, how to use them, and "n
 - `Hub.tagged`: every agent output line as it's read;
 - `Hub.step.go`: every change before it is written and applied (`Secret.changes`: each change's JSON through `Sec.json`), so the log, the store, FTS, mail, the state and every client are covered;
 - `Mcp.ask.raw`: every MCP answer;
-- `Agent.write`: every line to an agent;
+- `Spawn.agent`: every agent's launch arguments (Claude, Codex, the ACP, MSP and RPC runners, the writer's one-shot), wherever the step or out that carried the text came from;
+- `Agent.write` and the one-shot's stdin: every line to an agent;
 - `secret_run`'s output.
+
+**Cost.** In the hub's bundle the clean check is `String.contains`, native already. `Sec.fine`'s body is native too (`scripts/js-native.py`): the same cover computed by `indexOf` at code point boundaries, fenced by `secret.bend`'s hash. `test/tools/secret.mjs` builds the module the way `build-js.sh` does and checks the native body against the pure definition on 300+ inputs (overlaps, emoji, lone surrogates). Measured there, a 4 MB line with a secret masks in about 130 ms and a clean one in about 0 ms. The pure walk takes about 140 ms for 10 KB. Sec.mask's laws hold whatever `Sec.fine` answers, because the pure check follows it.
 
 ## Laws
 
@@ -63,4 +72,6 @@ Stored values live only in `SecVal`, gathered in a `Vault`. `test/tools/secret.m
 
 Agents run as the same OS user as the hub. The box stops accidental exposure: transcripts, logs, the model's context, other clients, backups. A determined agent with a shell could still read the keychain or the key file. What it prints reaches the hub masked, but its own tool output reaches its model directly. Lines logged before a secret was stored aren't rewritten.
 
-Tests: `bend test/secret_test.bend -o X.mjs && bun test/tools/secret.mjs X.mjs`.
+Tests:
+- `bend test/secret_test.bend -o X.mjs && bun test/tools/secret.mjs X.mjs`: masks, pure and native; the source gate; and the vault's fail-closed, fault-injection, run-lifecycle and race negatives.
+- `bun test/tools/secret_e2e.ts BINARY WIRE`: stand-in claude and codex capture their argv and stdin; the event log, the store and every frame are checked for the value.

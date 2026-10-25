@@ -4,14 +4,30 @@
 // a 32-byte master key kept in the OS keychain: Secret Service through
 // secret-tool on Linux, the login keychain through `security` on macOS,
 // DPAPI on Windows; where none answers, <home>/secrets/vault.key (0600).
-// The backend is chosen at the first save and written down; if it stops
-// answering the vault is "locked", never re-keyed.
+// The backend is chosen at the first save and written down.
+//
+// Fail closed: a vault.json that cannot be read, is not JSON, has another
+// version or shape, names a secret twice, or holds a value that does not
+// open with the key, makes the vault "locked". A locked vault keeps what
+// it read (metadata for Settings, every value that did open for masking)
+// and refuses every change and every run: nothing is written over the
+// evidence and nothing is re-keyed. Only a missing file is a new vault.
+//
+// Changes are staged: the new items are written to a temporary file,
+// flushed, renamed over vault.json and the folder flushed; only then do
+// they replace the ones in memory (and so the masking set). A failed write
+// leaves memory, disk and masking as they were.
 //
 // Values live decrypted in this file's memory only. Bend gets them for one
 // purpose, masking (VaultFx.values -> Sec.vault), and hands names to
 // VaultFx.run, which injects them into a child's environment or a 0600
-// temp file. Nothing here logs, prints or returns a value otherwise.
-// BACKPLANE_VAULT_KEYRING=file forces the key file (tests).
+// temp file and masks the child's output with the values it injected (and
+// every other) before answering. Nothing here logs, prints or returns a
+// value otherwise. BACKPLANE_VAULT_KEYRING=file forces the key file
+// (tests); BACKPLANE_VAULT_FAULT=write|fsync|rename makes the next save
+// fail at that step (tests only, read with BACKPLANE_VAULT_TEST=1).
+const BP_VAULT_BACKENDS = new Set(["keyring", "keychain", "dpapi", "file"]);
+const BP_VAULT_NAME = /^[a-z0-9._-]{1,64}$/;
 const bp_vault = { home: "", items: new Map(), key: null, backend: "", locked: false, why: "", api: { at: 0, mtime: -1, vals: [] } };
 
 function bp_vault_fs() { return require("node:fs"); }
@@ -72,17 +88,17 @@ function bp_vault_key_put(backend, key) {
   const fs = bp_vault_fs();
   const h = key.toString("hex");
   if (backend === "file") {
-    try { fs.writeFileSync(bp_vault_path("vault.key"), h + "\n", { mode: 0o600 }); fs.chmodSync(bp_vault_path("vault.key"), 0o600); } catch (_) { return false; }
+    try { fs.writeFileSync(bp_vault_path("vault.key"), h + "\n", { mode: 0o600, flag: "wx" }); } catch (_) { return false; }
   } else if (backend === "keyring") {
     if (!bp_vault_sh("secret-tool", ["store", "--label=Backplane vault", "service", "backplane-vault", "home", bp_vault_id()], h).ok) return false;
   } else if (backend === "keychain") {
     // through security's own prompt on stdin, so the key is never in argv
-    if (!bp_vault_sh("security", ["-i"], `add-generic-password -U -s backplane-vault -a ${bp_vault_id()} -l "Backplane vault" -w ${h}\n`).ok) return false;
+    if (!bp_vault_sh("security", ["-i"], `add-generic-password -s backplane-vault -a ${bp_vault_id()} -l "Backplane vault" -w ${h}\n`).ok) return false;
   } else if (backend === "dpapi") {
     const ps = "$b=[Console]::In.ReadToEnd().Trim();Add-Type -AssemblyName System.Security;[Convert]::ToBase64String([Security.Cryptography.ProtectedData]::Protect([Text.Encoding]::UTF8.GetBytes($b),$null,'CurrentUser'))";
     const r = bp_vault_sh("powershell", ["-NoProfile", "-NonInteractive", "-Command", ps], h);
     if (!r.ok || !r.out.trim()) return false;
-    try { fs.writeFileSync(bp_vault_path("vault.key.dpapi"), r.out.trim() + "\n", { mode: 0o600 }); } catch (_) { return false; }
+    try { fs.writeFileSync(bp_vault_path("vault.key.dpapi"), r.out.trim() + "\n", { mode: 0o600, flag: "wx" }); } catch (_) { return false; }
   } else {
     return false;
   }
@@ -90,19 +106,20 @@ function bp_vault_key_put(backend, key) {
   return !!back && back.equals(key);
 }
 
-function bp_vault_seal(name, value) {
+function bp_vault_seal(key, name, value) {
   const c = require("node:crypto");
   const iv = c.randomBytes(12);
-  const ci = c.createCipheriv("aes-256-gcm", bp_vault.key, iv);
+  const ci = c.createCipheriv("aes-256-gcm", key, iv);
   ci.setAAD(Buffer.from(name));
   const ct = Buffer.concat([ci.update(Buffer.from(value, "utf8")), ci.final()]);
   return { iv: iv.toString("base64"), ct: Buffer.concat([ct, ci.getAuthTag()]).toString("base64") };
 }
 
-function bp_vault_open1(name, iv, ct) {
+function bp_vault_open1(key, name, iv, ct) {
   const c = require("node:crypto");
   const all = Buffer.from(ct, "base64");
-  const de = c.createDecipheriv("aes-256-gcm", bp_vault.key, Buffer.from(iv, "base64"));
+  if (all.length < 17) throw new Error("short");
+  const de = c.createDecipheriv("aes-256-gcm", key, Buffer.from(iv, "base64"));
   de.setAAD(Buffer.from(name));
   de.setAuthTag(all.subarray(all.length - 16));
   return Buffer.concat([de.update(all.subarray(0, all.length - 16)), de.final()]).toString("utf8");
@@ -112,16 +129,63 @@ function bp_vault_meta(it) {
   return { name: it.name, purpose: it.purpose || "", by: it.by || "", at: it.at || "", usedAt: it.usedAt || "", usedBy: it.usedBy || "" };
 }
 
-// write vault.json atomically (0600 in a 0700 folder)
-function bp_vault_save() {
+function bp_vault_fault(step) {
+  if (process.env.BACKPLANE_VAULT_TEST === "1" && process.env.BACKPLANE_VAULT_FAULT === step) throw new Error("injected " + step + " failure");
+}
+
+// write items as vault.json durably: a temporary file written and flushed,
+// renamed over vault.json, the folder flushed. Throws on any failure (the
+// temporary file is removed); the caller publishes only after it returns.
+function bp_vault_write(items, backend) {
   const fs = bp_vault_fs();
-  const items = [...bp_vault.items.values()].map((it) => ({ ...bp_vault_meta(it), iv: it.iv, ct: it.ct }));
-  const text = JSON.stringify({ v: 1, key: bp_vault.backend, items }, null, 1) + "\n";
-  const tmp = bp_vault_path("vault.json.tmp");
+  const list = [...items.values()].map((it) => ({ ...bp_vault_meta(it), iv: it.iv, ct: it.ct }));
+  const text = JSON.stringify({ v: 1, key: backend, items: list }, null, 1) + "\n";
+  const tmp = bp_vault_path("vault.json." + process.pid + ".tmp");
   fs.mkdirSync(bp_vault_path(), { recursive: true, mode: 0o700 });
   try { fs.chmodSync(bp_vault_path(), 0o700); } catch (_) {}
-  fs.writeFileSync(tmp, text, { mode: 0o600 });
-  fs.renameSync(tmp, bp_vault_path("vault.json"));
+  let fd = -1;
+  try {
+    fd = fs.openSync(tmp, "w", 0o600);
+    bp_vault_fault("write");
+    fs.writeFileSync(fd, text);
+    bp_vault_fault("fsync");
+    fs.fsyncSync(fd);
+    fs.closeSync(fd);
+    fd = -1;
+    bp_vault_fault("rename");
+    fs.renameSync(tmp, bp_vault_path("vault.json"));
+  } catch (e) {
+    if (fd >= 0) try { fs.closeSync(fd); } catch (_) {}
+    try { fs.rmSync(tmp, { force: true }); } catch (_) {}
+    throw e;
+  }
+  if (process.platform !== "win32") {
+    try { const d = fs.openSync(bp_vault_path(), "r"); try { fs.fsyncSync(d); } finally { fs.closeSync(d); } } catch (_) {}
+  }
+}
+
+function bp_vault_lock(why) {
+  bp_vault.locked = true;
+  if (!bp_vault.why) bp_vault.why = why;
+}
+
+// the schema, strictly: {v: 1, key: <backend>, items: [{name, iv, ct,
+// purpose?, by?, at?, usedAt?, usedBy?}]}, names unique; "" when it holds
+function bp_vault_bad(doc) {
+  if (!doc || typeof doc !== "object" || Array.isArray(doc)) return "vault.json is not an object";
+  if (doc.v !== 1) return "vault.json has version " + JSON.stringify(doc.v) + ", not 1";
+  if (!BP_VAULT_BACKENDS.has(doc.key)) return "vault.json names no known key store";
+  if (!Array.isArray(doc.items)) return "vault.json has no item list";
+  const seen = new Set();
+  for (const it of doc.items) {
+    if (!it || typeof it !== "object") return "vault.json has an item that is not an object";
+    if (typeof it.name !== "string" || !BP_VAULT_NAME.test(it.name)) return "vault.json has an item without a valid name";
+    if (seen.has(it.name)) return "vault.json names " + it.name + " twice";
+    seen.add(it.name);
+    if (typeof it.iv !== "string" || typeof it.ct !== "string") return "vault.json's " + it.name + " has no sealed value";
+    for (const k of ["purpose", "by", "at", "usedAt", "usedBy"]) if (it[k] !== undefined && typeof it[k] !== "string") return "vault.json's " + it.name + " has a bad " + k;
+  }
+  return "";
 }
 
 // VaultFx.open(home): read the vault and its key once; a JSON status
@@ -129,25 +193,38 @@ function vault_open(home) {
   bp_vault.home = home;
   bp_vault.items = new Map();
   bp_vault.key = null;
+  bp_vault.backend = "";
   bp_vault.locked = false;
   bp_vault.why = "";
-  let doc = null;
-  try { doc = JSON.parse(bp_vault_fs().readFileSync(bp_vault_path("vault.json"), "utf8")); } catch (_) {}
-  bp_vault.backend = doc && typeof doc.key === "string" ? doc.key : "";
-  if (doc && Array.isArray(doc.items)) {
-    for (const it of doc.items) if (it && typeof it.name === "string") bp_vault.items.set(it.name, { ...bp_vault_meta(it), iv: it.iv, ct: it.ct, value: null });
+  let text = null;
+  try {
+    text = bp_vault_fs().readFileSync(bp_vault_path("vault.json"), "utf8");
+  } catch (e) {
+    if (!e || e.code !== "ENOENT") bp_vault_lock("vault.json could not be read (" + String(e && (e.code || e.message) || e) + ")");
   }
-  if (bp_vault.items.size > 0) {
-    bp_vault.key = bp_vault_key_get(bp_vault.backend);
-    if (!bp_vault.key) {
-      bp_vault.locked = true;
-      bp_vault.why = bp_vault.backend === "file" ? "the vault's key file is missing" : "the " + bp_vault.backend + " did not give the vault's key";
-    } else {
-      for (const it of bp_vault.items.values()) {
-        try { it.value = bp_vault_open1(it.name, it.iv, it.ct); } catch (_) { it.value = null; }
-      }
-    }
+  if (text === null) return vault_status();
+  let doc;
+  try { doc = JSON.parse(text); } catch (_) { bp_vault_lock("vault.json is not valid JSON"); return vault_status(); }
+  const bad = bp_vault_bad(doc);
+  if (bad) {
+    bp_vault_lock(bad);
+    // what can be shown is kept for Settings (names only), nothing opened
+    if (doc && Array.isArray(doc.items)) for (const it of doc.items) if (it && typeof it.name === "string" && BP_VAULT_NAME.test(it.name) && !bp_vault.items.has(it.name)) bp_vault.items.set(it.name, { ...bp_vault_meta(it), iv: it.iv, ct: it.ct, value: null });
+    return vault_status();
   }
+  bp_vault.backend = doc.key;
+  for (const it of doc.items) bp_vault.items.set(it.name, { ...bp_vault_meta(it), iv: it.iv, ct: it.ct, value: null });
+  if (bp_vault.items.size === 0) return vault_status();
+  bp_vault.key = bp_vault_key_get(bp_vault.backend);
+  if (!bp_vault.key) {
+    bp_vault_lock(bp_vault.backend === "file" ? "the vault's key file is missing" : "the " + bp_vault.backend + " did not give the vault's key");
+    return vault_status();
+  }
+  let failed = 0;
+  for (const it of bp_vault.items.values()) {
+    try { it.value = bp_vault_open1(bp_vault.key, it.name, it.iv, it.ct); } catch (_) { it.value = null; failed++; }
+  }
+  if (failed) bp_vault_lock(failed + " of " + bp_vault.items.size + " secrets do not open with the vault's key");
   return vault_status();
 }
 
@@ -177,18 +254,27 @@ function bp_vault_api() {
   return a.vals;
 }
 
-// VaultFx.values(): every value to mask, one a line (only Bend's masks
-// read this; values of under 8 characters would mask ordinary text)
-function vault_values() {
+// every value masked now (vault and api.env), at least 8 characters
+function bp_vault_all() {
   const out = [];
   for (const it of bp_vault.items.values()) if (typeof it.value === "string" && it.value.length >= 8) out.push(it.value);
   for (const v of bp_vault_api()) if (v.length >= 8 && !/[\r\n]/.test(v)) out.push(v);
-  return out.join("\n");
+  return out;
+}
+
+// VaultFx.values(): every value to mask, one a line (only Bend's masks
+// read this; values of under 8 characters would mask ordinary text)
+function vault_values() {
+  return bp_vault_all().join("\n");
 }
 
 // VaultFx.list(): the metadata, a JSON array (never a value)
 function vault_list() {
-  return JSON.stringify([...bp_vault.items.values()].filter((it) => typeof it.value === "string" || bp_vault.locked).map(bp_vault_meta));
+  return JSON.stringify([...bp_vault.items.values()].map(bp_vault_meta));
+}
+
+function bp_vault_err(e) {
+  return String(e && e.message || e).replace(/[\r\n]/g, " ").slice(0, 200);
 }
 
 // VaultFx.put(name, value, purpose, by): "ok" or "fail <why>". Bend has
@@ -196,44 +282,91 @@ function vault_list() {
 function vault_put(name, value, purpose, by) {
   try {
     if (bp_vault.locked) return "fail the vault is locked: " + bp_vault.why;
-    if (!bp_vault.key) {
-      const backend = bp_vault.backend || bp_vault_offer();
-      const fs = bp_vault_fs();
-      fs.mkdirSync(bp_vault_path(), { recursive: true, mode: 0o700 });
-      let key = bp_vault_key_get(backend);
+    if (!BP_VAULT_NAME.test(name)) return "fail not a secret's name";
+    let key = bp_vault.key;
+    let backend = bp_vault.backend;
+    if (!key) {
+      // a new vault (no item yet): its key, from the store chosen now
+      backend = backend || bp_vault_offer();
+      bp_vault_fs().mkdirSync(bp_vault_path(), { recursive: true, mode: 0o700 });
+      key = bp_vault_key_get(backend);
       if (!key) {
         key = require("node:crypto").randomBytes(32);
         if (!bp_vault_key_put(backend, key)) {
-          if (backend === "file" || bp_vault.items.size > 0) return "fail could not keep the vault's key";
+          if (backend === "file") return "fail could not keep the vault's key";
           // a keychain that will not take it: the key file instead
-          if (!bp_vault_key_put("file", key)) return "fail could not keep the vault's key";
-          bp_vault.backend = "file";
-        } else {
-          bp_vault.backend = backend;
+          backend = "file";
+          const old = bp_vault_key_get("file");
+          if (old) key = old;
+          else if (!bp_vault_key_put("file", key)) return "fail could not keep the vault's key";
         }
-      } else {
-        bp_vault.backend = backend;
       }
-      bp_vault.key = key;
     }
     const old = bp_vault.items.get(name);
-    const sealed = bp_vault_seal(name, value);
-    bp_vault.items.set(name, { name, purpose: purpose || (old ? old.purpose : ""), by: by || (old ? old.by : ""), at: new Date().toISOString(), usedAt: old ? old.usedAt : "", usedBy: old ? old.usedBy : "", iv: sealed.iv, ct: sealed.ct, value });
-    bp_vault_save();
+    const sealed = bp_vault_seal(key, name, value);
+    const staged = new Map(bp_vault.items);
+    staged.set(name, { name, purpose: purpose || (old ? old.purpose : ""), by: by || (old ? old.by : ""), at: new Date().toISOString(), usedAt: old ? old.usedAt : "", usedBy: old ? old.usedBy : "", iv: sealed.iv, ct: sealed.ct, value });
+    bp_vault_write(staged, backend);
+    bp_vault.items = staged;
+    bp_vault.key = key;
+    bp_vault.backend = backend;
     return "ok";
   } catch (e) {
-    return "fail " + String(e && e.message || e).replace(/[\r\n]/g, " ").slice(0, 200);
+    return "fail " + bp_vault_err(e);
   }
 }
 
 // VaultFx.del(name): "ok" or "fail <why>"
 function vault_del(name) {
   try {
-    if (!bp_vault.items.delete(name)) return "fail no secret named " + name;
-    bp_vault_save();
+    if (bp_vault.locked) return "fail the vault is locked: " + bp_vault.why;
+    if (!bp_vault.items.has(name)) return "fail no secret named " + name;
+    const staged = new Map(bp_vault.items);
+    staged.delete(name);
+    bp_vault_write(staged, bp_vault.backend || bp_vault_offer());
+    bp_vault.items = staged;
     return "ok";
   } catch (e) {
-    return "fail " + String(e && e.message || e).replace(/[\r\n]/g, " ").slice(0, 200);
+    return "fail " + bp_vault_err(e);
+  }
+}
+
+// The forms of a value masked in a run's output: as it is, JSON-escaped and
+// percent-encoded (where they differ), at least 8 characters
+function bp_vault_forms(vals) {
+  const out = new Set();
+  for (const v of vals) {
+    if (typeof v !== "string" || v.length < 8) continue;
+    out.add(v);
+    out.add(JSON.stringify(v).slice(1, -1));
+    try { out.add(encodeURIComponent(v)); } catch (_) {}
+  }
+  return [...out];
+}
+
+// every character inside an occurrence of one of the forms, as U+2022
+// (Sec.fine's cover; Bend masks again after this with Sec.mask)
+function bp_vault_mask(s, forms) {
+  if (typeof s !== "string" || s === "" || forms.length === 0) return s;
+  const d = new Int32Array(s.length + 1);
+  let any = false;
+  for (const f of forms) for (let i = s.indexOf(f); i >= 0; i = s.indexOf(f, i + 1)) { d[i]++; d[i + f.length]--; any = true; }
+  if (!any) return s;
+  let out = "", run = 0;
+  for (let i = 0; i < s.length; i++) { run += d[i]; out += run > 0 ? "•" : s[i]; }
+  return out;
+}
+
+// signal a run's own process group: only a real child's pid (> 1); never
+// 0, 1, an empty or a missing pid
+function bp_vault_kill(pid, sig) {
+  if (!Number.isInteger(pid) || pid <= 1) return false;
+  try {
+    if (process.platform === "win32") process.kill(pid, sig);
+    else process.kill(-pid, sig);
+    return true;
+  } catch (_) {
+    return false;
   }
 }
 
@@ -243,25 +376,55 @@ function bp_vault_names(o) {
   return out;
 }
 
-// VaultFx.run(spec): runs spec.command (sh -c; cmd /c on Windows) with
-// each env {VAR: name} in its environment and each files {VAR: name}
-// written to a 0600 file in a 0700 folder removed after the run, VAR its
-// path. Answers JSON {code, stdout, stderr} or {error}; Bend masks it
-// before an agent sees it. Parks until the child ends or times out.
+// a stream's text, keeping only the last cap characters as it goes
+function bp_vault_tail(cap) {
+  const t = { text: "", cut: 0 };
+  t.add = (chunk) => {
+    t.text += chunk;
+    if (t.text.length > 2 * cap) { t.cut += t.text.length - cap; t.text = t.text.slice(t.text.length - cap); }
+  };
+  t.done = () => {
+    if (t.text.length > cap) { t.cut += t.text.length - cap; t.text = t.text.slice(t.text.length - cap); }
+    return t.cut ? "[… " + t.cut + " characters cut]\n" + t.text : t.text;
+  };
+  return t;
+}
+
+// VaultFx.run(spec): runs spec.command (sh -c; cmd /c on Windows) in its
+// own process group with each env {VAR: name} in its environment and each
+// files {VAR: name} written to a 0600 file in a 0700 folder, VAR its path.
+// Output is kept as it streams, the last 64K characters of each. It ends
+// when the command and its streams have, or at the timeout: the group is
+// sent SIGTERM, then SIGKILL 2 s later, and 3 s after that the run is
+// settled whatever still holds its pipes. After the command exits, its
+// streams get 2 s, then the group is killed. The temporary folder is
+// removed in every case. Answers JSON {code, timedOut, stdout, stderr} or
+// {error}, masked with the values this run injected and every value now
+// (so a value replaced or deleted during the run stays masked); Bend masks
+// it again.
 function vault_run(specText, k) {
   let spec;
   try { spec = JSON.parse(specText); } catch (_) { return JSON.stringify({ error: "bad request" }); }
-  const env = { ...process.env };
   const use = [...bp_vault_names(spec.env), ...bp_vault_names(spec.files)];
   if (typeof spec.command !== "string" || !spec.command.trim()) return JSON.stringify({ error: "command is required" });
   if (bp_vault.locked) return JSON.stringify({ error: "the vault is locked: " + bp_vault.why });
   for (const [, name] of use) {
     const it = bp_vault.items.get(name);
-    if (!it || typeof it.value !== "string") return JSON.stringify({ error: "no secret named " + name + " (ask for it with secret_request)" });
+    if (!it || typeof it.value !== "string") return JSON.stringify({ error: "no secret named " + String(name).slice(0, 64) + " (ask for it with secret_request)" });
   }
+  // the run's own masking set: what it injects, held until it answers
+  const injected = use.map(([, name]) => bp_vault.items.get(name).value);
+  const answer = (o) => {
+    const forms = bp_vault_forms(injected.concat(bp_vault_all()));
+    const m = {};
+    for (const [key, v] of Object.entries(o)) m[key] = typeof v === "string" ? bp_vault_mask(v, forms) : v;
+    return JSON.stringify(m);
+  };
   const fs = bp_vault_fs();
   const path = require("node:path");
+  const env = { ...process.env };
   let dir = "";
+  const clean = () => { if (dir) { try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {} dir = ""; } };
   try {
     for (const [v, name] of bp_vault_names(spec.env)) env[v] = bp_vault.items.get(name).value;
     if (bp_vault_names(spec.files).length) {
@@ -275,36 +438,69 @@ function vault_run(specText, k) {
       }
     }
   } catch (e) {
-    if (dir) try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {}
-    return JSON.stringify({ error: "could not prepare the run: " + String(e && e.message || e).slice(0, 200) });
+    clean();
+    return answer({ error: "could not prepare the run: " + bp_vault_err(e) });
   }
-  const now = new Date().toISOString();
-  for (const [, name] of use) { const it = bp_vault.items.get(name); it.usedAt = now; it.usedBy = String(spec.thread || ""); }
-  try { bp_vault_save(); } catch (_) {}
+  // last use, written only if the write succeeds (a failure changes nothing)
+  try {
+    const now = new Date().toISOString();
+    const staged = new Map(bp_vault.items);
+    for (const [, name] of use) staged.set(name, { ...staged.get(name), usedAt: now, usedBy: String(spec.thread || "") });
+    bp_vault_write(staged, bp_vault.backend || bp_vault_offer());
+    bp_vault.items = staged;
+  } catch (_) {}
   const secs = Math.max(1, Math.min(600, Number(spec.timeout) || 120));
-  const argv = process.platform === "win32" ? ["cmd.exe", "/d", "/s", "/c", spec.command] : ["/bin/sh", "-c", spec.command];
+  const win = process.platform === "win32";
   let child;
   try {
-    child = Bun.spawn(argv, { cwd: typeof spec.cwd === "string" && spec.cwd ? spec.cwd : undefined, env, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+    child = require("node:child_process").spawn(win ? "cmd.exe" : "/bin/sh", win ? ["/d", "/s", "/c", spec.command] : ["-c", spec.command], {
+      cwd: typeof spec.cwd === "string" && spec.cwd ? spec.cwd : undefined, env, stdio: ["ignore", "pipe", "pipe"], detached: !win, windowsHide: true,
+    });
   } catch (e) {
-    if (dir) try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {}
-    return JSON.stringify({ error: "could not start: " + String(e && e.message || e).slice(0, 200) });
+    clean();
+    return answer({ error: "could not start: " + bp_vault_err(e) });
   }
   const cap = 65536;
-  const tail = (s) => s.length > cap ? "[… " + (s.length - cap) + " characters cut]\n" + s.slice(s.length - cap) : s;
-  let timedOut = false;
-  const timer = setTimeout(() => { timedOut = true; try { child.kill(); } catch (_) {} }, secs * 1000);
-  const p = Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]).then(([out, err, code]) => {
-    clearTimeout(timer);
-    if (dir) try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {}
-    return JSON.stringify({ code: timedOut ? 124 : (code ?? 255), timedOut, stdout: tail(out), stderr: tail(err) });
-  }, (e) => {
-    clearTimeout(timer);
-    if (dir) try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {}
-    return JSON.stringify({ error: String(e && e.message || e).slice(0, 200) });
+  const out = bp_vault_tail(cap), err = bp_vault_tail(cap);
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  child.stdout.on("data", out.add);
+  child.stderr.on("data", err.add);
+  const p = new Promise((resolve) => {
+    let settled = false, timedOut = false, code = null, open = 2;
+    const timers = [];
+    const later = (ms, f) => { const t = setTimeout(f, ms); timers.push(t); };
+    const settle = (why) => {
+      if (settled) return;
+      settled = true;
+      for (const t of timers) clearTimeout(t);
+      try { child.stdout.destroy(); } catch (_) {}
+      try { child.stderr.destroy(); } catch (_) {}
+      clean();
+      resolve(answer(why ? { error: why } : { code: timedOut ? 124 : (code ?? 255), timedOut, stdout: out.done(), stderr: err.done() }));
+    };
+    const closed = () => { open--; if (open === 0 && code !== null) settle(""); };
+    child.stdout.on("close", closed);
+    child.stderr.on("close", closed);
+    child.on("error", (e) => { if (code === null) settle("the run failed: " + bp_vault_err(e)); });
+    child.on("exit", (c, sig) => {
+      code = c !== null ? c : 128 + (require("node:os").constants.signals[sig] ?? 0);
+      if (open === 0) return settle("");
+      // a descendant holds the pipes: 2 s, then the group goes
+      later(2000, () => { bp_vault_kill(child.pid, "SIGKILL"); settle(""); });
+    });
+    later(secs * 1000, () => {
+      timedOut = true;
+      bp_vault_kill(child.pid, "SIGTERM");
+      later(2000, () => bp_vault_kill(child.pid, "SIGKILL"));
+      later(5000, () => { if (code === null) code = 124; settle(""); });
+    });
   });
-  return io_park_promise(p, k, (v, err) => err === undefined ? v : JSON.stringify({ error: "the run failed" }));
+  return io_park_promise(p, k, (v, e) => e === undefined ? v : JSON.stringify({ error: "the run failed" }));
 }
+
+// the kill guard, reachable by test/tools/secret.mjs only
+if (typeof process !== "undefined" && process.env.BACKPLANE_VAULT_TEST === "1") globalThis.BP_VAULT_KILL = bp_vault_kill;
 
 io_eff(CID(VaultFx.open), vault_open);
 io_eff(CID(VaultFx.status), vault_status);

@@ -107,6 +107,15 @@ def secp_mask_f(b, vs, f, e, h):
     case False{}:
       secp_bul_clean(vs, String.length(f), h)
 
+law secp_mask_g:
+  for +vs: List<&2, S.SecVal>
+  for +f: String
+  for +h: {S.Sec.valid.go(vs) == True{} : Bool}
+  {S.Sec.clean.go(vs, S.Sec.mask.g(vs, f)) == True{} : Bool}
+
+def secp_mask_g(vs, f, h):
+  secp_mask_f(S.Sec.clean.go(vs, f), vs, f, {==}, h)
+
 law secp_mask_c:
   for b: Bool
   for +vs: List<&2, S.SecVal>
@@ -120,7 +129,7 @@ def secp_mask_c(b, vs, s, e, h):
     case True{}:
       e
     case False{}:
-      secp_mask_f(S.Sec.clean.go(vs, S.Sec.fine(vs, s)), vs, S.Sec.fine(vs, s), {==}, h)
+      secp_mask_g(vs, S.Sec.fine(vs, s), h)
 
 # no stored value occurs in masked text
 law secp_mask_go_total:
