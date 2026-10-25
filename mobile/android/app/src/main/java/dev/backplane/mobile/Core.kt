@@ -418,7 +418,7 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
     }
 
     fun retryView(key: String) {
-        if (links.none { Pairing.key(it) == key } || startup[key] != StartupPolicy.COMPATIBILITY_REQUIRED) return
+        if (links.none { Pairing.key(it) == key } || startup[key] !in setOf(StartupPolicy.COMPATIBILITY_REQUIRED, StartupPolicy.PAIRING_REFUSED)) return
         hubs.remove(key)?.stop()
         thinReady.remove(key)
         presentationEpochs.remove(key)
@@ -444,6 +444,11 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
                     // a hub that is down or restarting is asked again after
                     // the backoff; only a hub that answers without views parks
                     else if (found == ViewCapability.Found.UNREACHABLE) Next.Later
+                    else if (found == ViewCapability.Found.REFUSED) {
+                        startup[key] = StartupPolicy.PAIRING_REFUSED
+                        android.util.Log.i("Backplane", "view pairing_refused")
+                        Next.Stop
+                    }
                     else if (found != ViewCapability.Found.SUPPORTED) {
                         startup[key] = StartupPolicy.COMPATIBILITY_REQUIRED
                         android.util.Log.i("Backplane", "view capability_required")

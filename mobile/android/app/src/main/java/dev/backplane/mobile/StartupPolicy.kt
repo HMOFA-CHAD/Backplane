@@ -1,9 +1,10 @@
 package dev.backplane.mobile
 
-// A hub without views is COMPATIBILITY_REQUIRED: it needs an update. The
+// A hub without views is COMPATIBILITY_REQUIRED: it needs an update. A hub
+// that refuses the pairing token is PAIRING_REFUSED: pair the phone again. The
 // whole-log compatibility sync is retired: COMPATIBILITY_CHOSEN is never set
 // (the app loads the recent window and pages back, never all history).
-enum class StartupPolicy { DISCOVERING, THIN, COMPATIBILITY_REQUIRED, COMPATIBILITY_CHOSEN }
+enum class StartupPolicy { DISCOVERING, THIN, COMPATIBILITY_REQUIRED, COMPATIBILITY_CHOSEN, PAIRING_REFUSED }
 
 // Owner identity alone cannot distinguish two tabs of the same bot.
 class ThinPresentationFence {
