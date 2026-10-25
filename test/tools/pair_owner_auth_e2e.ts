@@ -1,7 +1,7 @@
 // Actual native-listener boundary. Synthetic tailscale CLI fixtures supply
 // socket whois identities and this listener's own IP/DNS; no real tailnet,
 // account, provider, user home or UI is used. --baseline retains the old401.
-// bun pair_owner_auth_e2e.ts BINARY WIREDIR [--baseline] [--keep]
+// bun pair_owner_auth_e2e.ts BINARY WIREDIR [--baseline] [--keep] [--fixture-only]
 import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,readdirSync,existsSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
@@ -34,7 +34,7 @@ const sleep=(n:number)=>new Promise(r=>setTimeout(r,n));
 async function until(ms:number,f:()=>any){const t=performance.now();while(performance.now()-t<ms){const x=await f();if(x)return x;if(child.exitCode!==null)throw Error('fixture hub exited');await sleep(30);}return null;}
 // Bun 1.3.10 ignores node:net's localAddress. A Python socket explicitly
 // binds before connect, and each tailnet request verifies its own whois row.
-const socketRequest=`import json,socket,sys
+const socketRequest=`import base64,json,socket,sys
 p=json.load(sys.stdin)
 with socket.socket(socket.AF_INET,socket.SOCK_STREAM) as s:
  s.settimeout(10)
@@ -48,10 +48,18 @@ with socket.socket(socket.AF_INET,socket.SOCK_STREAM) as s:
   data=s.recv(65536)
   if not data: break
   chunks.append(data)
- print(json.dumps(dict(local=local,peer=peer,response=b''.join(chunks).decode('utf-8'))))
+ print(json.dumps(dict(local=local,peer=peer,response64=base64.b64encode(b''.join(chunks)).decode('ascii'))))
 `;
+function decodeHttp(response64:string){
+ const all=Buffer.from(response64,'base64'), split=all.indexOf(Buffer.from('\r\n\r\n'));
+ const head=(split<0?all:all.subarray(0,split)).toString('ascii');
+ const status=Number(/^HTTP\/1\.1\s+(\d+)/.exec(head)?.[1]||0);
+ if(!status||split<0)throw Error('missing HTTP reply head');
+ const bytes=all.subarray(split+4);
+ return {status,bytes,body:bytes.toString('utf8')};
+}
 function whoisRows(source:string){return existsSync(whoisLog)?readFileSync(whoisLog,'utf8').split('\n').filter(l=>l===`whois --json ${source}`).length:0;}
-async function raw(host:string,source:string,method:string,path:string,fields:[string,string][]=[],onLoopback=false):Promise<{status:number,body:string,ms:number}>{
+async function raw(host:string,source:string,method:string,path:string,fields:[string,string][]=[],onLoopback=false){
  const t=performance.now(), destination=onLoopback?'127.0.0.1':'127.0.0.2', before=whoisRows(source);
  const request=`${method} ${path} HTTP/1.1\r\nHost: ${host}\r\n${fields.some(([k])=>k.toLowerCase()==='connection')?'':'Connection: close\r\n'}Content-Length: 0\r\n${fields.map(([k,v])=>`${k}: ${v}\r\n`).join('')}\r\n`;
  const client=Bun.spawn(['python3','-c',socketRequest],{stdin:new Response(JSON.stringify({source,destination,port,request})),stdout:'pipe',stderr:'pipe'});
@@ -60,13 +68,19 @@ async function raw(host:string,source:string,method:string,path:string,fields:[s
  const response=JSON.parse(out);
  if(response.local!==source||response.peer!==destination)throw Error('fixture socket source/destination mismatch');
  if(!onLoopback&&whoisRows(source)!==before+1)throw Error(`request did not verify actual socket source ${source}`);
- const all=response.response, split=all.indexOf('\r\n\r\n'), status=Number(/^HTTP\/1\.1\s+(\d+)/.exec(all)?.[1]||0);
- if(!status)throw Error('missing HTTP reply');
- return {status,body:split<0?'':all.slice(split+4),ms:performance.now()-t};
+ return {...decodeHttp(response.response64),ms:performance.now()-t};
 }
 function peerFiles(){const p=join(home,'secrets/peers');return existsSync(p)?readdirSync(p).length:0;}
 try{
  const up=await until(25000,async()=>{try{return (await raw(`127.0.0.2:${port}`,'127.0.0.1','GET','/hello')).status===200}catch{return false}});check('dedicated tailnet listener ready',!!up);if(!up)throw Error('no tailnet listener');
+ if(args.includes('--fixture-only')){
+  for(const source of ['127.0.0.1','127.0.0.4']){
+   const x=await raw(`127.0.0.2:${port}`,source,'GET','/hello');
+   const body=JSON.parse(W.decode(new Uint8Array(x.bytes)));
+   check(`binary CBOR hello and actual socket source ${source}`,x.status===200&&typeof body.backplane==='string');
+  }
+  console.log(JSON.stringify({mode:'fixture-only',passed:!failed,scope:'Only binary HTTP transport/source binding against a disposable hub; not pairing or queue qualification'}));
+ }else{
  ws=new WebSocket(`ws://127.0.0.1:${port}/ws`);ws.binaryType='arraybuffer';ws.onmessage=e=>{try{const m=JSON.parse(W.decode(new Uint8Array(e.data as ArrayBuffer)));if(m.t==='info'&&m.info?.machines){const x=m.info.machines;machines=typeof x==='string'?JSON.parse(x):x;}}catch{}};
  const row=await until(150000,()=>machines?.peers?.find((x:any)=>x.url===dummyUrl));check('actor discovers the synthetic requester first',!!row);if(!row)throw Error('synthetic requester not discovered');
  const path=`/bots/pair?name=${encodeURIComponent(row.name)}&url=${encodeURIComponent(dummyUrl)}`;
@@ -96,6 +110,7 @@ try{
  check('both untrusted requests checked actual .4 socket source',whoisRows('127.0.0.4')===2);
  const hello=await raw(`127.0.0.2:${port}`,'127.0.0.1','GET','/hello');timings.helloAfterRefusalsMs=hello.ms;check('service responds after refused requests',hello.status===200&&hello.ms<1000,hello.ms);
  console.log(JSON.stringify({mode:baseline?'old-401-control':'corrected-native-listener',passed:!failed,sourceKind:'synthetic socket whois fixture; not a live tailnet/phone claim',timings}));
+ }
 }catch(error){
  failed=true;console.error('fixture error: '+String(error));
 }finally{
