@@ -964,7 +964,9 @@ def View.menu.loc(+lc: I.Loc, +open: Bool, ms: List<&2, String>, +cur: String, +
   +query = Bool.pick(String, open, q, "")
   [D.El{"div", "model-layer", [D.At{"class", "model-layer"}, D.At{"data-local-models", "1"},
     D.At{"style", Bool.pick(String, open, "display:contents", "display:none")}, D.At{"aria-hidden", Bool.pick(String, open, "false", "true")}],
-    View.menu.shown(lc, U.Models.shown(info, prov, query), info, cur, prov, es, effort, query)}]
+    # Prewarm model rows, but a closed picker has no modal backdrop. Retained
+    # hosts use backdrop presence to defer their quiet deployment reload.
+    List.drop(&2, D.Node, View.menu.shown(lc, U.Models.shown(info, prov, query), info, cur, prov, es, effort, query), Bool.pick(Nat, open, 0n, 1n))}]
 
 # the skills a `$` being typed may complete to, or the bots, threads,
 # projects and rooms a `@`, `>`, `%` or `#` may (the arrow keys move the
