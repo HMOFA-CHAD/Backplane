@@ -8,6 +8,14 @@
 //      and the hub's log, store and frames never hold it (Hub.step.go,
 //      Hub.tagged), though the stand-in printed it.
 //   3. a reconnect's replay holds it nowhere either.
+//   4. untrusted probe output: each stand-in's --version prints the value.
+//      It was probed at start, before the value was stored (late-known):
+//      no info frame, no replay, and after secret.set no models.cache holds
+//      it. After a restart on the same home (now known at the probe, the
+//      cache read before the vault opens), the info, the replay and the
+//      cache still do not.
+//   5. an old unmasked models.cache written before boot: masked before
+//      /hello answers, and the first join's info carries it masked.
 //
 //   bun test/tools/secret_e2e.ts [BINARY] [WIREDIR]
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -28,7 +36,8 @@ mkdirSync(cap);
 // each stand-in: its argv and stdin to files; then the value on stdout in
 // the provider's shape, and an end
 const standin = (name: string, line: string) =>
-  `#!/bin/sh\nprintf '%s\\n' "$@" >> ${cap}/${name}.argv\n` +
+  `#!/bin/sh\nif [ "$1" = "--version" ]; then echo "9.9.9 (build ${VALUE})"; exit 0; fi\n` +
+  `printf '%s\\n' "$@" >> ${cap}/${name}.argv\n` +
   `( cat >> ${cap}/${name}.stdin ) &\n` +
   `printf '%s\\n' '${line}'\nsleep 2\nexit 0\n`;
 writeFileSync(join(fake, "claude"), standin("claude", JSON.stringify({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: `the key is ${VALUE}` }] } })));
@@ -65,12 +74,19 @@ const check = (ok: boolean, what: string) => {
   if (!ok) fail++;
 };
 const port = freePort();
-const proc = Bun.spawn([resolve(bin), "--home", home, "--port", String(port), "--no-tailscale", "--foreground"], {
+const spawnHub = () => Bun.spawn([resolve(bin), "--home", home, "--port", String(port), "--no-tailscale", "--foreground"], {
   env: { ...process.env, DISPLAY: "", WAYLAND_DISPLAY: "", BACKPLANE_NO_UPDATE: "1", BACKPLANE_KEYRING_LOCKED: "0", BACKPLANE_PEERS: "", BACKPLANE_GOOGLE_BAKE: "0",
     BACKPLANE_VAULT_KEYRING: "file", BACKPLANE_AGENTS: fake, PATH: `${fake}:${process.env.PATH}` },
   stdout: "ignore",
   stderr: "ignore",
 });
+let proc = spawnHub();
+const ready = async () => {
+  for (let i = 0; i < 200; i++) {
+    try { if ((await fetch(`http://127.0.0.1:${port}/hello`)).status === 200) break; } catch {}
+    await sleep(100);
+  }
+};
 type Client = { ws: WebSocket; seen: any[]; frames: string[]; send: (m: string, p: object) => number };
 const connect = async (): Promise<Client> => {
   const seen: any[] = [], frames: string[] = [];
@@ -91,10 +107,7 @@ const connect = async (): Promise<Client> => {
 };
 const read = (f: string) => existsSync(f) ? readFileSync(f).toString("latin1") : "";
 try {
-  for (let i = 0; i < 200; i++) {
-    try { if ((await fetch(`http://127.0.0.1:${port}/hello`)).status === 200) break; } catch {}
-    await sleep(100);
-  }
+  await ready();
   let c = await connect();
   c.send("project.add", { path: proj });
   const pc: any = await until(10000, () => c.seen.find((x) => x.$ === "ProjectCreated"));
@@ -107,6 +120,10 @@ try {
   check(!JSON.stringify(rep ?? {}).includes(VALUE), "the reply holds no value");
   const vault = read(join(home, "secrets", "vault.json"));
   check(vault.includes("fixture-e2e") && !vault.includes(VALUE), "the vault holds it sealed");
+  // 4a. probed before it was known: the save masked the cache again
+  await sleep(500);
+  const cache1 = read(join(home, "models.cache"));
+  check(!cache1.includes(VALUE), `after secret.set the models cache does not hold it (${cache1.length} bytes)`);
 
   // 2. pasted into a Claude and a Codex thread
   for (const [title, provider] of [["claude one", "claude"], ["codex one", "codex"]]) {
@@ -136,6 +153,39 @@ try {
   c = await connect();
   await sleep(2000);
   check(c.frames.length > 0 && !c.frames.some((f) => f.includes(VALUE)), "a reconnect's replay holds it nowhere");
+  check(c.frames.some((f) => f.includes("9.9.9 (build ")), "the replay's info does carry the probe's version, masked");
+
+  // 4b. a restart on the same home: the probe now knows the value; the
+  // cache is read before the vault opens
+  c.ws.close();
+  process.kill(proc.pid, "SIGKILL");
+  await proc.exited;
+  proc = spawnHub();
+  await ready();
+  c = await connect();
+  await sleep(4000);
+  check(c.frames.length > 0 && !c.frames.some((f) => f.includes(VALUE)), "after a restart no info or replay frame holds it");
+  c.ws.close();
+  c = await connect();
+  await sleep(1500);
+  check(!c.frames.some((f) => f.includes(VALUE)), "nor a reconnect after the restart's probe");
+  check(!read(join(home, "models.cache")).includes(VALUE), "nor the models cache");
+
+  // 5. an old, unmasked models cache on disk (an older hub, or a probe
+  // from before the value was stored): masked before the hub serves
+  // anything, the very first join included
+  c.ws.close();
+  process.kill(proc.pid, "SIGKILL");
+  await proc.exited;
+  writeFileSync(join(home, "models.cache"), JSON.stringify({ about: { claude: { cli: `old (build ${VALUE})` } } }) + "\n" + `old text ${VALUE}\n`);
+  proc = spawnHub();
+  await ready();
+  check(!read(join(home, "models.cache")).includes(VALUE), "an old unmasked cache is masked before the hub answers /hello");
+  c = await connect();
+  await sleep(300);
+  check(c.frames.length > 0 && !c.frames.some((f) => f.includes(VALUE)), "the first join after it holds the value nowhere");
+  // (the start's probe may already have replaced the old list)
+  check(c.frames.some((f) => f.includes("old (build ") || f.includes("9.9.9 (build ")), "and its info carries the models, masked");
 } finally {
   process.kill(proc.pid, "SIGKILL");
   await proc.exited;

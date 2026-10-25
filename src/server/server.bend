@@ -1872,6 +1872,29 @@ def Hub.info(c: Cfg) -> J.Json:
 def Hub.info.key(+c: Cfg) -> String:
   J.Json.show(Hub.info(c))
 
+# Info as it leaves the hub (the join's and replay's header, the live
+# broadcast, the hub-rendered views, the small info pushes): every string
+# masked with the vault as it is now (law sec_json_total). What is stored
+# may hold untrusted output a stored value later turns up in (a provider's
+# --version, the models cache read at start before the vault opens), so
+# the mask is taken at each exit, never once at storage.
+def Info.json(+j: J.Json) -> IO(String):
+  IO.bind(SEC.Vault, String, VX.Vx.vault(), v => IO.pure(String, J.Json.show(SEC.Sec.json(v, j))))
+
+def Info.shown(+c: Cfg) -> IO(String):
+  Info.json(Hub.info(c))
+
+# a probe's JSON (the models catalog) masked before it is kept or cached
+def Info.masked.k(m: Maybe<&2, J.Json>, +v: SEC.Vault, +text: String) -> String:
+  match m:
+    case Some{+j}:
+      J.Json.show(SEC.Sec.json(v, j))
+    case None{}:
+      SEC.Sec.mask(v, text)
+
+def Info.masked(+text: String) -> IO(String):
+  IO.bind(SEC.Vault, String, VX.Vx.vault(), v => IO.pure(String, Info.masked.k(J.Json.parse(text), v, text)))
+
 # the pairing link (the tailnet address and the token) and its QR code: not
 # in the info every client hears, but told only to clients that came with
 # the token (Hub.join.k, Wire.pair), never to one let in the legacy way
@@ -2122,21 +2145,21 @@ def Cfg.version(c: Cfg) -> String:
 def Hub.origin(+ls: List<&2, String>) -> String:
   Nat.show(J.Json.get_nat(Maybe.default(&2, J.Json, J.Json.parse(Maybe.default(&2, String, List.last(&2, String, ls), "")), J.Null{}), "at", 0n))
 
-def Hub.log_msg.k(+n: Nat, +ls: List<&2, String>, +cfg: Cfg, +since: Nat) -> String:
-  "{\"t\":\"log\",\"since\":" ++ Nat.show(since) ++ ",\"origin\":\"" ++ Hub.origin(ls) ++ "\",\"version\":" ++ J.Json.show(J.Str{Cfg.version(cfg)}) ++ ",\"info\":" ++ J.Json.show(Hub.info(cfg))
+def Hub.log_msg.k(+n: Nat, +ls: List<&2, String>, +cfg: Cfg, +since: Nat, +info: String) -> String:
+  "{\"t\":\"log\",\"since\":" ++ Nat.show(since) ++ ",\"origin\":\"" ++ Hub.origin(ls) ++ "\",\"version\":" ++ J.Json.show(J.Str{Cfg.version(cfg)}) ++ ",\"info\":" ++ info
     ++ ",\"items\":[" ++ String.join(List.reverse(&2, String, List.take(&2, String, ls, Nat.sub(n, since))), ",") ++ "]}"
 
 # the log for a client that has the first `since` changes already (a
 # reconnect sends only what it missed; a client ahead of the log, as after
 # a server reset, gets everything, since 0)
-def Hub.log_msg(+ls: List<&2, String>, +cfg: Cfg, +since: Nat) -> String:
-  Hub.log_msg.k(ST.Store.size(ls), ls, cfg, Bool.pick(Nat, Nat.is_le(since, ST.Store.size(ls)), since, 0n))
+def Hub.log_msg(+ls: List<&2, String>, +cfg: Cfg, +since: Nat, +info: String) -> String:
+  Hub.log_msg.k(ST.Store.size(ls), ls, cfg, Bool.pick(Nat, Nat.is_le(since, ST.Store.size(ls)), since, 0n), info)
 
 # the first frame of a join: the log message with the first chunk of what
 # the client lacks; "more": the rest follows a chunk at a time
 # (core/outbox.bend's Join.*), the last one with "boot": false
-def Hub.log_msg.c(+origin: String, +cfg: Cfg, +since: Nat, xs: List<&2, String>, more: Bool) -> String:
-  "{\"t\":\"log\",\"since\":" ++ Nat.show(since) ++ ",\"origin\":\"" ++ origin ++ "\",\"version\":" ++ J.Json.show(J.Str{Cfg.version(cfg)}) ++ ",\"info\":" ++ J.Json.show(Hub.info(cfg))
+def Hub.log_msg.c(+origin: String, +cfg: Cfg, +since: Nat, xs: List<&2, String>, more: Bool, +info: String) -> String:
+  "{\"t\":\"log\",\"since\":" ++ Nat.show(since) ++ ",\"origin\":\"" ++ origin ++ "\",\"version\":" ++ J.Json.show(J.Str{Cfg.version(cfg)}) ++ ",\"info\":" ++ info
     ++ Bool.pick(String, more, ",\"more\":true", "") ++ ",\"items\":[" ++ String.join(xs, ",") ++ "]}"
 
 # a later chunk of a join; the last says "boot": false
@@ -2148,8 +2171,8 @@ def Hub.boot_items(xs: List<&2, String>) -> Wire:
   WItems{"{\"t\":\"changes\",\"boot\":true,\"items\":[", "", "", xs, "]}", False{}}
 
 # a join's first frame, put together by the writer
-def Hub.log_items(+origin: String, +cfg: Cfg, +since: Nat, xs: List<&2, String>, +more: Bool) -> Wire:
-  WItems{"{\"t\":\"log\",\"since\":" ++ Nat.show(since) ++ ",\"origin\":\"" ++ origin ++ "\",\"version\":" ++ J.Json.show(J.Str{Cfg.version(cfg)}) ++ ",\"info\":" ++ J.Json.show(Hub.info(cfg))
+def Hub.log_items(+origin: String, +cfg: Cfg, +since: Nat, xs: List<&2, String>, +more: Bool, +info: String) -> Wire:
+  WItems{"{\"t\":\"log\",\"since\":" ++ Nat.show(since) ++ ",\"origin\":\"" ++ origin ++ "\",\"version\":" ++ J.Json.show(J.Str{Cfg.version(cfg)}) ++ ",\"info\":" ++ info
     , Bool.pick(String, more, ",\"more\":true,\"items\":[", ",\"items\":["), ",\"more\":true,\"items\":[", xs, "]}", Bool.not(more)}
 
 # Desks
@@ -4979,7 +5002,8 @@ def Hub.models.k(h: Hub) -> IO(Hub):
   match h:
     case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
       do IO<Hub>:
-        cl2 : List<&2, Client> <- Wire.all(cl, "{\"t\":\"info\",\"info\":" ++ J.Json.show(Hub.info(cfg)) ++ "}")
+        +info : String <- Info.shown(cfg)
+        cl2 : List<&2, Client> <- Wire.all(cl, "{\"t\":\"info\",\"info\":" ++ info ++ "}")
         cl3 : List<&2, Client> <- Wire.pair(cl2, Hub.pair_msg(cfg))
         return Hub{st, f, ls, cl3, as, inbox, cfg, note}
 
@@ -5285,10 +5309,15 @@ def Hub.machines(h: Hub, +mc: String) -> IO(Hub):
 
 # the providers' models changed: new threads' prompts and every client see
 # the new list
-def Hub.models(h: Hub, +ms: String, +mt: String) -> IO(Hub):
+def Hub.models.m(h: Hub, +ms: String, +mt: String) -> IO(Hub):
   match h:
     case Hub{st, f, ls, +cl, as, inbox, cfg, note}:
       Hub.models.k(Hub{st, f, ls, cl, as, inbox, Cfg.with_models(cfg, ms, mt), note})
+
+# (masked before they are kept: a provider's probe output is untrusted;
+# the exits mask again with the vault as it is then, Info.shown)
+def Hub.models(h: Hub, +ms: String, +mt: String) -> IO(Hub):
+  IO.bind(String, Hub, Info.masked(ms), m2 => IO.bind(String, Hub, VX.Vx.mask(mt), t2 => Hub.models.m(h, m2, t2)))
 
 def Names.list(r: Result<&1, &1, U32 & String, List<String>>) -> List<&2, String>:
   match r:
@@ -5371,6 +5400,25 @@ def Models.every() -> U32:
 # the last model list found (src/core/boot.bend)
 def Models.cache(+home: String) -> String:
   home ++ "/models.cache"
+
+def Models.cache.put(same: Bool, +home: String, +t: String) -> IO(Unit):
+  match same:
+    case True{}:
+      IO.pure(Unit, Unit{})
+    case False{}:
+      IO.bind(String, Unit, Token.save(Models.cache(home), t), w => IO.pure(Unit, Unit{}))
+
+def Models.cache.remask.k(+home: String, +old: String, +ms: String, +mt: String) -> IO(Unit):
+  Models.cache.put(Bool.or(String.is_empty(old), String.eq(old, BT.Cache.of(ms, mt))), home, BT.Cache.of(ms, mt))
+
+# the cache masked again with the vault as it is now (a secret just saved
+# may already sit in it, from a probe before it was known)
+def Models.cache.remask(+home: String) -> IO(Unit):
+  do IO<Unit>:
+    +old : String <- K.Io.text(Models.cache(home))
+    +ms : String <- Info.masked(BT.Cache.json(old))
+    +mt : String <- VX.Vx.mask(BT.Cache.text(old))
+    Models.cache.remask.k(home, old, ms, mt)
 
 def Net.models(n: Net) -> String:
   match n:
@@ -5912,11 +5960,13 @@ def Refresh.news(news: Bool, +ms: String, +mt: String, +inbox: Chan(Msg), +cache
     case False{}:
       IO.pure(String, last)
 
-# a probe's list goes to clients and the cache when it is news
+# a probe's list goes to clients and the cache when it is news, masked
+# first (a provider's probe output is untrusted) and compared masked, so a
+# value stored since the last detection rewrites the cache
 def Refresh.found(fd: Found, +inbox: Chan(Msg), +cache: String, +last: String) -> IO(String):
   match fd:
     case Found{+ms, +mt}:
-      Refresh.news(BT.Models.news(ms, last), ms, mt, inbox, cache, last)
+      IO.bind(String, String, Info.masked(ms), +m2 => IO.bind(String, String, VX.Vx.mask(mt), t2 => Refresh.news(BT.Models.news(m2, last), m2, t2, inbox, cache, last)))
 
 # (Antigravity's "agy": what is installed and its accounts, AGY.Agy.info.json)
 def Models.found(+cl: List<&2, String>, +cx: List<&2, String>, +gk: List<&2, String>, +ms: List<&2, String>, +ag: List<&2, String>, +oc: List<&2, String>, +pi: List<&2, String>, +om: List<&2, String>, agy: J.Json, about: J.Json) -> Found:
@@ -7341,8 +7391,9 @@ def VoiceJob.stopped(on: Bool, +inbox: Chan(Msg), +client: U32, +id: String, +th
 
 def AgyJob.info(+client: U32, +inbox: Chan(Msg), +what: String, +state: String, +msg: String, +url: String) -> IO(Unit):
   do IO<Unit>:
-    sent : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Push{client, J.Json.show(J.Json.obj([J.KV{"t", J.Str{"info"}}, J.KV{"info", J.Json.obj([J.KV{"agy.job",
-      J.Str{J.Json.show(J.Json.obj([J.KV{"what", J.Str{what}}, J.KV{"state", J.Str{state}}, J.KV{"msg", J.Str{msg}}, J.KV{"url", J.Str{url}}]))}}])}]))})
+    +t : String <- Info.json(J.Json.obj([J.KV{"t", J.Str{"info"}}, J.KV{"info", J.Json.obj([J.KV{"agy.job",
+      J.Str{J.Json.show(J.Json.obj([J.KV{"what", J.Str{what}}, J.KV{"state", J.Str{state}}, J.KV{"msg", J.Str{msg}}, J.KV{"url", J.Str{url}}]))}}])}]))
+    sent : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Push{client, t})
     return Unit{}
 
 def AgyJob.found(fd: Found, +inbox: Chan(Msg)) -> IO(Unit):
@@ -7611,7 +7662,8 @@ def BoatUse.go(+p: J.Json, +inbox: Chan(Msg), +home: String, +client: U32, +id: 
     user : String <- Env.get("HOME", "")
     xs : String <- Env.get("XDG_STATE_HOME", "")
     +status : String <- K.Io.text(BoatUse.state(xs, user))
-    sent : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Push{client, J.Json.show(J.Json.obj([J.KV{"t", J.Str{"info"}}, J.KV{"info", J.Json.obj([J.KV{"boat.usage", J.Str{UZ.Bj.info(cache, status)}}])}]))})
+    +t : String <- Info.json(J.Json.obj([J.KV{"t", J.Str{"info"}}, J.KV{"info", J.Json.obj([J.KV{"boat.usage", J.Str{UZ.Bj.info(cache, status)}}])}]))
+    sent : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Push{client, t})
     return Unit{}
 
 def VoiceJob.op(i: Nat, +inbox: Chan(Msg), +home: String, +p: J.Json, +client: U32, +id: String) -> IO(Unit):
@@ -10867,8 +10919,8 @@ def Cfg.browser.tabs(+cfg: Cfg, +o: J.Json) -> Cfg:
 def Hub.browser.tabs.current(h: Hub, +o: J.Json) -> IO(Hub):
   match h:
     case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
-      Hub.broadcast(Hub{st, f, ls, cl, as, inbox, Cfg.browser.tabs(cfg, o), note}, J.Json.show(J.Json.obj([J.KV{"t", J.Str{"info"}},
-        J.KV{"info", J.Json.obj([J.KV{"browser.tabs." ++ J.Json.get_str(o, "page", ""), J.Str{J.Json.show(o)}}])}])))
+      IO.bind(String, Hub, Info.json(J.Json.obj([J.KV{"t", J.Str{"info"}},
+        J.KV{"info", J.Json.obj([J.KV{"browser.tabs." ++ J.Json.get_str(o, "page", ""), J.Str{J.Json.show(o)}}])}])), t => Hub.broadcast(Hub{st, f, ls, cl, as, inbox, Cfg.browser.tabs(cfg, o), note}, t))
 
 def Hub.browser.tabs(h: Hub, +o: J.Json) -> IO(Hub):
   IO.bind(Hub, Hub, Hub.cef.seen.o(h, o), h2 => Hub.browser.tabs.current(h2, o))
@@ -11261,9 +11313,10 @@ def Hub.mobile.history.begin(+n: Nat, +s0: Nat, +origin: String, +xs: List<&2, S
       +k = List.length(&2, String, OB.Join.next(xs))
       +more = Bool.or(Nat.is_lt(Nat.add(s0, k), n), Bool.not(List.is_empty(&2, FR.In, Far.mirrors(cfg))))
       do IO<Hub>:
+        +info : String <- Info.shown(cfg)
         m : Maybe<&2, Client> <- Wire.offer(Client{id, out, look,
           PRESENT.Session.history_credit(cr, Nat.add(s0, k), more, OB.Join.from(ls, n, Nat.add(s0, k))), sock, legacy, Nil{}},
-          Hub.log_items(origin, cfg, s0, List.take(&2, String, xs, k), more), 0n)
+          Hub.log_items(origin, cfg, s0, List.take(&2, String, xs, k), more, info), 0n)
         m1 : Maybe<&2, Client> <- Hub.join.live(more, m, cfg)
         Hub.join.more(more, inbox, id, OB.Cr.gen(cr))
         return Hub{st, f, ls, Clients.swap(cl, id, m1), as, inbox, cfg, note}
@@ -11339,8 +11392,8 @@ def Hub.mobile.rpc.action(history: Bool, +web: Bool, h: Hub, +client: U32, +id: 
     case True{} _:
       Hub.presentation.history(h, client, id, p, c)
     case False{} Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
-      Hub.out(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Reply.data(client, id,
-        Hub.presentation.render(web, st, Hub.info(cfg), J.Json.obj([J.KV{"t", J.Json.str("live")}, J.KV{"items", J.Json.arr(LV.Live.items(Live.of(cfg)))}]), now, p)))
+      IO.bind(SEC.Vault, Hub, VX.Vx.vault(), v => Hub.out(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Reply.data(client, id,
+        Hub.presentation.render(web, st, SEC.Sec.json(v, Hub.info(cfg)), J.Json.obj([J.KV{"t", J.Json.str("live")}, J.KV{"items", J.Json.arr(LV.Live.items(Live.of(cfg)))}]), now, p))))
 
 def Hub.mobile.rpc.legacy.generation(same: Bool, history: Bool, +web: Bool, h: Hub, +client: U32, +id: String, p: J.Json, now: Nat, c: Client) -> IO(Hub):
   match same:
@@ -11530,15 +11583,19 @@ def Hub.thin.fetch(memory: Bool, +cfg: Cfg, +hide: Bool, +thread: String, +ancho
       IO.pure(TSTO.Page, TSTO.Page{i, THIN.Index.page(i, thread, anchor, 32n)})
     case False{}: TSTO.Ts.page.chat(hide, Cfg.thin.store(cfg), thread, anchor, 32n, Cfg.thin(cfg))
 
-def Hub.thin.render.page(+pg: TSTO.Page, h: Hub, +client: U32, +o: J.Json, +c: Client, +now: Nat, +context: ThinContext, +p: J.Json, +key: String, +ms: Nat) -> IO(Hub):
+def Hub.thin.render.page.v(+v: SEC.Vault, +pg: TSTO.Page, h: Hub, +client: U32, +o: J.Json, +c: Client, +now: Nat, +context: ThinContext, +p: J.Json, +key: String, +ms: Nat) -> IO(Hub):
   match h:
     case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
       +web = String.eq(Client.thin.mode(c), "view-web")
       +stream = TLIVE.Stream.get(Cfg.thin.streams(cfg), TV.Target.thread(st, J.Json.get_obj(p, "target")))
-      +actor = TA.Actor.mail_cache(TA.Actor.refresh(ThinContext.actors(context), web, st, Hub.info(cfg),
+      +actor = TA.Actor.mail_cache(TA.Actor.refresh(ThinContext.actors(context), web, st, SEC.Sec.json(v, Hub.info(cfg)),
         J.Json.obj([J.KV{"t", J.Str{"live"}}, J.KV{"items", J.Json.arr(Nil{})}]), now, p, ThinContext.view(context)), ThinContext.actors(context), Cfg.thin.mail(cfg))
       Hub.thin.rendered(TA.Rendered.remember.clock(TA.Actor.render.revision(actor, web, st, TSTO.Page.index(pg), p, Cfg.thin.epoch(cfg), now, TSTO.Page.ids(pg), stream, Cfg.thin.signal_seq(cfg)), key, ms, now, stream, web, p),
         Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, c, now, context)
+
+# (the info the view is made from, masked with the vault as it is now)
+def Hub.thin.render.page(+pg: TSTO.Page, h: Hub, +client: U32, +o: J.Json, +c: Client, +now: Nat, +context: ThinContext, +p: J.Json, +key: String, +ms: Nat) -> IO(Hub):
+  IO.bind(SEC.Vault, Hub, VX.Vx.vault(), v => Hub.thin.render.page.v(v, pg, h, client, o, c, now, context, p, key, ms))
 
 def Hub.thin.render.full(h: Hub, +client: U32, +o: J.Json, +c: Client, +now: Nat, +context: ThinContext, +anchor: Nat, +p: J.Json, +key: String, +ms: Nat) -> IO(Hub):
   match h:
@@ -11549,11 +11606,15 @@ def Hub.thin.render.full(h: Hub, +client: U32, +o: J.Json, +c: Client, +now: Nat
 
 # a view.update whose render memo still holds (thin-actor.bend's
 # Memo.reply: only the live row can have changed) answers with it spliced
-# (thin-splice.bend); anything else renders in full and is remembered
+# (thin-splice.bend); anything else renders in full and is remembered. A
+# memo hit is masked with the vault as it is now: its key (seq, raw info
+# key) does not move when a value is saved with no request waiting, so a
+# render from before the save could otherwise go out again (a clean reply
+# comes back from Sec.json as it was)
 def Hub.thin.render.memo(+m: Maybe<&2, J.Json>, h: Hub, +client: U32, +o: J.Json, +c: Client, +now: Nat, +context: ThinContext, +anchor: Nat, +p: J.Json, +key: String, +ms: Nat) -> IO(Hub):
   match m:
     case Some{+res}:
-      Hub.thin.respond(h, client, o, res, c, context, now)
+      IO.bind(SEC.Vault, Hub, VX.Vx.vault(), v => Hub.thin.respond(h, client, o, SEC.Sec.json(v, res), c, context, now))
     case None{}:
       Hub.thin.render.full(h, client, o, c, now, context, anchor, p, key, ms)
 
@@ -11780,8 +11841,8 @@ def SecRpc.list(h: Hub, +client: U32, +id: String) -> IO(Hub):
 
 def SecRpc.saved(h: Hub, +client: U32, +id: String, +name: String, +thread: String, +now: Nat) -> IO(Hub):
   match h:
-    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
-      IO.bind(Hub, Hub, Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Secret.saved(st, now, name, thread)), h2 => SecRpc.list(h2, client, id))
+    case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
+      IO.bind(Unit, Hub, Models.cache.remask(Cfg.home(cfg)), u => IO.bind(Hub, Hub, Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Secret.saved(st, now, name, thread)), h2 => SecRpc.list(h2, client, id)))
 
 def SecRpc.done(ok: Bool, +r: String, h: Hub, +client: U32, +id: String, +name: String, +thread: String, +now: Nat) -> IO(Hub):
   match ok:
@@ -16268,7 +16329,8 @@ def Hub.join.here(h: Hub, +client: U32, +out: Chan(Wire), +gen: U32, +now: Nat) 
   match h:
     case Hub{+st, f, +ls, +cl, as, inbox, +cfg, +note}:
       do IO<Hub>:
-        m : Maybe<&2, Client> <- Hub.join.state(Client{client, out, DK.Look.none(), OB.Cr.new(gen, True{}, False{}, 0n), 0, False{}, Nil{}}, WState{M.State.private(st), Hub.log_msg.k(0n, ls, cfg, 0n)})
+        +info : String <- Info.shown(cfg)
+        m : Maybe<&2, Client> <- Hub.join.state(Client{client, out, DK.Look.none(), OB.Cr.new(gen, True{}, False{}, 0n), 0, False{}, Nil{}}, WState{M.State.private(st), Hub.log_msg.k(0n, ls, cfg, 0n, info)})
         m1 : Maybe<&2, Client> <- Far.join.here(Far.mirrors(cfg), m)
         m2 : Maybe<&2, Client> <- Wire.text.m(m1, LV.Live.msg(Live.of(cfg)))
         m3 : Maybe<&2, Client> <- Hub.join.notes(m2, note, Desk.join(DK.Desk.text(Clients.looks(cl), now)))
@@ -16282,8 +16344,9 @@ def Hub.join.k(+n: Nat, +s0: Nat, +xs: List<&2, String>, h: Hub, +client: U32, +
       +k = List.length(&2, String, OB.Join.next(xs))
       +more = Bool.or(Nat.is_lt(Nat.add(s0, k), n), Bool.not(List.is_empty(&2, FR.In, Far.mirrors(cfg))))
       do IO<Hub>:
+        +info : String <- Info.shown(cfg)
         m : Maybe<&2, Client> <- Wire.offer(Client{client, out, DK.Look.none(), OB.Cr.rest.set(OB.Cr.wait.set(OB.Cr.new(gen, U32.is_eq(client, 0), more, Nat.add(s0, k)), more), OB.Join.from(ls, n, Nat.add(s0, k))), sock, legacy, Nil{}},
-          Hub.log_items(origin, cfg, s0, List.take(&2, String, xs, k), more), 0n)
+          Hub.log_items(origin, cfg, s0, List.take(&2, String, xs, k), more, info), 0n)
         m1 : Maybe<&2, Client> <- Hub.join.live(more, m, cfg)
         m2 : Maybe<&2, Client> <- Hub.join.notes(m1, note, Desk.join(DK.Desk.text(Clients.looks(cl), now)))
         m3 : Maybe<&2, Client> <- Wire.text.if(legacy, m2, Hub.pair_msg(cfg))
@@ -16897,6 +16960,14 @@ def Main.boot(cfg: Cfg, need: Bool, front: Chan(Msg) -> IO(Unit)) -> IO(Unit):
         f0 : Result<&1, &1, U32 & String, File> <- File.open(Store.path(home), "a")
         f : Result<&1, &1, U32 & String, File> <- Main.torn(f0, torn)
         tok : String <- Token.load(home)
+        # the secret box's vault opens before anything can be served, and
+        # the models cache (untrusted probe output, perhaps written before a
+        # value was stored or by an older hub) is masked again before it is
+        # read into the config (Models.cache.remask; Hub.recover opens the
+        # vault again, idempotent)
+        vst : String <- VX.VaultFx.open(home)
+        Log.info("vault " ++ vst)
+        Models.cache.remask(home)
         +mc : String <- Files.text(Models.cache(home))
         +bc : String <- BN.Bf.text(BN.Bn.cache(home))
         exe : String <- H.Sys.exe_dir()
