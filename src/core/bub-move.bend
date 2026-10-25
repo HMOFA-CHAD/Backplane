@@ -68,7 +68,14 @@ def Hop.transition(+before: J.Json, +after: J.Json) -> J.Json:
 def Hop.text(before: String, after: String) -> J.Json:
   Hop.transition(Maybe.default(&2, J.Json, J.Json.parse(before), J.Null{}), Maybe.default(&2, J.Json, J.Json.parse(after), J.Null{}))
 
-law hop_initial_quiet(+h: String, +t: Nat, +s: String, +nh: String, +nt: Nat, +ns: String):
-  Hop.changed("", h, t, s, "", nh, nt, ns) == False{}
-proof:
-  reflexivity
+law hop_initial_quiet:
+  for +h: String
+  for +t: Nat
+  for +s: String
+  for +nh: String
+  for +nt: Nat
+  for +ns: String
+  {Hop.changed("", h, t, s, "", nh, nt, ns) == False{} : Bool}
+
+def hop_initial_quiet(h, t, s, nh, nt, ns):
+  {==}

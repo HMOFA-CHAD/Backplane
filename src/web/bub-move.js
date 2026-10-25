@@ -38,6 +38,8 @@ export function showBubMove(move, { document = globalThis.document, schedule = g
   document.getElementById("bub-move")?.remove();
   const toast = document.createElement("aside");
   toast.id = "bub-move";toast.className = "bub-move";
+  // This body sibling cannot inherit the application's scoped palette.
+  toast.classList.toggle("light", !!document.querySelector(".app.light") || document.documentElement.classList.contains("light"));
   toast.setAttribute("role", "status");toast.setAttribute("aria-live", "polite");
   const title = document.createElement("div");title.className = "bub-move-title";title.textContent = "Bub’s moving";
   const route = document.createElement("div");route.className = "bub-move-route";route.setAttribute("aria-hidden", "true");

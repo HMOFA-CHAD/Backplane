@@ -51,6 +51,7 @@ import ../core/cbor.bend as CB
 import ../mobile/session.bend as MSE
 import ./thin-view.bend as TV
 import ./thin-actor.bend as TA
+import ./terminal-output.bend as TOUT
 import ./thin-sidebar-wire.bend as TSW
 import ../core/thin-pace.bend as TPACE
 import ./thin-mail.bend as TMAIL
@@ -81,6 +82,7 @@ import ../core/boot.bend as BT
 import ../core/store.bend as ST
 import ./hotboot.bend as HB
 import ./storeio.bend as STO
+import ./db.bend as SQ
 import ./botnet.bend as BN
 import ../core/far.bend as FR
 import ../core/fview.bend as FV
@@ -136,6 +138,8 @@ import ../core/usage.bend as UZ
 import ./thinstore.bend as TSTO
 import ../core/copy.bend as CP # BACKPLANE_COPY
 import ../core/copynet.bend as CN
+import ./vault.bend as VX # secret box
+import ../core/secret.bend as SEC
 
 # The server. One hub computation owns the read model and the event log;
 # every connection and agent process is its own computation and talks to
@@ -161,6 +165,8 @@ type Wire is Data:
   # a message as its JSON tree with its charge (a thin view's reply): the
   # writer encodes the tree, never printing and parsing it again
   WJson{json: J.Json, charge: Nat}
+  # At most one floating pane in flight; its writer reports credit at once.
+  WTerminal{json: J.Json, charge: Nat}
 
 type Msg is Data:
   Desktop{client: U32, kind: String, text: String, out: Chan(String), epoch: String, lease: String}
@@ -217,7 +223,7 @@ type Msg is Data:
   Push{client: U32, text: String}
   # a message for one client, already CBOR
   PushBin{client: U32, cbor: List<&2, U32>}
-  TermOut{thread: String, data: List<&2, U32>}
+  TermOut{thread: String, pid: U32, data: List<&2, U32>}
   # a chat terminal's snapshot for a client (TM.Et.all(): every client)
   TermTo{client: U32, key: String, cols: U32, rows: U32, data: List<&2, U32>}
   # a line for a thread's agent built off the hub (a message with images)
@@ -861,6 +867,7 @@ def Wire.charged(native: Bool, w: Wire, n: Nat) -> Wire:
     case False{} WText{t}: WCharged{t, n}
     case False{} WCharged{t, _}: WCharged{t, n}
     case False{} WJson{j, _}: WJson{j, n}
+    case False{} WTerminal{j, _}: WTerminal{j, n}
     case _ _: w
 
 def Wire.offer.k(c: Client, w: Wire, +n: Nat) -> IO(Maybe<&2, Client>):
@@ -1289,10 +1296,20 @@ def Agent.wrote(r: Socket & Result<&1, &1, U32 & String, Unit>, k: Socket -> IO(
   (s, _) = r
   k(s)
 
+# every agent process starts here: its arguments masked first (vault.bend's
+# Vx.args), so no stored value reaches a provider's command line, whatever
+# out or step carried the text (a Codex turn, an ACP runner, the writer)
+def Spawn.agent(+cmd: String, args: List<&2, String>, +cwd: String, +err: U32) -> IO(Result<&1, &1, U32 & String, U32 & Socket>):
+  IO.bind(List<&2, String>, Result<&1, &1, U32 & String, U32 & Socket>, VX.Vx.args(args), xs => H.Proc.spawn(cmd, xs, cwd, err))
+
+# each line to an agent's stdin (prompts, turn text, answers) masked
+def Agent.write.m(+line: String, s: Socket, k: Socket -> IO(Unit)) -> IO(Unit):
+  IO.bind(String, Unit, VX.Vx.mask(line), l => IO.bind(Socket & Result<&1, &1, U32 & String, Unit>, Unit, H.Sock.send_text(s, l ++ "\n"), r => Agent.wrote(r, k)))
+
 def Agent.write(m: Maybe<&1, String>, s: Socket, k: Socket -> IO(Unit)) -> IO(Unit):
   match m:
     case Some{line}:
-      IO.bind(Socket & Result<&1, &1, U32 & String, Unit>, Unit, H.Sock.send_text(s, line ++ "\n"), r => Agent.wrote(r, k))
+      Agent.write.m(line, s, k)
     case None{}:
       Socket.close(s)
 
@@ -1398,6 +1415,10 @@ def Conn.out.items(s: Socket, +hd: String, +pl: String, +sp: String, +xs: List<&
     H.Sock.send_items(s, hd, pl, sp, xs, tl, Bool.pick(U32, ends, 1, 0), U32.from_nat(OB.Join.most()), U32.from_nat(OB.Join.bytes()), Conn.keys(), Conn.words(), Conn.deadline()),
     r => Conn.sent.k(r, out, s2 => k(s2, 0n)))
 
+def Conn.json(+j: J.Json, +charge: Nat, s: Socket, +out: Chan(Wire), k: Socket -> Nat -> IO(Unit)) -> IO(Unit):
+  +bs = W.Ws.encode(2, CB.Cbor.encode(j))
+  Conn.out(s, bs, out, s2 => Conn.written(s2, List.length(&2, U32, bs), charge, k))
+
 def Conn.write(m: Maybe<&1, Wire>, s: Socket, +out: Chan(Wire), k: Socket -> Nat -> IO(Unit)) -> IO(Unit):
   match m:
     case Some{WText{t}}:
@@ -1420,9 +1441,8 @@ def Conn.write(m: Maybe<&1, Wire>, s: Socket, +out: Chan(Wire), k: Socket -> Nat
       k(s, 0n)
     case Some{WItems{hd, pl, sp, xs, tl, ends}}:
       Conn.out.items(s, hd, pl, sp, xs, tl, ends, out, k)
-    case Some{WJson{j, charge}}:
-      +bs = W.Ws.encode(2, CB.Cbor.encode(j))
-      Conn.out(s, bs, out, s2 => Conn.written(s2, List.length(&2, U32, bs), charge, k))
+    case Some{WJson{j, charge}}: Conn.json(j, charge, s, out, k)
+    case Some{WTerminal{j, charge}}: Conn.json(j, charge, s, out, k)
     case None{}:
       Socket.close(s)
 
@@ -1437,11 +1457,19 @@ def Conn.told(due: Bool, +w: OB.Wr, +id: U32, +gen: U32, +inbox: Chan(Msg)) -> I
     case False{}:
       IO.pure(OB.Wr, w)
 
-def Conn.wrote(s: Socket, +n: Nat, w: OB.Wr, +id: U32, +gen: U32, +inbox: Chan(Msg), k: Socket -> OB.Wr -> IO(Unit)) -> IO(Unit):
+def Conn.wrote(+force: Bool, s: Socket, +n: Nat, w: OB.Wr, +id: U32, +gen: U32, +inbox: Chan(Msg), k: Socket -> OB.Wr -> IO(Unit)) -> IO(Unit):
   do IO<Unit>:
     +w2 : OB.Wr = OB.Wr.put(w, n)
-    w3 : OB.Wr <- Conn.told(OB.Wr.due(w2), w2, id, gen, inbox)
+    w3 : OB.Wr <- Conn.told(Bool.or(force, OB.Wr.due(w2)), w2, id, gen, inbox)
     k(s, w3)
+
+def Conn.writer.one(m: Maybe<&1, Wire>, s: Socket, +out: Chan(Wire), +w: OB.Wr, +id: U32, +gen: U32, +inbox: Chan(Msg), k: Socket -> OB.Wr -> IO(Unit)) -> IO(Unit):
+  match m:
+    case Some{WTerminal{j, charge}}:
+      Conn.write(Some{WJson{j, charge}}, s, out, s2 => n => Conn.wrote(True{}, s2, n, w, id, gen, inbox, k))
+    case Some{other}:
+      Conn.write(Some{other}, s, out, s2 => n => Conn.wrote(False{}, s2, n, w, id, gen, inbox, k))
+    case None{}: Socket.close(s)
 
 # frames from the hub, until it closes our channel
 def Conn.writer(fuel: Nat, s: Socket, +out: Chan(Wire), w: OB.Wr, +id: U32, +gen: U32, +inbox: Chan(Msg)) -> IO(Unit):
@@ -1450,7 +1478,7 @@ def Conn.writer(fuel: Nat, s: Socket, +out: Chan(Wire), w: OB.Wr, +id: U32, +gen
       Socket.close(s)
     case 1n+f:
       IO.bind(Maybe<&1, Wire>, Unit, Chan.recv(Wire, out),
-        m => Conn.write(m, s, out, s2 => n => Conn.wrote(s2, n, w, id, gen, inbox, s3 => w2 => Conn.writer(f, s3, out, w2, id, gen, inbox))))
+        m => Conn.writer.one(m, s, out, w, id, gen, inbox, s3 => w2 => Conn.writer(f, s3, out, w2, id, gen, inbox)))
 
 def Conn.leave(s: Socket, +id: U32, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
@@ -1711,6 +1739,14 @@ def Mcp.answer(m: Maybe<&1, String>, s: Socket) -> IO(Unit):
     case None{}:
       Conn.finish(s, W.Http.text("503 Service Unavailable", "the hub is gone"))
 
+# every MCP answer masked before the agent reads it (laws sec_mask_*)
+def Mcp.masked(m: Maybe<&1, String>) -> IO(Maybe<&1, String>):
+  match m:
+    case Some{+text}:
+      IO.bind(String, Maybe<&1, String>, VX.Vx.mask(text), t => IO.pure(Maybe<&1, String>, Some{t}))
+    case None{}:
+      IO.pure(Maybe<&1, String>, None{})
+
 # the call counts as in flight (for a safe deploy) from its arrival until
 # its answer is written
 def Mcp.ask.raw(s: Socket, +body: String, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
@@ -1721,7 +1757,8 @@ def Mcp.ask.raw(s: Socket, +body: String, +thread: String, +inbox: Chan(Msg)) ->
     +reply : Chan(String) <- Chan.new(String, 1)
     ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Mcp{thread, body, reply})
     m : Maybe<&1, String> <- Chan.recv(String, reply)
-    Mcp.answer(m, s)
+    m2 : Maybe<&1, String> <- Mcp.masked(m)
+    Mcp.answer(m2, s)
     ok2 : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, McpShut{thread, call})
     return Unit{}
 
@@ -2589,7 +2626,7 @@ def OneShot.done(r: Socket & Result<&1, &1, U32 & String, Unit>, +pid: U32, +pro
 
 def OneShot.started(started: U32 & Socket, +input: String, +provider: String) -> IO(String):
   (+pid, s) = started
-  IO.bind(Socket & Result<&1, &1, U32 & String, Unit>, String, H.Sock.send_text(s, input), r => OneShot.done(r, pid, provider))
+  IO.bind(String, String, VX.Vx.mask(input), m => IO.bind(Socket & Result<&1, &1, U32 & String, Unit>, String, H.Sock.send_text(s, m), r => OneShot.done(r, pid, provider)))
 
 def OneShot.spawned(r: Result<&1, &1, U32 & String, U32 & Socket>, +input: String, +provider: String) -> IO(String):
   match r:
@@ -2600,7 +2637,7 @@ def OneShot.spawned(r: Result<&1, &1, U32 & String, U32 & Socket>, +input: Strin
 
 # the writer's answer to one text under a system prompt, in /tmp
 def OneShot.run(+tx: AG.Tx, +system: String, +input: String) -> IO(String):
-  IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, String, H.Proc.spawn("sh", PT.Port.timeout(AG.OneShot.args(tx, system)), "/tmp", 0),
+  IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, String, Spawn.agent("sh", PT.Port.timeout(AG.OneShot.args(tx, system)), "/tmp", 0),
     r => OneShot.spawned(r, AG.OneShot.input(AG.Tx.provider(tx), system, input), AG.Tx.provider(tx)))
 
 # a thread's first message: the writer titles it, and the hub keeps the
@@ -3273,7 +3310,7 @@ def Codex.refuse(+thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
     return Unit{}
 
 def Codex.run(+args: List<&2, String>, +cwd: String, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
-  Keyring.gate("codex", IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, H.Proc.spawn("codex", args, cwd, 3), r => Codex.started(r, thread, gen, inbox)),
+  Keyring.gate("codex", IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, Spawn.agent("codex", args, cwd, 3), r => Codex.started(r, thread, gen, inbox)),
     Codex.refuse(thread, gen, inbox))
 
 def Grok.stop(s: Socket, +pid: U32, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
@@ -3386,7 +3423,7 @@ def Grok.refuse(+t: MS.Proto, +thread: String, +gen: String, +inbox: Chan(Msg)) 
     return Unit{}
 
 def Grok.run(+args: List<&2, String>, +t: MS.Proto, +cwd: String, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
-  Keyring.gate(MS.Proto.name(t), IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, H.Proc.spawn(MS.Proto.cmd(t), args, cwd, 3), r => Grok.started(r, t, thread, gen, inbox)),
+  Keyring.gate(MS.Proto.name(t), IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, Spawn.agent(MS.Proto.cmd(t), args, cwd, 3), r => Grok.started(r, t, thread, gen, inbox)),
     Grok.refuse(t, thread, gen, inbox))
 
 # Updates
@@ -3508,7 +3545,11 @@ def Hub.prompt.files(+cwd: String, fs: K.Files) -> String:
 
 # one thread's instructions: the shared runtime and skills, then this
 # machine's KiCad, the project's canonical files, and what it may delegate
-# (keys: the API keys' block, server/apikeys.bend's Ak.prompt, "" for none)
+# (keys: the API keys' block, server/apikeys.bend's Ak.prompt, "" for none,
+# then the secret box's, vault.bend's Vx.prompt: names only)
+def Hub.keys.prompt(+home: String) -> IO(String):
+  IO.bind(String, String, AKS.Ak.prompt(home), k => IO.bind(String, String, VX.Vx.prompt(), sp => IO.pure(String, k ++ sp)))
+
 def Cfg.bn(c: Cfg) -> BN.Bn:
   match c:
     case Cfg{_, _, _, _, _, _, _, Net{_, _, _, _, _, _, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc, ksx}, +tcfg, +views}:
@@ -4193,9 +4234,9 @@ def Cfg.tm(c: Cfg) -> Maybe<&2, Chan(TM.TMsg)>:
 # a shell's output, to the hub (which sends it to every client)
 def Term.fwd.got(m: Maybe<&1, TM.TOut>, +inbox: Chan(Msg), k: Unit -> IO(Unit)) -> IO(Unit):
   match m:
-    case Some{TM.TOut{th, bs}}:
+    case Some{TM.TOut{th, pid, bs}}:
       do IO<Unit>:
-        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, TermOut{th, bs})
+        ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, TermOut{th, pid, bs})
         k(Unit{})
     case Some{TM.TTo{c, key, co, ro, bs}}:
       do IO<Unit>:
@@ -4551,14 +4592,14 @@ def Codex.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: Str
   do IO<Unit>:
     +fs : K.Files <- Files.prepared(thread, cwd, inbox)
     +ss : List<&2, AG.USkill> <- Skills.scan(cwd)
-    +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
+    +keys : String <- Hub.keys.prompt(Cfg.home(cfg))
     Codex.run(Codex.args(cfg, thread, model, session, r, AG.Mention.expand("codex", text, ss), Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss), Hub.effort_of(st, thread), gen, MD.Disposition.launch(st, thread), M.Think.on(st)), cwd, thread, gen, inbox)
 
 def Grok.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +text: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
     +fs : K.Files <- Files.prepared(thread, cwd, inbox)
     +ss : List<&2, AG.USkill> <- Skills.scan(cwd)
-    +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
+    +keys : String <- Hub.keys.prompt(Cfg.home(cfg))
     Grok.run(Grok.args(r, model, Hub.effort_of(st, thread)),
       MS.PAcp{AC.AcpTurn{cwd, Hub.mcp_url.g(cfg, thread, gen), Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss), AG.Mention.expand("grok", text, ss), session, Grok.asks(r)}}, cwd, thread, gen, inbox)
 
@@ -4569,7 +4610,7 @@ def Oc.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: String
   do IO<Unit>:
     +fs : K.Files <- Files.prepared(thread, cwd, inbox)
     +ss : List<&2, AG.USkill> <- Skills.scan(cwd)
-    +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
+    +keys : String <- Hub.keys.prompt(Cfg.home(cfg))
     Grok.run(Oc.args(r, model),
       MS.POc{OCM.OcpTurn{AC.AcpTurn{cwd, Hub.mcp_url.g(cfg, thread, gen), Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss), AG.Mention.expand("opencode", text, ss), session, Grok.asks(r)}, model}}, cwd, thread, gen, inbox)
 
@@ -4613,7 +4654,7 @@ def PiRun.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: Str
   do IO<Unit>:
     +fs : K.Files <- Files.prepared(thread, cwd, inbox)
     +ss : List<&2, AG.USkill> <- Skills.scan(cwd)
-    +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
+    +keys : String <- Hub.keys.prompt(Cfg.home(cfg))
     w : P.Ran <- PiRun.write(Cfg.home(cfg))
     Grok.run(PiRun.args(Hub.mcp_url.g(cfg, thread, gen), PiRun.mode(r), PI.Pi.session(session, thread, gen), PiRun.ext(Cfg.home(cfg)),
         Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss), model, Hub.effort_of(st, thread)),
@@ -4655,7 +4696,7 @@ def OmpRun.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: St
   do IO<Unit>:
     +fs : K.Files <- Files.prepared(thread, cwd, inbox)
     +ss : List<&2, AG.USkill> <- Skills.scan(cwd)
-    +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
+    +keys : String <- Hub.keys.prompt(Cfg.home(cfg))
     w : P.Ran <- OmpRun.write(Cfg.home(cfg))
     Grok.run(OmpRun.args(Hub.mcp_url.g(cfg, thread, gen), OmpRun.mode(r), OP.Omp.dir(Cfg.home(cfg), thread), OmpRun.ext(Cfg.home(cfg)),
         Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss), model, Hub.effort_of(st, thread)),
@@ -4667,7 +4708,7 @@ def Muse.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: Stri
   do IO<Unit>:
     +fs : K.Files <- Files.prepared(thread, cwd, inbox)
     +ss : List<&2, AG.USkill> <- Skills.scan(cwd)
-    +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
+    +keys : String <- Hub.keys.prompt(Cfg.home(cfg))
     Grok.run(Muse.args(r, model),
       MS.PMsp{MS.MspTurn{cwd, Hub.mcp_url.g(cfg, thread, gen), Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss), AG.Mention.expand("muse", text, ss), session,
         Muse.mode(r), AG.Effort.of("muse", Hub.effort_of(st, thread)), gen}}, cwd, thread, gen, inbox)
@@ -4694,7 +4735,7 @@ def Agt.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: Strin
   do IO<Unit>:
     +fs : K.Files <- Files.prepared(thread, cwd, inbox)
     +ss : List<&2, AG.USkill> <- Skills.scan(cwd)
-    +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
+    +keys : String <- Hub.keys.prompt(Cfg.home(cfg))
     w : Bool <- AGX.Agx.write(AGX.Agx.root(Cfg.home(cfg)))
     Grok.run(Agt.args(Cfg.home(cfg), st),
       MS.PAgy{AGY.AgyTurn{AC.AcpTurn{cwd, Hub.mcp_url.g(cfg, thread, gen), Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss), AG.Mention.expand("antigravity", text, ss), session, Grok.asks(r)},
@@ -4820,13 +4861,91 @@ def Preview.is(+o: J.Json) -> Bool:
 def Preview.shows(+o: J.Json) -> Bool:
   Bool.or(String.eq(J.Json.get_str(J.Json.get_obj(o, "params"), "name", ""), "preview_open"), String.eq(J.Json.get_str(J.Json.get_obj(o, "params"), "name", ""), "preview_navigate"))
 
+# Push only the already-folded, opted-in floating pane. Legacy, phones and
+# inline terminals retain their normal bounded-view invalidation path.
+def Wire.terminal.fallback(c: Client) -> Client:
+  match c:
+    case Client{id, out, look, cr, sock, legacy, ThinStart{mode, ThinContext{hub, cid, target, view, revision, anchor, actor <> _, control} <> _} <> _}:
+      Client{id, out, look, cr, sock, legacy, [ThinStart{mode, [ThinContext{hub, cid, target, view, revision, anchor, [TA.Actor.terminal.fallback(actor)], control}]}]}
+    case _: c
+
+def Wire.terminal.offered(c: Client, ordinal: Nat) -> Client:
+  match c:
+    case Client{id, out, look, cr, sock, legacy, ThinStart{mode, ThinContext{hub, cid, target, view, revision, anchor, actor <> _, control} <> _} <> _}:
+      Client{id, out, look, cr, sock, legacy, [ThinStart{mode, [ThinContext{hub, cid, target, view, revision, anchor, [TA.Actor.terminal.offered(actor, ordinal)], control}]}]}
+    case _: c
+
+def Wire.terminal.written(cr: OB.Cr) -> Nat:
+  match cr:
+    case OB.Cr{_, _, a, _, _, _, _, _, _, _, _, _}: a
+
+def Wire.terminal.fits(fits: Bool, +c: Client, +json: J.Json, +text: String, ordinal: Nat) -> IO(Maybe<&2, Client>):
+  match fits:
+    case False{}: IO.pure(Maybe<&2, Client>, Some{Wire.terminal.fallback(c)})
+    case True{}: Wire.offer(Wire.terminal.offered(c, ordinal), WTerminal{json, Wire.text.charge(text)}, Wire.text.charge(text))
+
+def Wire.terminal.text(+c: Client, +json: J.Json, ordinal: Nat) -> IO(Maybe<&2, Client>):
+  +text = J.Json.show(json)
+  Wire.terminal.fits(TVW.Wire.within(text, 262144n), c, json, text, ordinal)
+
+def Wire.terminal.ready(fast: Bool, +c: Client, u: UC.Ui, owner: String, generation: String, epoch: String, view: String, target: J.Json, ordinal: Nat) -> IO(Maybe<&2, Client>):
+  match fast:
+    case False{}: IO.pure(Maybe<&2, Client>, Some{c})
+    case True{}: Wire.terminal.text(c, TOUT.Output.message(u, owner, generation, epoch, view, target), ordinal)
+
+def Wire.terminal.one(+c: Client, +owner: String, +epoch: String) -> IO(Maybe<&2, Client>):
+  match c:
+    case Client{_, _, _, +cr, _, _, ThinStart{mode, ThinContext{_, _, target, view, _, _, +actor <> _, _} <> _} <> _}:
+      +actual = Bool.pick(String, String.is_empty(owner), UC.Ui.scratch(TA.Actor.ui(actor), "@terminal.owner"), owner)
+      Wire.terminal.ready(Bool.and(Bool.not(String.is_empty(view)), TOUT.Output.pending(String.eq(mode, "view-web"), TA.Actor.ui(actor), actual, Wire.terminal.written(cr))), c,
+        TA.Actor.ui(actor), actual, U32.show(OB.Cr.gen(cr)), epoch, view, target, Nat.add(OB.Cr.sent(cr), 1n))
+    case _: IO.pure(Maybe<&2, Client>, Some{c})
+
+def Wire.terminal.panes(cs: List<&2, Client>, +owner: String, +epoch: String) -> IO(List<&2, Client>):
+  match cs:
+    case Nil{}: IO.pure(List<&2, Client>, Nil{})
+    case c <> rest:
+      do IO<List<&2, Client>>:
+        one : Maybe<&2, Client> <- Wire.terminal.one(c, owner, epoch)
+        tail : List<&2, Client> <- Wire.terminal.panes(rest, owner, epoch)
+        return Clients.add(one, tail)
+
+def Wire.terminal.drain_one(same: Bool, c: Client, epoch: String) -> IO(Maybe<&2, Client>):
+  match same:
+    case False{}: IO.pure(Maybe<&2, Client>, Some{c})
+    case True{}: Wire.terminal.one(c, "", epoch)
+
+def Wire.terminal.same(c: Client, +id: U32, +gen: U32) -> Bool:
+  match c:
+    case Client{i, _, _, cr, _, _, _}: Bool.and(U32.is_eq(i, id), U32.is_eq(OB.Cr.gen(cr), gen))
+
+def Wire.terminal.drained(cs: List<&2, Client>, +id: U32, +gen: U32, +epoch: String) -> IO(List<&2, Client>):
+  match cs:
+    case Nil{}: IO.pure(List<&2, Client>, Nil{})
+    case +c <> rest:
+      do IO<List<&2, Client>>:
+        tail : List<&2, Client> <- Wire.terminal.drained(rest, id, gen, epoch)
+        one : Maybe<&2, Client> <- Wire.terminal.drain_one(Wire.terminal.same(c, id, gen), c, epoch)
+        return Clients.add(one, tail)
+
+def Term.json.pid(+thread: String, +pid: U32, bs: List<&2, U32>) -> String:
+  "{\"t\":\"term\",\"thread\":" ++ J.Json.show(J.Str{thread}) ++ ",\"pid\":" ++ U32.show(pid) ++ ",\"b\":[" ++ String.join(Term.nums(bs), ",") ++ "]}"
+
+# Raw terminal CBOR is unnecessary when every socket folds privately.
+# Mixed legacy/native clients still receive the original ordered byte stream.
+def Wire.terminal.raw_socket(cs: List<&2, Client>) -> Bool:
+  match cs:
+    case Nil{}: False{}
+    case +c <> rest: Bool.or(Bool.and(Bool.not(Client.thin(c)), Bool.not(Wire.native(c))), Wire.terminal.raw_socket(rest))
+
 # a shell's output goes to every client (each keeps its own screen)
-def Hub.term_out(h: Hub, +thread: String, data: List<&2, U32>) -> IO(Hub):
+def Hub.term_out(h: Hub, +thread: String, +pid: U32, data: List<&2, U32>) -> IO(Hub):
   match h:
-    case Hub{st, f, ls, cl, as, inbox, cfg, note}:
+    case Hub{st, f, ls, +cl, as, inbox, +cfg, note}:
       do IO<Hub>:
-        cl2 : List<&2, Client> <- Wire.all(cl, Term.json(thread, data))
-        return Hub{st, f, ls, cl2, as, inbox, cfg, note}
+        cl2 : List<&2, Client> <- Wire.all.k(Wire.terminal.raw_socket(cl), cl, Term.json.pid(thread, pid, data), All{0n, Nil{}, 0n, 0n, Nil{}})
+        cl3 : List<&2, Client> <- Wire.terminal.panes(cl2, thread, Cfg.thin.epoch(cfg))
+        return Hub{st, f, ls, cl3, as, inbox, cfg, note}
 
 # a chat terminal from the start: a blank cols x rows screen, then bytes
 def Term.json.reset(+key: String, +cols: U32, +rows: U32, bs: List<&2, U32>) -> String:
@@ -8185,7 +8304,7 @@ def Far.push.job(s: FR.Send, +epoch: String, +home: String, +url: String, +inbox
 def Far.pull.job(+link: String, +since: Nat, +epoch: String, +home: String, +url: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
     now : Nat <- Now.nat()
-    +r : BN.Resp <- BN.Bn.to_peer(home, url, link, now, "/far/log", True{}, J.Json.show(J.Json.obj([J.KV{"since", J.Json.nat(since)}, J.KV{"epoch", J.Str{epoch}}])))
+    +r : BN.Resp <- BN.Bn.to_peer(home, url, link, now, "/far/log", True{}, J.Json.show(J.Json.obj([J.KV{"since", J.Json.nat(since)}, J.KV{"epoch", J.Str{epoch}}, J.KV{"v", J.Json.nat(3n)}])))
     Far.send(inbox, FarPulled{link, since, Far.code(r), Far.body(r)})
 
 def Far.rpc.job(+client: U32, +id: String, +link: String, +body: String, +home: String, +url: String, +inbox: Chan(Msg)) -> IO(Unit):
@@ -8686,12 +8805,30 @@ def Far.returned(h: Hub, +ps: List<&2, BO.Peer>) -> IO(Hub):
       IO.bind(Hub, Hub, Far.offer(Hub{st, f, ls, cl, as, inbox, cfg, note}, ps),
         h2 => Far.returned.go(Far.own.go(ps, st, cfg), h2))
 
+# A mirror that was just compacted (FR.In.tidy: no items since its
+# snapshot) is written over its file whole, through a file beside it, so
+# the file stays as small as the mirror (it is a cache: a lost one is
+# pulled again); otherwise the batch is appended.
+def Far.keep.all(+path: String, +text: String) -> IO(Unit):
+  do IO<Unit>:
+    ok : Bool <- BN.Bf.secret(path ++ ".new", text)
+    r : Result<&1, &1, U32 & String, Unit> <- H.FS.rename(path ++ ".new", path)
+    return Unit{}
+
+def Far.keep.k(whole: Bool, +path: String, +i: FR.In, +text: String) -> IO(Unit):
+  match whole:
+    case True{}:
+      Far.keep.all(path, FR.In.file(i))
+    case False{}:
+      Far.keep.job(path, text)
+
 def Far.store(h: Hub, +link: String, +text: String) -> IO(Hub):
   match h:
     case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
       do IO<Hub>:
+        +i : FR.In = FR.Fh.in(BN.Bn.far(Cfg.bn(cfg)), link, link)
         BN.Bf.dir(Far.dir(Cfg.home(cfg)))
-        Far.keep.job(Far.file(Cfg.home(cfg), link), text)
+        Far.keep.k(Nat.is_eq(FR.In.tail(i), 0n), Far.file(Cfg.home(cfg), link), i, text)
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
 
 def Far.took.told(h: Hub, +link: String, ys: List<&2, FR.Item>) -> IO(Hub):
@@ -8936,12 +9073,24 @@ def Far.start.epoch(p: FR.Fh & Hub, +ls: List<&2, String>, +seq: Nat) -> Hub:
   (fh, h) = p
   Far.with(h, FR.Fh.epoch.set(fh, Far.history.at(ls, seq)))
 
+# each project's last shared change, from the store (none without one): the
+# catalog says them before the feed (old peers only) is ever made
+def Far.lasts.rows(+db: String) -> IO(List<&2, List<&2, String>>):
+  Bool.pick(IO(List<&2, List<&2, String>>), String.is_empty(db), IO.pure(List<&2, List<&2, String>>, Nil{}),
+    SQ.Db.query(db, "SELECT scope, max(seq) FROM far_line WHERE scope <> '' GROUP BY scope", [], 1000000))
+
+def Far.lasts.put(p: FR.Fh & Hub, +m: Map<&2, Nat>) -> Hub:
+  (fh, h) = p
+  Far.with(h, FR.Fh.lasts.boot(fh, m))
+
 def Far.start(h: Hub) -> IO(Hub):
   match h:
     case Hub{+st, f, +ls, cl, as, +inbox, +cfg, note}:
       do IO<Hub>:
         Far.start.go(Far.live(BO.World.peers(M.State.bots(st))), Cfg.home(cfg), inbox)
-        return Far.start.epoch(Far.fh(Hub{st, f, ls, cl, as, inbox, cfg, note}), ls, M.State.seq(st))
+        rows : List<&2, List<&2, String>> <- Far.lasts.rows(Cfg.thin.store(cfg))
+        h2 : Hub = Far.start.epoch(Far.fh(Hub{st, f, ls, cl, as, inbox, cfg, note}), ls, M.State.seq(st))
+        return Far.lasts.put(Far.fh(h2), FR.Fr.lasts.rows(rows, Map.new(&2, Nat)))
 
 def Far.mirrors(+cfg: Cfg) -> List<&2, FR.In>:
   FR.Fh.ins(BN.Bn.far(Cfg.bn(cfg)))
@@ -9029,8 +9178,8 @@ def Claude.job(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: S
   do IO<Unit>:
     +fs : K.Files <- K.Files.read(cwd)
     ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, AutoView{thread, fs})
-    +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
-    Keyring.gate("claude", IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, H.Proc.spawn("env", "MCP_TOOL_TIMEOUT=86400000" <> "CLAUDE_CODE_ENABLE_TODO_TOOLS=1" <> "claude" <> Hub.agent_args(cfg, thread, model, session, r, i, Hub.prompt(cfg, st, thread, cwd, fs, keys), effort, gen, M.Think.on(st)), cwd, 3),
+    +keys : String <- Hub.keys.prompt(Cfg.home(cfg))
+    Keyring.gate("claude", IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, Spawn.agent("env", "MCP_TOOL_TIMEOUT=86400000" <> "CLAUDE_CODE_ENABLE_TODO_TOOLS=1" <> "claude" <> Hub.agent_args(cfg, thread, model, session, r, i, Hub.prompt(cfg, st, thread, cwd, fs, keys), effort, gen, M.Think.on(st)), cwd, 3),
       res => Claude.started(res, thread, gen, cwd, input, inbox)), Claude.fail(thread, gen, KR.Keyring.refusal("claude"), inbox))
 
 def Agents.pid.k(same: Bool, a: Agent, +pid: U32) -> Agent:
@@ -9958,8 +10107,10 @@ def Hub.boot(h: Hub, +client: U32, +gen: U32) -> IO(Hub):
 # if it joins (Hub.kick)
 def Hub.drained(h: Hub, +client: U32, +gen: U32, +n: Nat, +b: Nat) -> IO(Hub):
   match h:
-    case Hub{st, f, ls, cl, as, inbox, cfg, note}:
-      Hub.kick(Hub{st, f, ls, Clients.cr(cl, client, gen, n, b), as, inbox, cfg, note}, client)
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      do IO<Hub>:
+        cl2 : List<&2, Client> <- Wire.terminal.drained(Clients.cr(cl, client, gen, n, b), client, gen, Cfg.thin.epoch(cfg))
+        Hub.kick(Hub{st, f, ls, cl2, as, inbox, cfg, note}, client)
 
 def Far.rpc.may(ok: Bool, h: Hub, +client: U32, +id: String, +link: String, +body: String, +now: Nat) -> IO(Hub):
   match ok h:
@@ -10129,7 +10280,8 @@ def Hub.step.wrote(r: Hub & Wrote, +cs: List<&2, M.Change>, os: List<&2, B.Out>,
 def Hub.step.go(+st: M.State, h: Hub, cs: List<&2, M.Change>, os: List<&2, B.Out>) -> IO(Hub & Bool):
   do IO<Hub & Bool>:
     t0 : U32 <- PS.Perf.us()
-    +cs2 : List<&2, M.Change> = B.Shelve.fix(st, cs)
+    v : SEC.Vault <- VX.Vx.vault()
+    +cs2 : List<&2, M.Change> = B.Secret.changes(v, B.Shelve.fix(st, cs))
     t1 : U32 <- PS.Perf.span("hub.step.pend", t0)
     r : Hub & Wrote <- Hub.commit.w(cs2, h)
     t2 : U32 <- PS.Perf.span("hub.step.commit", t1)
@@ -11602,9 +11754,88 @@ def Hub.rpc.view(+thin: Bool, +o: J.Json, h: Hub, +client: U32, +text: String, +
     case True{}: Hub.thin.rpc(h, client, o, now)
     case False{}: Hub.rpc.mobile.kind(C.Codec.pos(["mobile.screen", "mobile.history", "frontend.screen", "frontend.history"], J.Json.get_str(o, "m", "")), o, h, client, text, now)
 
+# The secret box's requests (docs/secrets.md)
+# --------------------------------------------
+# secret.set's value goes from the parsed request straight to the vault's
+# effect (VaultFx.put): it is in no change, no out, no reply and no log
+# line. Replies carry the vault's status and its metadata, never a value.
+
+# a write the vault answered "ok" (durable) or "committed <why>" (saved
+# and in use, the folder flush failed: the hub says so in its log)
+def SecRpc.saved.is(+r: String) -> Bool:
+  Bool.or(String.eq(r, "ok"), String.starts_with(r, "committed "))
+
+def SecRpc.list.text(+id: String, +status: String, +ms: String) -> String:
+  J.Json.show(J.Json.obj([J.KV{"t", J.Str{"reply"}}, J.KV{"id", J.Num{id}}, J.KV{"ok", J.Flag{True{}}}, J.KV{"secrets", J.Str{ms}}, J.KV{"vault", J.Str{status}}]))
+
+def SecRpc.flush.log(+f: String) -> IO(Unit):
+  Bool.pick(IO(Unit), String.starts_with(f, "unflushed"), PS.Log.warn("vault", "the last save is not known to be durable: " ++ f), IO.pure(Unit, Unit{}))
+
+def SecRpc.list(h: Hub, +client: U32, +id: String) -> IO(Hub):
+  do IO<Hub>:
+    +status : String <- VX.VaultFx.status()
+    SecRpc.flush.log(J.Json.get_str(Maybe.default(&2, J.Json, J.Json.parse(status), J.Null{}), "flush", ""))
+    +ms : String <- VX.VaultFx.list()
+    Hub.out(h, B.Send{client, SecRpc.list.text(id, status, ms)})
+
+def SecRpc.saved(h: Hub, +client: U32, +id: String, +name: String, +thread: String, +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      IO.bind(Hub, Hub, Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Secret.saved(st, now, name, thread)), h2 => SecRpc.list(h2, client, id))
+
+def SecRpc.done(ok: Bool, +r: String, h: Hub, +client: U32, +id: String, +name: String, +thread: String, +now: Nat) -> IO(Hub):
+  match ok:
+    case True{}:
+      SecRpc.saved(h, client, id, name, thread, now)
+    case False{}:
+      Hub.out(h, B.Reply.err(client, id, String.drop(r, 5n)))
+
+def SecRpc.put(ok: Bool, +bad: String, h: Hub, +client: U32, +id: String, +p: J.Json, +name: String, +now: Nat) -> IO(Hub):
+  match ok:
+    case True{}:
+      IO.bind(String, Hub, VX.VaultFx.put(name, String.trim(J.Json.get_str(p, "value", "")), String.take(J.Json.get_str(p, "purpose", ""), 400n), "person"),
+        +r => SecRpc.done(SecRpc.saved.is(r), r, h, client, id, name, J.Json.get_str(p, "thread", ""), now))
+    case False{}:
+      Hub.out(h, B.Reply.err(client, id, bad))
+
+def SecRpc.set.k(+name: String, h: Hub, +client: U32, +id: String, +p: J.Json, +now: Nat) -> IO(Hub):
+  SecRpc.put(String.is_empty(SEC.Sec.bad(name, J.Json.get_str(p, "value", ""))), SEC.Sec.bad(name, J.Json.get_str(p, "value", "")), h, client, id, p, name, now)
+
+def SecRpc.del.k(ok: Bool, +r: String, h: Hub, +client: U32, +id: String) -> IO(Hub):
+  match ok:
+    case True{}:
+      SecRpc.list(h, client, id)
+    case False{}:
+      Hub.out(h, B.Reply.err(client, id, String.drop(r, 5n)))
+
+def SecRpc.dismiss(h: Hub, +client: U32, +id: String, +name: String, +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Step{B.Secret.dismiss(st, name, now), [B.Reply.ok(client, id)]})
+
+def SecRpc.go(i: Nat, h: Hub, +client: U32, +id: String, +p: J.Json, +now: Nat) -> IO(Hub):
+  match i:
+    case 0n:
+      SecRpc.set.k(SEC.Sec.name(J.Json.get_str(p, "name", "")), h, client, id, p, now)
+    case 1n:
+      IO.bind(String, Hub, VX.VaultFx.del(SEC.Sec.name(J.Json.get_str(p, "name", ""))), +r => SecRpc.del.k(SecRpc.saved.is(r), r, h, client, id))
+    case 2n:
+      SecRpc.list(h, client, id)
+    case 3n:
+      SecRpc.dismiss(h, client, id, SEC.Sec.name(J.Json.get_str(p, "name", "")), now)
+    case _:
+      Hub.out(h, B.Reply.err(client, id, "unknown secret request"))
+
+def Hub.rpc.sec(sec: Bool, +o: J.Json, h: Hub, +client: U32, +text: String, +now: Nat) -> IO(Hub):
+  match sec:
+    case True{}:
+      SecRpc.go(C.Codec.pos(["secret.set", "secret.del", "secret.list", "secret.dismiss"], J.Json.get_str(o, "m", "")), h, client, J.Json.as_raw(J.Json.get(o, "id"), "0"), J.Json.get_obj(o, "p"), now)
+    case False{}:
+      Hub.rpc.view(String.starts_with(J.Json.get_str(o, "m", ""), "view."), o, h, client, text, now)
+
 def Hub.rpc.parse(h: Hub, +client: U32, +text: String, +now: Nat) -> IO(Hub):
   +o = Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{})
-  Hub.rpc.view(String.starts_with(J.Json.get_str(o, "m", ""), "view."), o, h, client, text, now)
+  Hub.rpc.sec(String.starts_with(J.Json.get_str(o, "m", ""), "secret."), o, h, client, text, now)
 
 # Thin requests are bounded before JSON parsing. Oversized packets close only
 # that captured client; no malformed request can trigger compatibility replay.
@@ -11953,10 +12184,15 @@ def Hub.tagged.k(heard: Bool, h: Hub, +thread: String, line: String, +now: Nat) 
     case False{}:
       IO.pure(Hub, h)
 
-def Hub.tagged(h: Hub, +tag: String, line: String, +now: Nat) -> IO(Hub):
+# each agent output line is masked as it is read (every provider's lines
+# come here): a key the agent printed reaches no change, delta or client
+def Hub.tagged.m(h: Hub, +tag: String, line: String, +now: Nat) -> IO(Hub):
   match h:
     case Hub{st, f, ls, cl, +as, inbox, cfg, note}:
       Hub.tagged.k(B.Tag.heard(B.Tag.pid(tag), Agent.pid_of(Agents.get(as, B.Tag.thread(tag)))), Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Tag.thread(tag), line, now)
+
+def Hub.tagged(h: Hub, +tag: String, line: String, +now: Nat) -> IO(Hub):
+  IO.bind(String, Hub, VX.Vx.mask(line), l => Hub.tagged.m(h, tag, l, now))
 
 # then turns the restart cut short carry on (B.Hub.carry)
 def Hub.recover.carry(h: Hub, +before: M.State, +now: Nat) -> IO(Hub):
@@ -12154,8 +12390,21 @@ def Hub.mail.recover.start(h: Hub) -> IO(Hub):
     case Hub{+st, f, +ls, +cl, +as, +inbox, +cfg, +note}:
       Hub.mail.recover.on(String.eq(M.Setting.get(st, "mail.on", "off"), "on"), Hub{st, f, ls, cl, as, inbox, cfg, note})
 
-def Hub.recover(h: Hub, +now: Nat) -> IO(Hub):
+# the secret box's vault is opened before any turn resumes, so every mask
+# covers what is stored (VaultFx.open: values stay in the effect)
+def Hub.vault.open(h: Hub) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      do IO<Hub>:
+        r : String <- VX.VaultFx.open(Cfg.home(cfg))
+        PS.Log.info("vault", r)
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+
+def Hub.recover.v(h: Hub, +now: Nat) -> IO(Hub):
   IO.bind(Hub, Hub, Hub.mail.recover.start(h), h0 => IO.bind(Hub, Hub, Far.start(h0), h2 => Hub.recover.stale(h2, now)))
+
+def Hub.recover(h: Hub, +now: Nat) -> IO(Hub):
+  IO.bind(Hub, Hub, Hub.vault.open(h), hv => Hub.recover.v(hv, now))
 
 # The minute
 # ----------
@@ -12658,12 +12907,21 @@ def Hub.uber.in(h: Hub, +link: String, +o: J.Json, +reply: Chan(List<&2, U32>), 
 # POST /far/push: a batch from a linked machine (the owner's own)
 # A push from another history is only a resync hint. Ask the owner for
 # its current epoch instead of trusting a potentially late old push.
+# (a pushed project change is followed by a pull for the catalog:
+# FR.Fr.items.projects)
+def Far.taken.cat(projects: Bool, m: IO(Hub), +link: String) -> IO(Hub):
+  match projects:
+    case True{}:
+      IO.bind(Hub, Hub, m, h => Far.pull.here(h, link))
+    case False{}:
+      m
+
 def Far.push.receive.k(changed: Bool, h: Hub, +link: String, +since: Nat, +head: Nat, +xs: List<&2, FR.Item>, +name: String) -> IO(Hub):
   match changed:
     case True{}:
       Far.pull.here(h, link)
     case False{}:
-      Far.take(h, link, since, head, xs, name)
+      Far.taken.cat(FR.Fr.items.projects(xs), Far.take(h, link, since, head, xs, name), link)
 
 def Far.push.receive(r: FR.In & Hub, +epoch: String, +since: Nat, +head: Nat, +xs: List<&2, FR.Item>, +name: String) -> IO(Hub):
   (+i, h) = r
@@ -12761,11 +13019,88 @@ def Far.log.k(r: Maybe<&2, List<&2, FR.Line>> & Hub, +since: Nat, +epoch: String
   (m, h) = r
   Far.log.go(m, h, since, epoch, reply)
 
+# /far/log v3 (core/far.bend): the snapshot for a history the peer lacks,
+# else the shared lines after `since` read from the store, a page each
+def Far.v3.rows(+db: String, +since: Nat) -> IO(List<&2, List<&2, String>>):
+  SQ.Db.query.t(db, "SELECT f.seq, l.off, l.len, l.wire FROM far_line f JOIN line l ON l.seq = f.seq WHERE f.seq > ? ORDER BY f.seq LIMIT ?", [SQ.Db.nat(since), SQ.Db.nat(FR.Fr.v3.rows())], 2000)
+
+# the rows' lines read from the log in one pass (hotboot.js), the other
+# lines between them skipped
+def Far.v3.text(+home: String, +rs: List<&2, FR.FarRow>) -> IO(List<&2, String>):
+  HB.Hot.lines(Store.path(home), U32.from_nat(FR.Fr.rows.from(rs)), U32.from_nat(FR.Fr.rows.to(rs, 0n)), FR.Fr.rows.skips(rs))
+
+def Far.v3.answer(h: Hub, +from: Nat, +own: String, +page: FR.Page, +reply: Chan(List<&2, U32>)) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
+      Hub.answer(Hub{st, f, ls, cl, as, inbox, cfg, note}, reply, Bot.json("200 OK", FR.Fr.log.json(from, FR.Fr.catalog(st, FR.Fh.lasts(BN.Bn.far(Cfg.bn(cfg)))),
+        FR.Fr.with.epoch(FR.Page.json(page), own))))
+
+# (a log that does not give one line per row is never answered from: the
+# peer is told so and pulls again)
+def Far.v3.tail.k(ok: Bool, h: Hub, +since: Nat, +own: String, +rs: List<&2, FR.FarRow>, +ts: List<&2, String>, +reply: Chan(List<&2, U32>)) -> IO(Hub):
+  match ok h:
+    case True{} Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Far.v3.answer(Hub{st, f, ls, cl, as, inbox, cfg, note}, since, own,
+        FR.Fr.v3.page(FR.Fr.rows.lines(rs, ts), since, M.State.seq(st), 400000n, Nat.is_eq(List.length(&2, FR.FarRow, rs), FR.Fr.v3.rows())), reply)
+    case False{} h2:
+      do IO<Hub>:
+        Log.info("far: the log and the store disagree after " ++ Nat.show(since) ++ " (" ++ Nat.show(List.length(&2, String, ts)) ++ " lines for " ++ Nat.show(List.length(&2, FR.FarRow, rs)) ++ " rows)")
+        Hub.answer(h2, reply, W.Http.text("500 Internal Server Error", "the log and the store disagree"))
+
+def Far.v3.tail(h: Hub, +since: Nat, +own: String, +reply: Chan(List<&2, U32>)) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
+      do IO<Hub>:
+        rows : List<&2, List<&2, String>> <- Far.v3.rows(Cfg.thin.store(cfg), since)
+        +rs : List<&2, FR.FarRow> = FR.Fr.rows.of(rows, Nil{})
+        +ts : List<&2, String> <- Far.v3.text(Cfg.home(cfg), rs)
+        Far.v3.tail.k(Nat.is_eq(List.length(&2, String, ts), List.length(&2, FR.FarRow, rs)), Hub{st, f, ls, cl, as, inbox, cfg, note}, since, own, rs, ts, reply)
+
+def Far.v3.snap.k(fits: Bool, h: Hub, +cs: List<&2, M.Change>, +seq: Nat, +own: String, +reply: Chan(List<&2, U32>)) -> IO(Hub):
+  match fits:
+    case True{}:
+      Far.v3.answer(h, 0n, own, FR.Fr.snap.page(cs, seq), reply)
+    case False{}:
+      Far.v3.tail(h, 0n, own, reply)
+
+def Far.v3.snap(h: Hub, +own: String, +reply: Chan(List<&2, U32>)) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      +cs = FR.Fr.snap.shared(st)
+      Far.v3.snap.k(FR.Fr.snap.fits(cs, M.State.seq(st)), Hub{st, f, ls, cl, as, inbox, cfg, note}, cs, M.State.seq(st), own, reply)
+
+def Far.v3.k(snap: Bool, h: Hub, +since: Nat, +own: String, +reply: Chan(List<&2, U32>)) -> IO(Hub):
+  match snap:
+    case True{}:
+      Far.v3.snap(h, own, reply)
+    case False{}:
+      Far.v3.tail(h, since, own, reply)
+
+def Far.v3(h: Hub, +since: Nat, +epoch: String, +reply: Chan(List<&2, U32>)) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      +own = FR.Fh.epoch(BN.Bn.far(Cfg.bn(cfg)))
+      Far.v3.k(FR.Fr.v3.snap(since, epoch, own), Hub{st, f, ls, cl, as, inbox, cfg, note}, since, own, reply)
+
+# a peer that says v 3, from a hub with a store, is answered from it; any
+# other from the feed
+def Far.log.v(v3: Bool, h: Hub, +o: J.Json, +reply: Chan(List<&2, U32>)) -> IO(Hub):
+  match v3:
+    case True{}:
+      Far.v3(h, J.Json.get_nat(o, "since", 0n), J.Json.get_str(o, "epoch", ""), reply)
+    case False{}:
+      Far.log.k(Far.feed.of(Far.fh(h)), J.Json.get_nat(o, "since", 0n), J.Json.get_str(o, "epoch", ""), reply)
+
+def Far.log.v.h(h: Hub, +o: J.Json, +reply: Chan(List<&2, U32>)) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      Far.log.v(Bool.and(Nat.is_ge(J.Json.get_nat(o, "v", 0n), 3n), Bool.not(String.is_empty(Cfg.thin.store(cfg)))), Hub{st, f, ls, cl, as, inbox, cfg, note}, o, reply)
+
 # POST /far/log: a page of what this hub shares after `since`
 def Hub.far.log(ok: Bool, m: Maybe<&2, J.Json>, h: Hub, +reply: Chan(List<&2, U32>)) -> IO(Hub):
   match ok m:
     case True{} Some{+o}:
-      Far.log.k(Far.feed.of(Far.fh(h)), J.Json.get_nat(o, "since", 0n), J.Json.get_str(o, "epoch", ""), reply)
+      Far.log.v.h(h, o, reply)
     case True{} None{}:
       Hub.answer(h, reply, W.Http.text("400 Bad Request", "not JSON"))
     case False{} _:
@@ -14751,8 +15086,95 @@ def Hub.mcp.context(is_context: Bool, h: Hub, +thread: String, +o: J.Json, body:
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case False{} _: Hub.mcp.p(o, h, thread, body, reply, now)
 
-def Hub.mcp.parsed(+o: J.Json, h: Hub, +thread: String, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+# The secret box's tools (docs/secrets.md): handles only. secret_run's
+# answer comes from vault.bend's Vx.run, masked, and every MCP answer is
+# masked again on its way out (Mcp.masked).
+def SecMcp.say(+reply: Chan(String), +id: J.Json, ok: Bool, body: J.Json) -> IO(Unit):
+  do IO<Unit>:
+    sent : Result<&1, &1, String, Unit> <- Chan.send(String, reply, MC.Mcp.result(id, MC.Mcp.content(ok, body)))
+    return Unit{}
+
+def SecMcp.list(+reply: Chan(String), +id: J.Json) -> IO(Unit):
+  IO.bind(List<&2, SEC.SecMeta>, Unit, VX.Vx.metas(), ms => SecMcp.say(reply, id, True{}, J.Json.arr(SEC.Sec.list.go(ms, Nil{}))))
+
+def SecMcp.request.k(has: Bool, h: Hub, +name: String, +purpose: String, +thread: String, +id: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match has:
+    case True{}:
+      do IO<Hub>:
+        SecMcp.say(reply, id, True{}, SEC.Sec.handle(name, True{}))
+        return h
+    case False{}:
+      do IO<Hub>:
+        h2 : Hub <- Hub.step(h, B.Secret.asked(name, purpose, thread, thread, now))
+        SecMcp.say(reply, id, True{}, J.Json.obj([J.KV{"secret", J.Str{name}}, J.KV{"set", J.Flag{False{}}}, J.KV{"requested", J.Flag{True{}}},
+          J.KV{"note", J.Str{"The person sees a masked box for it in this chat. End your turn; a message tells you when it is set."}}]))
+        return h2
+
+def SecMcp.request.n(empty: Bool, h: Hub, +name: String, +purpose: String, +thread: String, +id: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match empty:
+    case True{}:
+      do IO<Hub>:
+        SecMcp.say(reply, id, False{}, J.Json.obj([J.KV{"error", J.Str{"name is required"}}]))
+        return h
+    case False{}:
+      IO.bind(List<&2, SEC.SecMeta>, Hub, VX.Vx.metas(), ms => SecMcp.request.k(SEC.Sec.has(ms, name), h, name, purpose, thread, id, reply, now))
+
+def SecMcp.ran(+r: J.Json, +id: J.Json, +reply: Chan(String)) -> IO(Unit):
+  SecMcp.say(reply, id, Maybe.is_none(&2, J.Json, J.Json.get(r, "error")), r)
+
+def SecMcp.run.job(+spec: String, +id: J.Json, +reply: Chan(String)) -> IO(Unit):
+  IO.bind(String, Unit, VX.Vx.run(spec), r => SecMcp.ran(Maybe.default(&2, J.Json, J.Json.parse(r), J.Json.obj([J.KV{"error", J.Str{"the run failed"}}])), id, reply))
+
+# a hub on a copied log (BACKPLANE_COPY=1) runs no secret command: copied
+# private fixtures get no new way to a shell or the network (core/copy.bend)
+def SecMcp.run.k(copy: Bool, +spec: String, +id: J.Json, +reply: Chan(String)) -> IO(Unit):
+  match copy:
+    case True{}:
+      SecMcp.say(reply, id, False{}, J.Json.obj([J.KV{"error", J.Str{"a hub on a copied log (BACKPLANE_COPY=1) runs no secret commands"}}]))
+    case False{}:
+      SecMcp.run.job(spec, id, reply)
+
+def SecMcp.run.gate(+spec: String, +id: J.Json, +reply: Chan(String)) -> IO(Unit):
+  IO.bind(Bool, Unit, P.Proc.copy(), copy => SecMcp.run.k(copy, spec, id, reply))
+
+def SecMcp.run.spec(+a: J.Json, +cwd: String, +thread: String) -> String:
+  J.Json.show(J.Json.obj([J.KV{"command", J.Str{J.Json.get_str(a, "command", "")}}, J.KV{"env", J.Json.get_obj(a, "env")}, J.KV{"files", J.Json.get_obj(a, "files")},
+    J.KV{"cwd", J.Str{Bool.pick(String, String.is_empty(J.Json.get_str(a, "cwd", "")), cwd, J.Json.get_str(a, "cwd", ""))}},
+    J.KV{"timeout", J.Num{J.Json.as_raw(J.Json.get(a, "timeout"), "120")}}, J.KV{"thread", J.Str{thread}}]))
+
+def SecMcp.go(i: Nat, h: Hub, +thread: String, +o: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match i h:
+    case 0n _:
+      SecMcp.request.n(String.is_empty(SEC.Sec.name(J.Json.get_str(J.Json.get_obj(J.Json.get_obj(o, "params"), "arguments"), "name", ""))), h,
+        SEC.Sec.name(J.Json.get_str(J.Json.get_obj(J.Json.get_obj(o, "params"), "arguments"), "name", "")), J.Json.get_str(J.Json.get_obj(J.Json.get_obj(o, "params"), "arguments"), "purpose", ""),
+        thread, J.Json.get_obj(o, "id"), reply, now)
+    case 1n _:
+      do IO<Hub>:
+        IO.spawn(Unit, SecMcp.list(reply, J.Json.get_obj(o, "id")))
+        return h
+    case _ Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      do IO<Hub>:
+        IO.spawn(Unit, SecMcp.run.gate(SecMcp.run.spec(J.Json.get_obj(J.Json.get_obj(o, "params"), "arguments"), B.Hub.cwd(st, B.Hub.thread(st, thread)), thread), J.Json.get_obj(o, "id"), reply))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+
+def SecMcp.pos(+o: J.Json) -> Nat:
+  Bool.pick(Nat, String.eq(J.Json.get_str(o, "method", ""), "tools/call"), C.Codec.pos(["secret_request", "secret_list", "secret_run"], J.Json.get_str(J.Json.get_obj(o, "params"), "name", "")), 3n)
+
+def Hub.mcp.parsed.k(+o: J.Json, h: Hub, +thread: String, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
   Hub.mcp.context(Bool.and(String.eq(J.Json.get_str(o, "method", ""), "tools/call"), String.eq(J.Json.get_str(J.Json.get_obj(o, "params"), "name", ""), "mail_context")), h, thread, o, body, reply, now)
+
+def Hub.mcp.sec.k(sec: Bool, +i: Nat, +o: J.Json, h: Hub, +thread: String, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match sec:
+    case True{}:
+      SecMcp.go(i, h, thread, o, reply, now)
+    case False{}:
+      Hub.mcp.parsed.k(o, h, thread, body, reply, now)
+
+def Hub.mcp.sec(+i: Nat, +o: J.Json, h: Hub, +thread: String, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  Hub.mcp.sec.k(Nat.is_lt(i, 3n), i, o, h, thread, body, reply, now)
+
+def Hub.mcp.parsed(+o: J.Json, h: Hub, +thread: String, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  Hub.mcp.sec(SecMcp.pos(o), o, h, thread, body, reply, now)
 
 def Hub.mcp(h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
   Hub.mcp.parsed(Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{}), h, thread, body, reply, now)
@@ -14835,7 +15257,7 @@ def Msg.kind(m: Msg) -> String:
       "push"
     case PushBin{_, _}:
       "push_bin"
-    case TermOut{_, _}:
+    case TermOut{_, _, _}:
       "term_out"
     case TermTo{_, _, _, _, _}:
       "term_to"
@@ -16125,8 +16547,8 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.push(h, client, text)
     case PushBin{client, bs}:
       Hub.push.bin(h, client, bs)
-    case TermOut{thread, data}:
-      Hub.term_out(h, thread, data)
+    case TermOut{thread, pid, data}:
+      Hub.term_out(h, thread, pid, data)
     case TermTo{c, key, co, ro, data}:
       Hub.term_to(h, c, key, co, ro, data)
     case KProbe{force}: Hub.kcheck(h, force)

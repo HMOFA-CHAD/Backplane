@@ -59,11 +59,12 @@ try {
     const context = await browser.newContext({ viewport: { width, height }, reducedMotion: reduced ? 'reduce' : 'no-preference' });
     const page = await context.newPage();page.setDefaultTimeout(5000);page.on('pageerror', e => errors.push(String(e)));
     await page.goto(`http://127.0.0.1:${server.address().port}/`);await page.waitForFunction(() => window.fixtureReady);
-    await page.evaluate(theme => document.documentElement.classList.toggle('light', theme === 'light'), theme);
+    await page.evaluate(theme => document.querySelector(".app").classList.toggle("light", theme === "light"), theme);
     await page.locator('#draft').focus();
     await page.evaluate(() => { window.draft = document.getElementById('draft');draft.setSelectionRange(3, 12);draft.dispatchEvent(new CompositionEvent('compositionstart', {data:'入力',bubbles:true})); });
     await page.evaluate(move => window.show(move), sample);
     const tag = `${width}-${theme}-${reduced?'reduced':'hop'}`;
+    check(tag + " matches application palette", await page.locator("#bub-move").evaluate((toast, theme) => getComputedStyle(toast).backgroundColor === (theme === "light" ? "rgb(241, 240, 236)" : "rgb(19, 22, 27)"), theme));
     check(tag + ' focus, node, draft and selection retained', await page.evaluate(() => document.activeElement === draft && draft === document.getElementById('draft') && draft.value === 'Unsent draft — keep my selection' && draft.selectionStart === 3 && draft.selectionEnd === 12));
     await page.locator('#under').click();
     await page.locator('#answer').click();await page.locator('#stop').click();

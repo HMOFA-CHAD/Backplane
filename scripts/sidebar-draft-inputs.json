@@ -22,11 +22,12 @@
     "src/core/bot.bend": "0b7815bd2284ec6fba68c771edf0293b445571773d30f8f2e70f7b7ff8d1be8b",
     "src/core/botui.bend": "24053ae1a601d1b84ef480361a447c9d3cf927ccee80d89fc1b1a6672504bd95",
     "src/core/browser-tabs.bend": "005221bc7077a405f82e375dd04cf2783620ff485734a8eafb79b8cfa3c64c53",
+    "src/core/bub-move.bend": "52a46d6064a9632a238241eaccecdb7594d79fb34e6b8703dc24f54cb05a2763",
     "src/core/cad.bend": "e69f4c5172e7472127aef77ebebb284d0a03a94ce7e6f41a024a00d08cd58e14",
     "src/core/cat.bend": "0130231a18e515a94d40d7584d19a9b5a2d1663f9601fbff944bf97e37f9fd6b",
     "src/core/cef.bend": "f2d3fa4c991d0e341620fe634ddb4e08da97f8e471ec46afac0b3de471cc69fb",
-    "src/core/charter.bend": "6374a8ed46c0aec82ade3192f563233a2e6f6a8b7b886f23e40d1de134776665",
-    "src/core/client.bend": "52afa28a401c708ff591a9a6dbf97d60ce927872c3b2b983548bea97973c801e",
+    "src/core/charter.bend": "7f906bdea712f6ff6162735c8cc133767ec0f9289c3d0bee6dfedbd4d75ad981",
+    "src/core/client.bend": "d6a33169ff4e405c4a3e98b0897de64cb4bb65ecada3bee4d0e21dada0f32e05",
     "src/core/codec.bend": "33cb35c55f3712a18734e76e1149763001a9388af27948f0da4ead2c13d48b6f",
     "src/core/cron.bend": "6f89a001df0261a25c878616ea66c235e169f7fc1c726d39e695fce8adb57332",
     "src/core/deploy.bend": "ebee4e63a52cf41ae001bebcdbb7fb010ad71c1e04e481292585740d88a39cc4",
@@ -34,8 +35,9 @@
     "src/core/diff.bend": "eb7b53917e3b587cb423379946a9b8da8035c8a39b8b6d8e4f3a819b25a7497d",
     "src/core/emb.bend": "48012888273e4de02f0618ca1f308fc6d87e42499aa1dafe504837c2b14e2904",
     "src/core/fallback.bend": "b8604144a115b0de6f43af2b294f7cf09f6cabb882afb962c13829a21ea50601",
-    "src/core/far.bend": "2cf9714da0292476f37b7d663be9512db7d0d0e8c86c9d4e7d98ac58062cbc13",
+    "src/core/far.bend": "98625de0b822f4dd5c077c16943d74176363a5fe1472789ee6cee92ec8f690e5",
     "src/core/farlive.bend": "0fec3c222121256751cf620ad82248a178a7f54581c4f20570fdce2fa0b2e25c",
+    "src/core/farsnap.bend": "7a07c3774070be7443dc5c0a9143f496767147cf0caac9fd916e3255466c005b",
     "src/core/fm.bend": "a25fe30ac6ac70ca63add2b335aaf49d38b5dba5994941022cd068eb3392913d",
     "src/core/fold.bend": "82a1975d50651cfc8da972150cf092c1bda13946b24e10adb634ee6c7e0c47ee",
     "src/core/fuzzy.bend": "23098d1fc905bec7556734757cec8bfee65bc7fdbe9e317742e6c86f2e2f5e10",
@@ -45,6 +47,7 @@
     "src/core/handoff.bend": "690d78b37f32187a3356d3df2ccb90aafa6d8b1f7234a5583dcbd55baadb55e4",
     "src/core/hier.bend": "d1a478aa9e244d2de67e97a5bb2e515dfb1f4f699a43446fe403b986b2cac743",
     "src/core/hist.bend": "fac0d2e2231ad699476497c173d4d97b78551c3c65c207b974721f956105b5f2",
+    "src/core/hot.bend": "d1d28df84cf63261cb39a5e69d4fe84228933901e5030d730454f2c27cc270d3",
     "src/core/i18n.bend": "92cae5df736659757d9a2a4cf44931b34f618220b78440711a4afecb2cf8d867",
     "src/core/icons.bend": "eb93494df6a91897d70507cebe3e6f4a41968bfd28b9c2c7aa583d209f37b193",
     "src/core/images.bend": "a54d91708c69be1453dc434e9166d16b2398c96745125f6f5c31cbc3cd33d966",
@@ -66,7 +69,7 @@
     "src/core/mech.bend": "79fb3307d0d6868a777924d4b934ac8a1671937e265942467f6c60cc4db82efb",
     "src/core/menu.bend": "807668923de70eaabb72ddb760f808cbf6d786b70822ba6a1180776758af7eee",
     "src/core/model.bend": "5a67e9bdca81f35c2f151c541277b117600eaf352b38e0b99ccea3f6abe9eadf",
-    "src/core/msgs.bend": "2cfdb5964f0787a91dd9060ab1171264de91463f11f888e88ca395c42b914475",
+    "src/core/msgs.bend": "241850824d1c247fd4ee5b3b593a8731f6dac1280842e8c7c4d74e6ea831a0ce",
     "src/core/notice.bend": "ee87318c1f12fc6cfb23bb5e24e90709e1f9a2eadfd2832581d21590f596e5e0",
     "src/core/onboard.bend": "55ccccf20f706a0acad492de20e23aedc751c7e9ce61b6f3430bfd65796e9232",
     "src/core/once.bend": "c12f375e09045a035cfc66c87d73197f3348b2998fa0e0bb6c9876fca870577c",
@@ -83,6 +86,7 @@
     "src/core/review.bend": "4b4c2a380e48007218f15ea51130303a7e9d055adb9145ccdf703c58ea5f8120",
     "src/core/sched.bend": "5b7282299d747def160098679b5afb6de4f581a730c0defe9bbe19d9007d4a05",
     "src/core/schematic.bend": "2a2ec9a79632915577ad0dcb50c2cd53c3cf50f9e7fc8f651c5d6d14fc0a9408",
+    "src/core/secret.bend": "2aa67d789bcaf5d4de369af089b533d2a3fdfc423d90e545f5d8a84423159bd6",
     "src/core/semver.bend": "a09f3e4f27f84287b5ee5e0c0840750017af34dda03dff67134958af096a4aee",
     "src/core/sexpr.bend": "e4eebee469e3e9418bdc9eac3a2de06904aec8e9604fccd657919de5f214bcf3",
     "src/core/sha1.bend": "b2773361a6afe9e9b57911b9715113c6a3e083f1bdd7d900f9d4dd9f7bd26355",
@@ -92,7 +96,7 @@
     "src/core/sidebar-read.bend": "8b9952dbbe0c9ae89bf808e995b8ce643f20102587238724c9156076dd21419d",
     "src/core/sign.bend": "f6c4b636f7be64f7a4a03e8cc4d0b19eae2696e8c08a92236ad7e378d7120edc",
     "src/core/signal.bend": "b0c3979e7eaad7dc5c7a052027ea44b03af3d125d45e4a837fed5ec7b4e4db07",
-    "src/core/slash.bend": "b2564a1ad3c43b526d6dbad4dc0d227b9102cb1db9e24b655c0bacfe38a11359",
+    "src/core/slash.bend": "4b88f73566a9b3694a888ede21f2117157df9449c50c52806648e4795d298932",
     "src/core/space.bend": "0caea2f71303b476291b0e9570459ce12c8fe58b81aefccb2bd935fe4bd56c3a",
     "src/core/stamp.bend": "020fec0e5b194f586158b422bfe796338209dc7171f69a9cf08ed951f5c8780a",
     "src/core/store.bend": "037f48017d9b9c1b6ed24d750bc898dc62200635d95fecc627f2196fd79d89d5",
@@ -120,9 +124,9 @@
     "src/core/vt.bend": "931708652e96ec2db30f3a5a69dc4c90a98e15fc6e5fbbd8e441475626198581",
     "src/core/wake.bend": "074b0501f0db23a207e835beea1de5a5c11dc770287beef06c4d20be0da93a67",
     "src/core/when.bend": "0c97fbba571d99a50a4977c5a3c6916ade1c64196173c20e959d8848d751476f",
-    "src/server/thin-actor.bend": "e7fd917443d5234e9e2eb9410091d48132dca5ab027cf0624c29649f4a7d056e",
+    "src/server/thin-actor.bend": "a6f905638caca37284b41a6ab1dc0c72623111296945a9689f3c0252cb87505f",
     "src/server/thin-sidebar.bend": "3f4f103551054d92d10a3d7d355f1b8db948900b83e2942009cb7d0e1e1cf5c7",
-    "src/server/thin-view.bend": "cff7768430ab81831e33163f7bf1ef92bb21db0eb46438ff1ccf0f2f00a35370",
+    "src/server/thin-view.bend": "df3890970a844b94fab998c188dce7f666d38de53827ce6d2b0f16cee4f63f47",
     "src/web/bots.bend": "b1f06390676fae6bc6fd2170bc3d59da2b56a75f56e8b0df05ff480f7852dcba",
     "src/web/cat.bend": "301a7ba925f92fc25bdc35b63f79bcf8bf7b72619106c826c471247a0ace85ba",
     "src/web/dom.bend": "a564bbb014b7247fc3cd670a427bf13782e8f6217b3c32abadb91efc13d5cf7e",
@@ -134,7 +138,7 @@
     "src/web/space.bend": "b86a265e41a900498bc33c37c0404c4d6678554efe3d9054f329beb2cf35ee63",
     "src/web/usage-graph.bend": "fa06f7d2bf855a396a5f7a7b4725dfaa990145fbbcefe7ad21ae8f9a698a2679",
     "src/web/usage-page.bend": "706e3f17a4a3e5f159656d47aeb76a940d4825421f5c33228f9aef692ec926e3",
-    "src/web/view.bend": "5aeae3aeaca5953a7be6bda31a10b90587d8bbfca597d1f0912f86aca4b98d3f"
+    "src/web/view.bend": "dec8520fce2e10a49e7d49edfd6202ad5ac6549642237c272632422b339b6eee"
   },
   "review": {
     "source": "5f19ea0b9dbcff736e51ced0cb79e19bfef5bba6",
@@ -155,5 +159,5 @@
       "assertions": 20
     }
   },
-  "reviewNote": "Workspace layout negotiation: unchanged sidebar source-reference graph and24 exact full-output freshness cases;19 per-session capability cases. Unknown @ inputs and full main/picture freshness retained."
+  "reviewNote": "Main-tracking cat/far/secret/terminal integration: conservative source-reference graph860 unchanged;24 actual full-output draft/IME/search/info cases passed. All unknown @ keys and full main/picture draft freshness retained. Required build/cache guard remains fail-closed."
 }

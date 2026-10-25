@@ -34,23 +34,15 @@ type TMsg is Data:
 # snapshot for one client (a blank terminal of that size, then the bytes;
 # client Et.all() is every client)
 type TOut is Data:
-  TOut{thread: String, data: List<&2, U32>}
+  TOut{thread: String, pid: U32, data: List<&2, U32>}
   TTo{client: U32, key: String, cols: U32, rows: U32, data: List<&2, U32>}
 
-def Term.emit.k(emb: Bool, +q: Chan(TMsg), +out: Chan(TOut), +thread: String, +pid: U32, bs: List<&2, U32>) -> IO(Unit):
-  match emb:
-    case True{}:
-      do IO<Unit>:
-        ok : Result<&1, &1, TMsg, Unit> <- Chan.send(TMsg, q, TFed{thread, pid, bs})
-        return Unit{}
-    case False{}:
-      do IO<Unit>:
-        ok : Result<&1, &1, TOut, Unit> <- Chan.send(TOut, out, TOut{thread, bs})
-        return Unit{}
-
-# a chat terminal's bytes go through the actor first
+# Every reader passes through the owning actor. It rejects output from a
+# retired process before bytes can reach a replacement PTY of the same owner.
 def Term.emit(+q: Chan(TMsg), +out: Chan(TOut), +thread: String, +pid: U32, bs: List<&2, U32>) -> IO(Unit):
-  Term.emit.k(E.Emb.is_key(thread), q, out, thread, pid, bs)
+  do IO<Unit>:
+    ok : Result<&1, &1, TMsg, Unit> <- Chan.send(TMsg, q, TFed{thread, pid, bs})
+    return Unit{}
 
 type Term is Data:
   Term{thread: String, input: Chan(List<&2, U32>), pid: U32, cols: U32, rows: U32}
@@ -490,7 +482,7 @@ def Et.fed.k(same: Bool, +ts: List<&2, Term>, +es: List<&2, ETerm>, +key: String
       +v2 = VT.Vt.feed(v, bs)
       do IO<Unit>:
         Term.reply(ts, key, VT.Vt.replies(v2))
-        ok : Result<&1, &1, TOut, Unit> <- Chan.send(TOut, out, TOut{key, bs})
+        ok : Result<&1, &1, TOut, Unit> <- Chan.send(TOut, out, TOut{key, pid, bs})
         k(TS{ts, Et.put(es, ETerm{key, ti, VT.Vt.drain(v2), Et.stays(seen, st), E.Emb.after(st, bs), pid})})
     case False{}:
       k(TS{ts, es})
@@ -582,6 +574,19 @@ def Et.snapped(+es: List<&2, ETerm>, ts: List<&2, Term>, +client: U32, +key: Str
 def Et.readed(+es: List<&2, ETerm>, ts: List<&2, Term>, +key: String, +reply: Chan(String), k: TS -> IO(Unit)) -> IO(Unit):
   IO.bind(Unit, Unit, Et.read.k(Et.find(es, key), reply), u => k(TS{ts, Et.seen(Et.find(es, key), es)}))
 
+def Term.forward(same: Bool, +ts: List<&2, Term>, +es: List<&2, ETerm>, +key: String, +pid: U32, bs: List<&2, U32>, +out: Chan(TOut), k: TS -> IO(Unit)) -> IO(Unit):
+  match same:
+    case False{}: k(TS{ts, es})
+    case True{}:
+      do IO<Unit>:
+        ok : Result<&1, &1, TOut, Unit> <- Chan.send(TOut, out, TOut{key, pid, bs})
+        k(TS{ts, es})
+
+def Term.fed(emb: Bool, +ts: List<&2, Term>, +es: List<&2, ETerm>, +key: String, +pid: U32, +bs: List<&2, U32>, +out: Chan(TOut), k: TS -> IO(Unit)) -> IO(Unit):
+  match emb:
+    case True{}: Et.fed(Et.find(es, key), ts, es, key, pid, bs, out, k)
+    case False{}: Term.forward(U32.is_eq(Term.pid(ts, key), pid), ts, es, key, pid, bs, out, k)
+
 def Term.step(m: Maybe<&1, TMsg>, st: TS, +shell: String, +home: String, +q: Chan(TMsg), +out: Chan(TOut), k: TS -> IO(Unit)) -> IO(Unit):
   match m st:
     case Some{TOpen{+th, cwd, c, r}} TS{+ts, es}:
@@ -595,7 +600,7 @@ def Term.step(m: Maybe<&1, TMsg>, st: TS, +shell: String, +home: String, +q: Cha
     case Some{TRun{+key, +ti, +cwd, +cmd, +c, +r, again}} TS{+ts, +es}:
       Et.run(again, Bool.or(Term.has(ts, key), Et.hit.any(es, key)), ts, es, key, ti, cwd, cmd, E.Emb.cols(c), E.Emb.rows(r), shell, q, out, k)
     case Some{TFed{+key, +pid, +bs}} TS{+ts, +es}:
-      Et.fed(Et.find(es, key), ts, es, key, pid, bs, out, k)
+      Term.fed(E.Emb.is_key(key), ts, es, key, pid, bs, out, k)
     case Some{TSnap{+client, +key}} TS{ts, +es}:
       IO.bind(List<&2, ETerm>, Unit, Et.load(es, home, key), e2 => Et.snapped(e2, ts, client, key, out, k))
     case Some{TRead{+key, +reply}} TS{ts, +es}:

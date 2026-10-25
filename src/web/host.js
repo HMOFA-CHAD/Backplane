@@ -48,6 +48,7 @@ import { refreshCacheIdentity } from "./cache-identity.js";
 import { discoverViews } from "./thin-discovery.js";
 import { Backoff, Retry, watchWake, probeHub, bundleOf, deployed, QUIET_MS } from "./reconnect.js";
 import { ThinHost, preservePresentationRoute, presentationTarget } from "./thin-host.js";
+import { TerminalOutputPane } from "./terminal-output.js";
 import { ModelFeedback } from "./model-feedback.js";
 const modelFeedback = new ModelFeedback(() => later());
 import { ThinContinuations } from "./thin-continuations.js";
@@ -360,6 +361,10 @@ let transitionNode = null, transitionShell = null, transitionTitle = "", transit
 let focusedNode = null, focusedAtEnd = true, focusedSaveTimer = 0;
 let focusedRequestedKey = null;
 let thin = null, thinSocket = null, thinAttempt = 0, thinExpiry = 0, thinGreetingTimer = 0, thinDraftTimer = 0, thinFieldTimer = 0;
+const terminalOutput = new TerminalOutputPane({ document, patch, current: () => {
+  const link = thin?.client.links.get(location.origin), session = currentSession();
+  return remoteReady && link ? { generation: link.greeting.generation, epoch: link.greeting.epoch, viewId: link.viewId, target: link.target, owner: session.drafts?.['@terminal.owner'], open: session.open?.term === true } : null;
+} });
 const focusedStore = new FocusedCache({ indexedDB, report: (state, reason) => trace("focused-cache", { state, reason }) });
 function currentSession() { return thinSession || frontend?.session || fallbackIntent?.session || Wire.plain(App.presentation(ui)); }
 function focusedScope() {
@@ -564,6 +569,7 @@ function render() {
   const t1 = PERF ? pnow() : 0;
   patch(root, { $: T.El, tag: "div", key: "", attrs: { $: "Nil" }, kids: { $: "Con", head: page, tail: { $: "Nil" } } });
   bubMoveSync();
+  terminalOutput.apply(true);
   if (PERF) PERF.render.push([t1 - t0, pnow() - t1]);
   if (frontendNode || canonicalBoot && App.synced(ui)) themeSeen(root.querySelector(".app"));
   if (canonicalBoot) {
@@ -788,7 +794,25 @@ function fabLook(target) {
   setTimeout(() => { if (thin?.ready) thin.request("fab-look", ""); }, 0);
 }
 
+// The secret box's Save: valueOf read the masked field once (and emptied
+// it); the value goes in one secret.set request straight to the hub, never
+// through a view action, the outbox, a draft or the client's state. Bend
+// builds and checks it (app.bend's secret_req); only the name comes back.
+function secretSave(packed) {
+  let r;
+  try { r = JSON.parse(App.secret_req(packed)); } catch { return true; }
+  packed = "";
+  if (r.error) return dispatch("secret-err", r.error);
+  if (!socket || socket.readyState !== 1) return dispatch("secret-err", "Not connected to the hub");
+  socket.send(fromList(App.wire_out(r.rpc)));
+  r = null;
+  return dispatch("secret-sent", "");
+}
+
 function dispatch(action, value, timer) {
+  if (action === "secret-save") return secretSave(value);
+  if (["term-toggle", "ws-term-hide", "ws-term-here"].includes(action) || action === "ws-go" && value === "term") terminalOutput.retire();
+  else if (["select", "bot", "bot-tab", "uber", "uber-bot", "remote"].includes(action)) terminalOutput.clear();
   if (["select", "ref-go", "ref-back", "ref-fwd", "bot", "bot-tab", "uber", "uber-bot", "remote"].includes(action)) {
     checkpointFocused();
     const timeline = document.getElementById("timeline");
@@ -1741,6 +1765,7 @@ function showThinMessage(message) {
 }
 function stopThin(keepView = false, reason = "replaced") {
   bubMoves.disconnect(location.origin);
+  terminalOutput.clear();
   checkpointFocused();
   thinRetry.cancel();
   thinContinuations.clear();
@@ -1788,6 +1813,7 @@ async function startThin(again = false, reason = "initial") {
     trace("thin-disconnect", { reason: typeof event === "string" ? event : event?.type || "connection-ended", code: event?.code });
     ended = true;
     bubMoves.disconnect(location.origin);
+    terminalOutput.clear();
     checkpointFocused();remoteReady = false;desktopBrowser.hide();Plot2d.reset();Solid.reset();
     clearTimeout(thinGreetingTimer);clearInterval(thinExpiry);clearTimeout(thinDraftTimer);clearTimeout(thinFieldTimer);
     thin?.disconnect();if (socket === s) socket = null;
@@ -1805,7 +1831,7 @@ async function startThin(again = false, reason = "initial") {
       send: request => {
         if (!current() || s.readyState !== 1) throw Error("View connection closed");
         trace("send", { id: request.id, method: request.m });
-        s.send(fromList(App.wire_out(JSON.stringify({ ...request, p: { ...request.p, workspaceLayout: "rail-v1" } }))));
+        s.send(fromList(App.wire_out(JSON.stringify({ ...request, p: { ...request.p, workspaceLayout: "rail-v1", terminalOutput: "pane-v1" } }))));
       },
       choice: choosePresentation, prepare: (session, input, action) => preservePresentationRoute(
         action === "send" || action === "send-alt" ? input : session,
@@ -1834,6 +1860,8 @@ async function startThin(again = false, reason = "initial") {
       },
       ack: (session, reply) => preservePresentationRoute(session, Wire.plain(App.presentation_reply(presentationJson(session), presentationJson(reply)))),
       decode: shown => App.presentation_node(presentationJson(shown)),
+      terminal: (node, frame) => terminalOutput.receive(node, frame),
+      terminalLifetime: () => document.querySelector('.floating-terminal .term-pane')?.getAttribute('data-terminal-incarnation') || '',
       command: command => presentationCommand(command),
       anchor: () => { const tl = document.getElementById("timeline"), a = tl && anchorOf(tl);return { id: a?.id || "", offset: Math.max(0, Math.round(a ? tl.getBoundingClientRect().top - a.off : 0)) }; },
       // Give an immediately following user action priority over an unsent
@@ -1849,6 +1877,7 @@ async function startThin(again = false, reason = "initial") {
       search: showThinSearch, message: showThinMessage,
       view: (node, detail) => {
         if (!current()) return;
+        terminalOutput.rebind();
         const field = mailReplyField(detail.shown);
         const accepted = field === undefined ? undefined : thinMailDraft.matches(detail.mailDraftContext, detail.epoch) ? thin.fieldValue("mrreply", field) : field;
         thinMailDraft.bind(detail.mailDraftContext, detail.epoch, accepted);

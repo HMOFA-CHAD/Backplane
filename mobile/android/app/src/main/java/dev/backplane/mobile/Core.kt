@@ -554,7 +554,22 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
         act("thin-message-more", JSONObject().put("entryId", entry).put("cursor", partial.cursor).toString())
     }
 
+    // what was typed in the secret box's value field: held here only until
+    // Save, then handed to the engine once (never a form field, never kept)
+    private var vaultText = ""
+
+    fun vault(text: String) { vaultText = text }
+
     fun act(action: String, value: String = "") {
+        // the secret box's Save: the value joins the box's name, purpose and
+        // thread and leaves in one secret.set request (Engine.secret)
+        if (action == "secret-save") {
+            val v = vaultText
+            vaultText = ""
+            if (!contentReady) return
+            scope.launch { apply(engine.secret(value + "\u001f" + v)) }
+            return
+        }
         // a page on its way takes no other action (a cached page is inert);
         // given up after 3 s, so a page that never comes never freezes the app
         if (opening != null) {

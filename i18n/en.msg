@@ -1272,3 +1272,26 @@ native.mailroom.open.source = Open source
 native.mailroom.machine.offline = Machine offline
 native.mailroom.page = {first}–{last} of {total}
 native.mailroom.unread.count = {count} unread
+
+# secret box
+secret.title = Secrets
+secret.none = Keys, tokens and passwords for agents, sealed in this machine's vault. Agents get only their names and can use them without seeing them. None yet.
+secret.kept = {n} sealed in this machine's vault. Agents get only their names.
+secret.asks = {who} asks for {name}
+secret.you = You
+secret.name.ph = Name, e.g. github-token
+secret.purpose.ph = What it is for
+secret.value.ph = Paste the secret
+secret.save = Save to vault
+secret.notnow = Not now
+secret.replace = Replace
+secret.delete.ask = Delete {name}? Click again.
+secret.used = Last used {when}
+secret.unused = Not used yet
+secret.requested = Requested
+secret.add = Add a secret
+secret.note = The value goes straight to the vault. The chat, the log and the agents never see it.
+secret.vault.keyring = Sealed with this computer's keychain.
+secret.vault.file = Sealed with a key file on this machine (no keychain answered).
+secret.vault.locked = The vault is locked: {why}
+secret.open.tip = Give an agent a secret without pasting it into the chat

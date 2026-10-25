@@ -13184,3 +13184,45 @@ def Laws.sidebar_draft_scratch_input(key, value, rest, h):
   SIDEDRAFTPROOF.scratch_keep(key, value, rest, h)
 def Laws.sidebar_draft_settings_separate(u, epoch, view, revision):
   SIDEDRAFTPROOF.settings_separate(u, epoch, view, revision)
+# ---- F1: far mirrors ----
+def Laws.far_snap_live(): {==}
+def Laws.far_snap_fix(): {==}
+def Laws.far_compact_live(): {==}
+def Laws.far_compact_head(): {==}
+def Laws.far_compact_tail(): {==}
+def Laws.far_view_put_threads(): {==}
+def Laws.far_view_put_projects(): {==}
+def Laws.far_view_compact(): {==}
+def Laws.far_v3_snap_when(): {==}
+def Laws.far_v3_snap_shared(): {==}
+def Laws.far_v3_snap_numbers(): {==}
+def Laws.far_v3_snap_page(): {==}
+def Laws.far_v3_page_full(): {==}
+def Laws.far_v3_page_empty(): {==}
+def Laws.far_v3_rows(): {==}
+def Laws.far_v3_range(): {==}
+def Laws.far_v3_skips(): {==}
+def Laws.far_v3_lasts(): {==}
+def Laws.far_items_projects(): {==}
+def Laws.hot_demo_threads(): {==}
+# ---- end F1 ----
+# ---- secret box ----
+import ./test/secret_proof.bend as SECPROOF
+def Laws.sec_mask_total(v, s, h):
+  SECPROOF.secp_mask_total(v, s, h)
+def Laws.sec_vault_valid(ts):
+  SECPROOF.secp_vault_valid(ts)
+def Laws.sec_vault_total(ts, s):
+  SECPROOF.secp_vault_total(ts, s)
+def Laws.sec_mask_idem(v, s, h):
+  SECPROOF.secp_mask_idem(v, s, h)
+def Laws.sec_mask_clean_id(v, s, h):
+  SECPROOF.secp_mask_clean_id(v, s, h)
+def Laws.sec_empty_id(s):
+  SECPROOF.secp_empty_id(s)
+def Laws.sec_json_total(v, j, h):
+  SECPROOF.secp_json_total(v, j, h)
+def Laws.sec_handle_shape(n, b):
+  SECPROOF.secp_handle_shape(n, b)
+def Laws.sec_changes_empty(cs):
+  {==}

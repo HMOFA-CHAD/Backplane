@@ -62,6 +62,7 @@ import ./tools.bend as TO
 import ./mailview.bend as MV
 import ./mail.bend as ML
 import ./thin-chat.bend as TC
+import ./secret.bend as SEC
 
 # The client state, Elm-style, shared by the native window and the web
 # page: a host feeds server messages to Ui.recv and user actions to Ui.act,
@@ -5813,7 +5814,6 @@ def Sch.boxes.v(v: SchView) -> String:
     case SchView{_, _, _, _, _, _, _, _, _, _, b, _, _}:
       b
 
-
 # back on the Board or Schematic tab while a comparison of that kind is
 # open (the Review tab between): it shows again as it was (Old, Diff or
 # New); else the project's own file ("")
@@ -6884,8 +6884,10 @@ def Ui.send.intent(intent: Bool, +u: Ui, alt: Bool) -> Act:
     case False{}:
       Ui.send.give(Give.is(Ui.draft_text(u)), u, alt)
 
-def Ui.send(+u: Ui, alt: Bool) -> Act:
-  Ui.send.intent(OR.Intent.is(Ui.draft_text(u)), u, alt)
+# "/secret [name]": the secret box opens in this chat (Sbox.*); the draft
+# is cleared, nothing is sent
+def Sbox.is(+draft: String) -> Bool:
+  Bool.or(String.eq(String.trim(draft), "/secret"), Bool.or(String.starts_with(draft, "/secret "), String.starts_with(draft, "/secret\n")))
 
 def Bots.sel.set(u: Ui, +th: String) -> Ui:
   match u:
@@ -7181,11 +7183,20 @@ def Bots.bfield.proj(proj: Bool, u: Ui) -> Ui:
     case False{}:
       u
 
+# (the secret box's value field, "sval", is never kept: an older phone app
+# that sends its keystrokes as a form field leaves nothing in this state)
+def Bots.bfield.keep(vault: Bool, +k: String, t: List<&2, String>, u: Ui) -> Ui:
+  match vault:
+    case True{}:
+      u
+    case False{}:
+      Bots.bfield.proj(String.eq(k, "proj"), Ui.scratch_set(u, "@f." ++ k, String.join(t, "\u{1f}")))
+
 # "name\u001ftext": a form field
 def Bots.bfield.k(ps: List<&2, String>, u: Ui) -> Ui:
   match ps:
     case +k <> t:
-      Bots.bfield.proj(String.eq(k, "proj"), Ui.scratch_set(u, "@f." ++ k, String.join(t, "\u{1f}")))
+      Bots.bfield.keep(String.eq(k, "sval"), k, t, u)
     case Nil{}:
       u
 
@@ -8819,6 +8830,270 @@ def ApiKeys.note.loc(+l: I.Loc, +u: Ui) -> String:
 def ApiKeys.note(+u: Ui) -> String:
   ApiKeys.note.loc(Lang.loc(u), u)
 
+# The secret box (core/secret.bend, docs/secrets.md), every client
+# ------------------------------------------------------------------
+# A masked box where the person pastes a key for an agent. An agent's
+# secret_request is the setting secret.ask.<name> (a card in its thread),
+# "/secret [name]" or the header's key opens one in any chat, and Settings
+# lists the vault (@secrets, @vault: the hub's secret.list answer, names
+# and metadata only). The value never enters this state: the box's field
+# has no binding, and at Save the host reads it once and sends the request
+# Sbox.req builds straight to the hub (never a view action, a draft or the
+# outbox). Scratch: @sbox the name being set ("+" a new one, "" shut),
+# @sbox.th the thread it was opened in, @sbox.err, @sbox.rm (a delete
+# asked once), @f.sname / @f.spurpose the name and purpose fields.
+
+type SAsk is Data:
+  SAsk{name: String, purpose: String, thread: String}
+
+def Sbox.ask.k(+name: String, +o: J.Json) -> SAsk:
+  SAsk{name, J.Json.get_str(o, "purpose", ""), J.Json.get_str(o, "thread", "")}
+
+def Sbox.ask.of(+st: M.State, +key: String) -> SAsk:
+  Sbox.ask.k(String.drop(key, 11n), Maybe.default(&2, J.Json, J.Json.parse(M.Setting.get(st, key, "")), J.Null{}))
+
+def Sbox.asks.add(none: Bool, +st: M.State, +k: String, acc: List<&2, SAsk>) -> List<&2, SAsk>:
+  match none:
+    case True{}:
+      acc
+    case False{}:
+      Sbox.ask.of(st, k) <> acc
+
+def Sbox.asks.go(ks: List<&2, String>, +st: M.State, acc: List<&2, SAsk>) -> List<&2, SAsk>:
+  match ks:
+    case Nil{}:
+      List.reverse(&2, SAsk, acc)
+    case +k <> t:
+      Sbox.asks.go(t, st, Sbox.asks.add(String.is_empty(M.Setting.get(st, k, "")), st, k, acc))
+
+# the open requests, oldest key first
+def Sbox.asks(+st: M.State) -> List<&2, SAsk>:
+  Sbox.asks.go(M.Setting.keys.pre(st, "secret.ask."), st, Nil{})
+
+def SAsk.name(a: SAsk) -> String:
+  match a:
+    case SAsk{n, _, _}:
+      n
+
+def SAsk.thread(a: SAsk) -> String:
+  match a:
+    case SAsk{_, _, t}:
+      t
+
+def SAsk.purpose(a: SAsk) -> String:
+  match a:
+    case SAsk{_, p, _}:
+      p
+
+def Sbox.ask.in(xs: List<&2, SAsk>, +thread: String) -> Maybe<&2, SAsk>:
+  match xs:
+    case Nil{}:
+      None{}
+    case +a <> t:
+      Bool.pick(Maybe<&2, SAsk>, String.eq(SAsk.thread(a), thread), Some{a}, Sbox.ask.in(t, thread))
+
+def Sbox.ask.named(xs: List<&2, SAsk>, +name: String) -> Maybe<&2, SAsk>:
+  match xs:
+    case Nil{}:
+      None{}
+    case +a <> t:
+      Bool.pick(Maybe<&2, SAsk>, String.eq(SAsk.name(a), name), Some{a}, Sbox.ask.named(t, name))
+
+def Sbox.title.k(t: M.Thread) -> String:
+  match t:
+    case M.Thread{id, _, +title, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      Bool.pick(String, String.is_empty(title), id, title)
+
+# who asked: the asking thread's title
+def Sbox.who(+st: M.State, +thread: String) -> String:
+  Sbox.title.k(M.State.thread.get(st, thread))
+
+# The box, as every client draws it: the name (editable when new), the
+# purpose, who asks ("" when the person opened it), the thread it belongs
+# to, any error
+type SBox is Data:
+  SBox{name: String, purpose: String, who: String, thread: String, fresh: Bool, err: String}
+
+def Sbox.box.ask(m: Maybe<&2, SAsk>, +st: M.State, +err: String) -> Maybe<&2, SBox>:
+  match m:
+    case Some{SAsk{+n, p, +t}}:
+      Some{SBox{n, p, Sbox.who(st, t), t, False{}, err}}
+    case None{}:
+      None{}
+
+def Sbox.box.open(+st: M.State, +dr: Map<&2, String>, +name: String) -> SBox:
+  SBox{Bool.pick(String, String.eq(name, "+"), Str.get(dr, "@f.sname"), name),
+    Bool.pick(String, String.eq(name, "+"), Str.get(dr, "@f.spurpose"), Maybe.default(&2, String, Maybe.map(&2, SAsk, String, SAsk.purpose, Sbox.ask.named(Sbox.asks(st), name)), Str.get(dr, "@f.spurpose"))),
+    "", Str.get(dr, "@sbox.th"), String.eq(name, "+"), Str.get(dr, "@sbox.err")}
+
+def Sbox.box.k(shut: Bool, +st: M.State, +dr: Map<&2, String>, +thread: String) -> Maybe<&2, SBox>:
+  match shut:
+    case True{}:
+      Sbox.box.ask(Sbox.ask.in(Sbox.asks(st), thread), st, Str.get(dr, "@sbox.err"))
+    case False{}:
+      Bool.pick(Maybe<&2, SBox>, String.eq(Str.get(dr, "@sbox.th"), thread), Some{Sbox.box.open(st, dr, Str.get(dr, "@sbox"))}, None{})
+
+# the box for a thread's chat, or for Settings (thread ""): the one the
+# person opened there, else the thread's oldest request (st: the state,
+# dr: the client's scratch, where the box's own fields live)
+def Sbox.box.d(+st: M.State, +dr: Map<&2, String>, +thread: String) -> Maybe<&2, SBox>:
+  Sbox.box.k(String.is_empty(Str.get(dr, "@sbox")), st, dr, thread)
+
+def Sbox.dr(u: Ui) -> Map<&2, String>:
+  match u:
+    case Ui{_, _, dr, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      dr
+
+def Sbox.box(+u: Ui, +thread: String) -> Maybe<&2, SBox>:
+  Sbox.box.d(Ui.state.of(u), Sbox.dr(u), thread)
+
+# a request's row in Settings: its name, who asked and why
+def Sbox.ask.note(+st: M.State, a: SAsk) -> String:
+  match a:
+    case SAsk{_, +p, +t}:
+      Sbox.who(st, t) ++ Bool.pick(String, String.is_empty(p), "", " · " ++ p)
+
+# the request the host sends at Save, built from "<name>\u001f<purpose>\u001f
+# <thread>\u001f<value>": {"rpc": text} or {"error": why}. The value is
+# checked here (Sec.bad) and goes nowhere else.
+def Sbox.req.k(+bad: String, +name: String, +purpose: String, +thread: String, +value: String) -> String:
+  Bool.pick(String, String.is_empty(bad),
+    J.Json.show(J.Json.obj([J.KV{"rpc", J.Str{Rpc.text(0n, "secret.set", [J.KV{"name", J.Str{SEC.Sec.name(name)}}, J.KV{"purpose", J.Str{purpose}}, J.KV{"thread", J.Str{thread}}, J.KV{"value", J.Str{String.trim(value)}}])}}, J.KV{"name", J.Str{SEC.Sec.name(name)}}])),
+    J.Json.show(J.Json.obj([J.KV{"error", J.Str{bad}}])))
+
+def Sbox.req.ps(ps: List<&2, String>) -> String:
+  match ps:
+    case +n <> +p <> +t <> +v <> _:
+      Sbox.req.k(SEC.Sec.bad(n, v), n, p, t, v)
+    case _:
+      J.Json.show(J.Json.obj([J.KV{"error", J.Str{"Paste the secret"}}]))
+
+def Sbox.req(+packed: String) -> String:
+  Sbox.req.ps(String.split(packed, Chr{31}))
+
+def Sbox.list(+u: Ui) -> Act:
+  Ui.rpc(u, "secret.list", Nil{})
+
+# open the box: value a name (Replace, a request's Set) or "" (a new one)
+def Sbox.open(+u: Ui, +name: String, +thread: String) -> Act:
+  Act{Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(u, "@sbox", Bool.pick(String, String.is_empty(name), "+", name)), "@sbox.th", thread), "@sbox.err", ""),
+    "@f.sname", name), Nil{}}
+
+def Sbox.open.a(a: Act, +name: String, +thread: String) -> Act:
+  match a:
+    case Act{u, cs}:
+      Ui.also(Sbox.open(u, name, thread), cs)
+
+def Ui.send.sec(sec: Bool, +u: Ui, alt: Bool) -> Act:
+  match sec:
+    case True{}:
+      Sbox.open.a(Draft.clear(u), RF.Refs.token(String.trim(String.drop(String.trim(Ui.draft_text(u)), 7n))), Ui.sel(u))
+    case False{}:
+      Ui.send.intent(OR.Intent.is(Ui.draft_text(u)), u, alt)
+
+def Ui.send(+u: Ui, alt: Bool) -> Act:
+  Ui.send.sec(Sbox.is(Ui.draft_text(u)), u, alt)
+
+def Sbox.shut.u(+u: Ui) -> Ui:
+  Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(u, "@sbox", ""), "@sbox.err", ""), "@f.sname", ""), "@f.spurpose", "")
+
+# after the host sent a value: the box shuts and the list is asked again
+def Sbox.sent(+u: Ui) -> Act:
+  Sbox.list(Sbox.shut.u(u))
+
+def Sbox.del.k(again: Bool, +u: Ui, +name: String) -> Act:
+  match again:
+    case True{}:
+      Ui.rpc(Ui.scratch_set(u, "@sbox.rm", ""), "secret.del", [J.KV{"name", J.Str{name}}])
+    case False{}:
+      Act{Ui.scratch_set(u, "@sbox.rm", name), Nil{}}
+
+def Sbox.dismiss(+u: Ui, +name: String) -> Act:
+  Ui.rpc(Sbox.shut.u(u), "secret.dismiss", [J.KV{"name", J.Str{name}}])
+
+# (phones: a request's Set opens the box in Settings, where the masked
+# field is)
+def Sbox.open.set(+u: Ui, +name: String) -> Act:
+  Sbox.list(Ui.flag_on(Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(u, "@sbox", Bool.pick(String, String.is_empty(name), "+", name)), "@sbox.th", ""), "@sbox.err", ""), "@f.sname", name), "settings"))
+
+# "secret-" actions: open (value: a name or ""), open-here (in the
+# selected thread), shut, sent, err (value: why), del (asks once), dismiss,
+# list
+def Sbox.act.k(i: Nat, +u: Ui, +value: String) -> Act:
+  match i:
+    case 0n:
+      Sbox.open(u, value, "")
+    case 1n:
+      Sbox.open(u, value, Ui.sel(u))
+    case 2n:
+      Act{Sbox.shut.u(u), Nil{}}
+    case 3n:
+      Sbox.sent(u)
+    case 4n:
+      Act{Ui.scratch_set(u, "@sbox.err", value), Nil{}}
+    case 5n:
+      Sbox.del.k(String.eq(Ui.scratch(u, "@sbox.rm"), value), u, value)
+    case 6n:
+      Sbox.dismiss(u, value)
+    case 8n:
+      Sbox.open.set(u, value)
+    case _:
+      Sbox.list(u)
+
+def Sbox.act(+u: Ui, +action: String, +value: String) -> Act:
+  Sbox.act.k(C.Codec.pos(["secret-open", "secret-open-here", "secret-shut", "secret-sent", "secret-err", "secret-del", "secret-dismiss", "secret-list", "secret-open-set"], action), u, value)
+
+# Settings' rows: the vault's metadata as the hub answered it
+def Sbox.metas(+u: Ui) -> List<&2, SEC.SecMeta>:
+  SEC.Sec.metas(Ui.scratch(u, "@secrets"))
+
+def Sbox.vault(+u: Ui) -> J.Json:
+  Maybe.default(&2, J.Json, J.Json.parse(Ui.scratch(u, "@vault")), J.Null{})
+
+# what Settings says about the vault
+def Sbox.note(+l: I.Loc, +u: Ui) -> String:
+  Bool.pick(String, J.Json.get_bool(Sbox.vault(u), "locked", False{}), MSG.T.secret.vault.locked(l, J.Json.get_str(Sbox.vault(u), "why", "")),
+    Bool.pick(String, List.is_empty(&2, SEC.SecMeta, Sbox.metas(u)), MSG.T.secret.none(l), MSG.T.secret.kept(l, Nat.show(List.length(&2, SEC.SecMeta, Sbox.metas(u))))
+      ++ " " ++ Bool.pick(String, String.eq(J.Json.get_str(Sbox.vault(u), "key", "file"), "file"), MSG.T.secret.vault.file(l), MSG.T.secret.vault.keyring(l))))
+
+# a stored secret's row: its name, its purpose and last use, and whether
+# Delete was asked once
+type SRowV is Data:
+  SRowV{name: String, note: String, rm: Bool}
+
+def Sbox.row(+l: I.Loc, +u: Ui, m: SEC.SecMeta) -> SRowV:
+  match m:
+    case SEC.SecMeta{+n, +p, _, _, +ua, _}:
+      SRowV{n, Bool.pick(String, String.is_empty(p), "", p ++ " · ") ++ Bool.pick(String, String.is_empty(ua), MSG.T.secret.unused(l), MSG.T.secret.used(l, String.take(ua, 16n))), String.eq(Ui.scratch(u, "@sbox.rm"), n)}
+
+def Sbox.rows.go(ms: List<&2, SEC.SecMeta>, +l: I.Loc, +u: Ui, acc: List<&2, SRowV>) -> List<&2, SRowV>:
+  match ms:
+    case Nil{}:
+      List.reverse(&2, SRowV, acc)
+    case m <> t:
+      Sbox.rows.go(t, l, u, Sbox.row(l, u, m) <> acc)
+
+def Sbox.rows(+l: I.Loc, +u: Ui) -> List<&2, SRowV>:
+  Sbox.rows.go(Sbox.metas(u), l, u, Nil{})
+
+def Sbox.reply.s(m: Maybe<&2, J.Json>, u: Ui) -> Ui:
+  match m:
+    case Some{J.Str{s}}:
+      Ui.scratch_set(u, "@secrets", s)
+    case _:
+      u
+
+def Sbox.reply.v(m: Maybe<&2, J.Json>, u: Ui) -> Ui:
+  match m:
+    case Some{J.Str{s}}:
+      Ui.scratch_set(u, "@vault", s)
+    case _:
+      u
+
+# the answer to secret.list (and to set and del): names and metadata only
+def Sbox.reply(+o: J.Json, u: Ui) -> Ui:
+  Sbox.reply.v(J.Json.get(o, "vault"), Sbox.reply.s(J.Json.get(o, "secrets"), u))
+
 def ApiKeys.form.note(+l: I.Loc) -> String:
   MSG.T.apikeys.form(l)
 
@@ -9077,10 +9352,16 @@ def Usage.ask(a: Act, +what: String) -> Act:
 
 # opening Settings asks for the voice settings and Boat's usage; opening or
 # closing it puts the pairing code away
+# (and the vault's list for Settings > Secrets)
+def Sbox.also(a: Act) -> Act:
+  match a:
+    case Act{u, cs}:
+      Ui.also(Sbox.list(u), cs)
+
 def Voice.flag.k(ask: Bool, a: Act) -> Act:
   match ask a:
     case True{} Act{u, cs}:
-      Usage.ask(Ui.also(Voice.rpc(KN.prefill(Ui.flag_off(u, "pairqr")), "status", Nil{}), cs), "read")
+      Usage.ask(Sbox.also(Ui.also(Voice.rpc(KN.prefill(Ui.flag_off(u, "pairqr")), "status", Nil{}), cs)), "read")
     case False{} _:
       a
 
@@ -9163,9 +9444,9 @@ def Bots.reply.bot(+o: J.Json, u: Ui) -> Ui:
   Bots.reply.bot.k(String.is_empty(J.Json.get_str(o, "bot", "")), o, u)
 
 def Bots.reply(+o: J.Json, +u: Ui) -> Ui:
-  Voice.reply(o, Bots.reply.has(J.Json.get(o, "apiKeys"), "@keys", Bots.reply.has(J.Json.get(o, "googleAccounts"), "@google.accts", Bots.reply.put(o, "googleUrl", "@google.url", Bots.reply.put(o, "google", "@google", Bots.reply.put(o, "invite", "@peer.invite",
+  Voice.reply(o, Sbox.reply(o, Bots.reply.has(J.Json.get(o, "apiKeys"), "@keys", Bots.reply.has(J.Json.get(o, "googleAccounts"), "@google.accts", Bots.reply.put(o, "googleUrl", "@google.url", Bots.reply.put(o, "google", "@google", Bots.reply.put(o, "invite", "@peer.invite",
     Bots.reply.put(o, "secret", "@hook.secret", Bots.reply.put(o, "hook", "@hook.id",
-      Bots.reply.put(o, "token", "@hook.token", Bots.reply.put(o, "tokenHook", "@hook.tokfor", Bots.reply.put(o, "tokenUrl", "@hook.tokurl", Bots.reply.bot(o, u))))))))))))
+      Bots.reply.put(o, "token", "@hook.token", Bots.reply.put(o, "tokenHook", "@hook.tokfor", Bots.reply.put(o, "tokenUrl", "@hook.tokurl", Bots.reply.bot(o, u)))))))))))))
 
 # A thread request uses the same binding as a bot request.
 def Want.thread(+u: Ui, id: String) -> Ui:
@@ -13292,12 +13573,20 @@ def Ui.act.r(rv: Bool, +u: Ui, +action: String, +value: String) -> Act:
       Ui.act.kx(Bool.or(String.starts_with(action, "kicad-export10"), Bool.and(String.eq(action, "menu-close"), KX.pending(Ui.infos(u), Ui.sel(u)))), u, action, value)
 
 # (Antigravity's "agy-" actions route before the rest too: Agv.act)
+# (the secret box's "secret-" actions: Sbox.act)
+def Ui.act.sec(sec: Bool, +u: Ui, +action: String, +value: String) -> Act:
+  match sec:
+    case True{}:
+      Sbox.act(u, action, value)
+    case False{}:
+      Ui.act.r(String.starts_with(action, "rv-"), u, action, value)
+
 def Ui.act.g(agy: Bool, +u: Ui, +action: String, +value: String) -> Act:
   match agy:
     case True{}:
       Agv.act(u, action, value)
     case False{}:
-      Ui.act.r(String.starts_with(action, "rv-"), u, action, value)
+      Ui.act.sec(String.starts_with(action, "secret-"), u, action, value)
 
 # (browser tasks' "tk-" and "bb-" actions: Teach.act)
 # (the schematic's sheet navigation, "sch-": Sch.act)

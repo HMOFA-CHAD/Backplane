@@ -1240,6 +1240,17 @@ def Mob.fab.k(shown: Bool, +st: M.State, +nf: Map<&2, String>, +id: String, run:
 def Mob.fab(+st: M.State, +nf: Map<&2, String>, +id: String, run: Bool) -> List<&2, J.Json>:
   Mob.fab.k(String.eq(U.Str.get(nf, "fab.shown:" ++ id), "1"), st, nf, id, run)
 
+# a thread's request, a queue row above the message box (Set opens the box
+# in Settings)
+def Mob.sbox.q(+lc: I.Loc, +st: M.State, m: Maybe<&2, U.SAsk>) -> List<&2, J.Json>:
+  match m:
+    case Some{+a}:
+      [J.Json.obj([J.KV{"msg", J.Json.str("sbox:" ++ U.SAsk.name(a))}, J.KV{"text", J.Json.str(U.SAsk.name(a) ++ ": " ++ U.Sbox.ask.note(st, a))}, J.KV{"tag", J.Json.str(MSG.T.secret.title(lc))},
+        J.KV{"buttons", J.Json.arr([J.Json.obj([J.KV{"label", J.Json.str(MSG.T.common.set(lc))}, J.KV{"action", J.Json.str("secret-open-set")}, J.KV{"value", J.Json.str(U.SAsk.name(a))}]),
+          J.Json.obj([J.KV{"label", J.Json.str(MSG.T.secret.notnow(lc))}, J.KV{"action", J.Json.str("secret-dismiss")}, J.KV{"value", J.Json.str(U.SAsk.name(a))}])])}])]
+    case None{}:
+      Nil{}
+
 def Mob.thread(+lc: I.Loc, render: Bool, u: U.Ui, t: M.Thread, pend: List<&2, String>, vw: J.Json, +atts: List<&2, String>, +up: String, term: J.Json, skills: List<&2, J.Json>, +ph: Nat, btw: J.Json, embs: J.Json) -> J.Json:
   match u t:
     case U.Ui{+st, +sel, +drafts, +live, _, _, +now, _, pa, _, _, _, _, _, +nf, _, _} M.Thread{+id, _, title, _, _, +turn, _, archived, o, +sa, +ua, pinned, _, branch, _, +pr, +mo, rt, _, _, _}:
@@ -1260,7 +1271,7 @@ def Mob.thread(+lc: I.Loc, render: Bool, u: U.Ui, t: M.Thread, pend: List<&2, St
         J.KV{"sending", J.Json.arr(Mob.strs(pend))},
         J.KV{"asks", J.Json.arr(Mob.asks(lc, U.Asks.open(st, id), U.Str.get(drafts, sel), nf))},
         J.KV{"queued", J.Json.str("")},
-        J.KV{"queue", J.Json.arr(List.append(&2, J.Json, Mob.fab(st, nf, id, V.View.running(turn)), Mob.queue(lc, M.Queue.context(M.Queue.items(st, id)), True{}, V.View.running(turn))))},
+        J.KV{"queue", J.Json.arr(List.append(&2, J.Json, Mob.sbox.q(lc, st, U.Sbox.ask.in(U.Sbox.asks(st), id)), List.append(&2, J.Json, Mob.fab(st, nf, id, V.View.running(turn)), Mob.queue(lc, M.Queue.context(M.Queue.items(st, id)), True{}, V.View.running(turn)))))},
         J.KV{"todos", Mob.todos(lc, nf, id, U.Todos.shown(st, id, V.View.running(turn)))},
         J.KV{"live", Mob.live.k.loc(lc, render, U.Str.get(live, id))},
         J.KV{"working", J.Json.str(Bool.pick(String, String.is_empty(U.Str.get(live, id)), SG.Signal.label(lc, ph), ""))},
@@ -1461,6 +1472,60 @@ def Mob.tz(+lc: I.Loc, +u: U.Ui) -> List<&2, J.Json>:
   [Mob.set.row.f(MSG.T.settings.zone(lc), U.Tzs.line.loc(lc, u), [Mob.set.field("tzname", "Europe/Helsinki", False{}, U.Ui.scratch(u, "@f.tzname"))],
      List.append(&2, J.Json, [Mob.set.btn(MSG.T.common.set(lc), "tz-set", "", True{})], Bool.pick(List<&2, J.Json>, U.Tzs.auto(u), [Mob.set.btn(MSG.T.settings.lang.auto(lc), "tz-auto", "", False{})], Nil{}))),
    Mob.set.row("", U.Tzs.err(u), Nil{})]
+
+# The secret box (client.bend's Sbox.*), as on the web. Settings shows the
+# vault, an open box (its value field is a "vault" field: the app keeps
+# what is typed and hands it to Backplane.secret at Save, never to the
+# client as a form field), the requests and the secrets kept. A thread's
+# request is a queue row whose Set opens that box.
+def Mob.sbox.fields(+lc: I.Loc, fresh: Bool, +n: String, +p: String) -> List<&2, J.Json>:
+  List.append(&2, J.Json, Bool.pick(List<&2, J.Json>, fresh, [Mob.set.field("sname", MSG.T.secret.name.ph(lc), False{}, n), Mob.set.field("spurpose", MSG.T.secret.purpose.ph(lc), False{}, p)], Nil{}),
+    [J.Json.obj([J.KV{"name", J.Json.str("sval")}, J.KV{"hint", J.Json.str(MSG.T.secret.value.ph(lc))}, J.KV{"secret", J.Json.bool(True{})}, J.KV{"vault", J.Json.bool(True{})}, J.KV{"value", J.Json.str("")}])])
+
+def Mob.sbox.k(+lc: I.Loc, b: U.SBox) -> J.Json:
+  match b:
+    case U.SBox{+n, +p, +who, +th, +fresh, +err}:
+      Mob.set.row.f(Bool.pick(String, String.is_empty(who), MSG.T.secret.add(lc), MSG.T.secret.asks(lc, who, n)),
+        Bool.pick(String, String.is_empty(err), Bool.pick(String, Bool.or(fresh, String.is_empty(p)), "", p ++ ". ") ++ MSG.T.secret.note(lc), err),
+        Mob.sbox.fields(lc, fresh, n, p),
+        [Mob.set.btn(MSG.T.secret.save(lc), "secret-save", n ++ "\u{1f}" ++ p ++ "\u{1f}" ++ th, True{}),
+         Mob.set.btn(MSG.T.secret.notnow(lc), Bool.pick(String, String.is_empty(who), "secret-shut", "secret-dismiss"), n, False{})])
+
+def Mob.sbox(+lc: I.Loc, m: Maybe<&2, U.SBox>) -> List<&2, J.Json>:
+  match m:
+    case Some{b}:
+      [Mob.sbox.k(lc, b)]
+    case None{}:
+      Nil{}
+
+def Mob.secrets.asks(xs: List<&2, U.SAsk>, +lc: I.Loc, +st: M.State) -> List<&2, J.Json>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case +a <> t:
+      Mob.set.row(MSG.T.secret.requested(lc) ++ ": " ++ U.SAsk.name(a), U.Sbox.ask.note(st, a),
+        [Mob.set.btn(MSG.T.common.set(lc), "secret-open", U.SAsk.name(a), True{}), Mob.set.btn(MSG.T.secret.notnow(lc), "secret-dismiss", U.SAsk.name(a), False{})])
+        <> Mob.secrets.asks(t, lc, st)
+
+def Mob.secrets.row(+lc: I.Loc, r: U.SRowV) -> J.Json:
+  match r:
+    case U.SRowV{+n, +note, +rm}:
+      Mob.set.row(n, note, [Mob.set.btn(MSG.T.secret.replace(lc), "secret-open", n, False{}),
+        Mob.set.btn(Bool.pick(String, rm, MSG.T.secret.delete.ask(lc, n), MSG.T.common.delete(lc)), "secret-del", n, rm)])
+
+def Mob.secrets.rows(rs: List<&2, U.SRowV>, +lc: I.Loc) -> List<&2, J.Json>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case r <> t:
+      Mob.secrets.row(lc, r) <> Mob.secrets.rows(t, lc)
+
+def Mob.secrets(+lc: I.Loc, +u: U.Ui) -> List<&2, J.Json>:
+  List.concat(&2, J.Json, [
+    [Mob.set.row(MSG.T.secret.title(lc), U.Sbox.note(lc, u), [Mob.set.btn(MSG.T.secret.add(lc), "secret-open", "", False{})])],
+    Mob.sbox(lc, U.Sbox.box(u, "")),
+    Mob.secrets.asks(U.Sbox.asks(U.Ui.state.of(u)), lc, U.Ui.state.of(u)),
+    Mob.secrets.rows(U.Sbox.rows(lc, u), lc)])
 
 def Mob.keys(+lc: I.Loc, +u: U.Ui) -> List<&2, J.Json>:
   List.concat(&2, J.Json, [[Mob.set.row(MSG.T.settings.keys(lc), U.ApiKeys.note.loc(lc, u), [Mob.set.btn(MSG.T.settings.keys.add(lc), "flag", "keyform", U.Ui.flag(u, "keyform")), Mob.set.btn(MSG.T.settings.keys.view(lc), "flag", "keys", U.Ui.flag(u, "keys"))])],
@@ -1721,7 +1786,7 @@ def Mob.settings.rows.k(i: Nat, +lc: I.Loc, +u: U.Ui, +st: M.State, +nf: Map<&2,
       [Mob.set.row(MSG.T.settings.channel(lc), MSG.T.settings.channel.note(lc), Mob.set.chips.loc(lc, ["stable", "nightly"], M.Setting.get(st, "update.channel", "stable"), "update.channel"))],
       [Mob.set.row("Backplane " ++ v, U.Update.line.w(lc, st, nf, note), Mob.update.btn.loc(lc, U.Update.btn(st, nf, note)))]])
     case 6n: List.concat(&2, J.Json, [])
-    case 7n: List.concat(&2, J.Json, [Mob.keys(lc, u)])
+    case 7n: List.concat(&2, J.Json, [Mob.keys(lc, u), Mob.secrets(lc, u)])
     case 8n: List.concat(&2, J.Json, [Mob.agy.rows(U.Agv.rows.loc(lc, u))])
     case 9n: List.concat(&2, J.Json, [Mob.tz(lc, u)])
     case 10n: Mob.usage.page(lc, u)

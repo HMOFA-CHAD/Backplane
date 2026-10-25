@@ -730,6 +730,23 @@ globalThis.Backplane = {
     previewCur = key;
     return step(App.act(hubs, action, value));
   },
+  // the secret box's Save: "<name>\u001f<purpose>\u001f<thread>\u001f<value>",
+  // the value from the app's vault field (screen.bend's Mob.sbox), never a
+  // form field. It leaves in one secret.set request to the focused hub that
+  // Bend builds and checks (app.bend's secret_req): not an action, not the
+  // kept state, not a draft.
+  secret(packed) {
+    const key = previewCur || App.current(hubs);
+    let r;
+    try { r = JSON.parse(App.secret_req(packed)); } catch { r = { error: "The secret could not be sent" }; }
+    packed = "";
+    if (r.error) return this.act("secret-err", r.error);
+    const send = { type: "send", hub: key, data: App.wire(r.rpc) };
+    r = null;
+    const after = JSON.parse(this.act("secret-sent", ""));
+    after.cmds = [send].concat(after.cmds || []);
+    return JSON.stringify(after);
+  },
   // an action whose screen the native side already shows (typing a draft),
   // unless it changed what the composer offers (app.bend's offer)
   quiet(action, value) {

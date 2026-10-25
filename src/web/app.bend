@@ -147,8 +147,19 @@ def act(u: U.Ui, +action: String, +value: String) -> U.Act:
 def hold_at_end(gap: Nat) -> Bool:
   U.Hold.at_end(gap)
 
+# The ordinary view and the output-only lane use the same keyed pane.
+def terminal_node.attrs(+u: U.Ui, node: D.Node) -> D.Node:
+  match node:
+    case D.El{tag, key, attrs, kids}:
+      D.El{tag, key, List.append(&2, D.Attr, [D.At{"data-terminal-sequence", U.Ui.info(u, "local.terminal.sequence")},
+        D.At{"data-terminal-incarnation", U.Ui.info(u, "local.terminal.incarnation")}, D.At{"data-terminal-pid", U.Ui.info(u, "local.terminal.pid")}], attrs), kids}
+    case _: node
+
+def terminal_node(+u: U.Ui) -> D.Node:
+  terminal_node.attrs(u, V.View.term.loc(U.Lang.loc(u), U.Ui.term(u, WS.WS.owner(u))))
+
 def view_sidebar(+u: U.Ui, reuse: Bool) -> D.Node:
-  WS.WS.view(u, V.View.page.sidebar(stamp(u), reuse), V.View.term.loc(U.Lang.loc(u), U.Ui.term(u, WS.WS.owner(u))))
+  WS.WS.view(u, V.View.page.sidebar(stamp(u), reuse), terminal_node(u))
 
 # Server-only entry: raw canonical signal bits are supplied explicitly;
 # session/workspace/terminal state and signal visibility remain current.
@@ -158,18 +169,18 @@ def view_sidebar_indexed.page(raw: Bool, +u: U.Ui, reuse: Bool, +signals: Map<&2
     case False{}: V.View.page.signals.sidebar(U.Side.with_signals.given(u, signals), reuse)
 
 def view_sidebar_indexed(+u: U.Ui, reuse: Bool, signals: Map<&2, Nat>) -> D.Node:
-  WS.WS.view(u, view_sidebar_indexed.page(SGR.Signal.info.raw(Map.keys(&2, String, U.Ui.infos(u))), stamp(u), reuse, signals), V.View.term.loc(U.Lang.loc(u), U.Ui.term(u, WS.WS.owner(u))))
+  WS.WS.view(u, view_sidebar_indexed.page(SGR.Signal.info.raw(Map.keys(&2, String, U.Ui.infos(u))), stamp(u), reuse, signals), terminal_node(u))
 
 def view_sidebar_metadata(+u: U.Ui, reuse: Bool, plain: U.SIx, +signals: Map<&2, Nat>) -> D.Node:
   WS.WS.view(u, V.View.page.signals.sidebar.metadata(U.Side.with_signals.given(stamp(u), signals), reuse,
-    SGR.Signal.info.raw(Map.keys(&2, String, U.Ui.infos(u))), plain, signals), V.View.term.loc(U.Lang.loc(u), U.Ui.term(u, WS.WS.owner(u))))
+    SGR.Signal.info.raw(Map.keys(&2, String, U.Ui.infos(u))), plain, signals), terminal_node(u))
 
 # Canonical text comes from a bounded hub-owned epoch/revision/online memo.
 # Unknown reserved recipient entries still select the original fallback.
 # Workspace, terminal and all recipient values are current for this frame.
 def view_sidebar_materialized(+u: U.Ui, reuse: Bool, plain: U.SIx, signals: Map<&2, Nat>, text: Map<&2, String>) -> D.Node:
   WS.WS.view(u, V.View.page.signals.sidebar.metadata(U.Side.with_signal_text(stamp(u), text), reuse,
-    SGR.Signal.info.raw(Map.keys(&2, String, U.Ui.infos(u))), plain, signals), V.View.term.loc(U.Lang.loc(u), U.Ui.term(u, WS.WS.owner(u))))
+    SGR.Signal.info.raw(Map.keys(&2, String, U.Ui.infos(u))), plain, signals), terminal_node(u))
 
 def view(+u: U.Ui) -> D.Node:
   view_sidebar(u, False{})
@@ -284,6 +295,11 @@ def composer(u: U.Ui) -> D.Node:
 
 def asks(+u: U.Ui) -> D.Node:
   V.View.asks.u(U.Lang.loc(u), u)
+
+# the secret box's Save (host.js's secretSave): "<name>\u001f<purpose>\u001f
+# <thread>\u001f<value>" to {"rpc": the secret.set request} or {"error"}
+def secret_req(+packed: String) -> String:
+  U.Sbox.req(packed)
 
 # A value of each Json constructor, for wire.js: bend 2.0.36 tags a module's
 # constructors with their file ("../core/json.Str"), so the JavaScript that
