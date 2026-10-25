@@ -14,9 +14,11 @@
 // evidence and nothing is re-keyed. Only a missing file is a new vault.
 //
 // Changes are staged: the new items are written to a temporary file,
-// flushed, renamed over vault.json and the folder flushed; only then do
-// they replace the ones in memory (and so the masking set). A failed write
-// leaves memory, disk and masking as they were.
+// flushed and renamed over vault.json; only then do they replace the ones
+// in memory (and so the masking set). A failure before the rename leaves
+// memory, disk and masking as they were. After it, the folder is flushed:
+// a real failure there answers "committed <why>" (saved and in use, not
+// claimed durable), and status's flush says what happened last.
 //
 // Values live decrypted in this file's memory only. Bend gets them for one
 // purpose, masking (VaultFx.values -> Sec.vault), and hands names to
@@ -24,11 +26,11 @@
 // temp file and masks the child's output with the values it injected (and
 // every other) before answering. Nothing here logs, prints or returns a
 // value otherwise. BACKPLANE_VAULT_KEYRING=file forces the key file
-// (tests); BACKPLANE_VAULT_FAULT=write|fsync|rename makes the next save
+// (tests); BACKPLANE_VAULT_FAULT=write|fsync|rename|dirsync|dirsync-unsupported makes the next save
 // fail at that step (tests only, read with BACKPLANE_VAULT_TEST=1).
 const BP_VAULT_BACKENDS = new Set(["keyring", "keychain", "dpapi", "file"]);
 const BP_VAULT_NAME = /^[a-z0-9._-]{1,64}$/;
-const bp_vault = { home: "", items: new Map(), key: null, backend: "", locked: false, why: "", api: { at: 0, mtime: -1, vals: [] } };
+const bp_vault = { home: "", items: new Map(), key: null, backend: "", locked: false, why: "", flush: "", api: { at: 0, mtime: -1, vals: [] } };
 
 function bp_vault_fs() { return require("node:fs"); }
 function bp_vault_path(...xs) { return require("node:path").join(bp_vault.home, "secrets", ...xs); }
@@ -130,7 +132,14 @@ function bp_vault_meta(it) {
 }
 
 function bp_vault_fault(step) {
-  if (process.env.BACKPLANE_VAULT_TEST === "1" && process.env.BACKPLANE_VAULT_FAULT === step) throw new Error("injected " + step + " failure");
+  if (process.env.BACKPLANE_VAULT_TEST !== "1") return;
+  const f = process.env.BACKPLANE_VAULT_FAULT;
+  if (step === "dirsync" && (f === "dirsync" || f === "dirsync-unsupported")) {
+    const e = new Error("injected " + f + " failure");
+    e.code = f === "dirsync" ? "EIO" : "EINVAL";
+    throw e;
+  }
+  if (f === step) throw new Error("injected " + step + " failure");
 }
 
 // write items as vault.json durably: a temporary file written and flushed,
@@ -159,9 +168,31 @@ function bp_vault_write(items, backend) {
     try { fs.rmSync(tmp, { force: true }); } catch (_) {}
     throw e;
   }
-  if (process.platform !== "win32") {
-    try { const d = fs.openSync(bp_vault_path(), "r"); try { fs.fsyncSync(d); } finally { fs.closeSync(d); } } catch (_) {}
+  // the rename is committed: from here the new items are what is on disk,
+  // so the caller publishes them whatever the folder flush says. The flush
+  // decides only what is claimed: "durable", "unsupported <code>" (this
+  // platform or file system cannot flush a folder: accepted, recorded), or
+  // "unflushed <code>" (a real I/O failure: not claimed durable)
+  if (process.platform === "win32") return "unsupported win32";
+  try {
+    const d = fs.openSync(bp_vault_path(), "r");
+    try {
+      bp_vault_fault("dirsync");
+      fs.fsyncSync(d);
+    } finally { fs.closeSync(d); }
+    return "durable";
+  } catch (e) {
+    const code = String(e && e.code || "EIO");
+    return (["EINVAL", "ENOTSUP", "EOPNOTSUPP", "EISDIR"].includes(code) ? "unsupported " : "unflushed ") + code;
   }
+}
+
+// a save's answer from its write's outcome: "ok" when durable (or the
+// folder cannot be flushed here), else "committed <why>": saved and in
+// use, but not known to survive a crash
+function bp_vault_ack(outcome) {
+  bp_vault.flush = outcome;
+  return outcome.startsWith("unflushed") ? "committed the folder flush failed (" + outcome.slice(10) + "): saved, but not known to survive a crash" : "ok";
 }
 
 function bp_vault_lock(why) {
@@ -229,7 +260,7 @@ function vault_open(home) {
 }
 
 function vault_status() {
-  return JSON.stringify({ key: bp_vault.backend || bp_vault_offer(), locked: bp_vault.locked, why: bp_vault.why, n: bp_vault.items.size });
+  return JSON.stringify({ key: bp_vault.backend || bp_vault_offer(), locked: bp_vault.locked, why: bp_vault.why, n: bp_vault.items.size, flush: bp_vault.flush });
 }
 
 // the api.env values too (Settings' API keys), so a key an agent prints
@@ -306,11 +337,11 @@ function vault_put(name, value, purpose, by) {
     const sealed = bp_vault_seal(key, name, value);
     const staged = new Map(bp_vault.items);
     staged.set(name, { name, purpose: purpose || (old ? old.purpose : ""), by: by || (old ? old.by : ""), at: new Date().toISOString(), usedAt: old ? old.usedAt : "", usedBy: old ? old.usedBy : "", iv: sealed.iv, ct: sealed.ct, value });
-    bp_vault_write(staged, backend);
+    const outcome = bp_vault_write(staged, backend);
     bp_vault.items = staged;
     bp_vault.key = key;
     bp_vault.backend = backend;
-    return "ok";
+    return bp_vault_ack(outcome);
   } catch (e) {
     return "fail " + bp_vault_err(e);
   }
@@ -323,9 +354,9 @@ function vault_del(name) {
     if (!bp_vault.items.has(name)) return "fail no secret named " + name;
     const staged = new Map(bp_vault.items);
     staged.delete(name);
-    bp_vault_write(staged, bp_vault.backend || bp_vault_offer());
+    const outcome = bp_vault_write(staged, bp_vault.backend || bp_vault_offer());
     bp_vault.items = staged;
-    return "ok";
+    return bp_vault_ack(outcome);
   } catch (e) {
     return "fail " + bp_vault_err(e);
   }

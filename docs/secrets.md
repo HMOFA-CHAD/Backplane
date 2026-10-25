@@ -29,7 +29,9 @@ Every prompt carries a `<secrets>` block: the names set, how to use them, and "n
 - The master key lives in the OS keychain: Secret Service (`secret-tool`) on Linux, the login keychain (`security`, written through its stdin) on macOS, DPAPI on Windows. Otherwise it's in `<home>/secrets/vault.key` (0600).
 - The backend is fixed at the first save. If it later stops answering, the vault reports locked. It is never re-keyed.
 - **Fail closed.** These all lock the vault: a `vault.json` that can't be read, isn't JSON, has another version, names an unknown key store, isn't shaped as `{v:1, key, items:[{name, iv, ct, …}]}`, names a secret twice, or holds a value that doesn't open with the key. Only a missing file counts as a new vault. A locked vault keeps what it read: every name for Settings, and every value that did open for masking. It refuses saves, deletes and runs, so nothing is written over the evidence.
-- **Staged writes.** A save or delete writes a temporary file, flushes it, renames it over `vault.json` and flushes the folder. Only then does the change replace what's in memory, and with it the masking set. A failed write leaves memory, disk and masking as they were (tested with injected write, fsync and rename faults).
+- **Staged writes.** A save or delete writes a temporary file, flushes it and renames it over `vault.json`. Only then does the change replace what's in memory, and with it the masking set. A failure before the rename leaves memory, disk and masking as they were (tested with injected write, fsync and rename faults).
+  - After the rename the folder is flushed. If that fails with a real I/O error, the change stands (it's on disk and in use), but the answer is `committed …`, not ok, the hub logs a warning, and the vault's status reports `flush: unflushed <code>`.
+  - A file system that can't flush a folder (EINVAL, ENOTSUP) is accepted and recorded as `unsupported <code>`.
 - `BACKPLANE_VAULT_KEYRING=file` forces the key file (tests).
 - The hub opens the vault before any turn resumes. Values stay in the effect's memory (`src/server/effects/vault.js`), and Bend reads them only to mask (`Vx.vault`).
 
@@ -74,4 +76,5 @@ Agents run as the same OS user as the hub. The box stops accidental exposure: tr
 
 Tests:
 - `bend test/secret_test.bend -o X.mjs && bun test/tools/secret.mjs X.mjs`: masks, pure and native; the source gate; and the vault's fail-closed, fault-injection, run-lifecycle and race negatives.
+- `bun test/tools/secret_mcp_e2e.ts BINARY WIRE`: the tools through a real hub's gates. A copied log refuses `secret_run` and runs nothing; an ordinary hub runs it with masked output; an old process's call is refused as stale.
 - `bun test/tools/secret_e2e.ts BINARY WIRE`: stand-in claude and codex capture their argv and stdin; the event log, the store and every frame are checked for the value.

@@ -173,6 +173,25 @@ try {
     assert.deepEqual(fx.values().split('\n').sort(), [F1, F2]);
   }
 
+  // 3b'. after the rename is committed: a real folder-flush failure (EIO)
+  // still publishes (memory matches disk) but answers "committed", not ok,
+  // and status says so; an unsupported flush (EINVAL) is ok, recorded
+  process.env.BACKPLANE_VAULT_FAULT = 'dirsync';
+  assert.match(fx.put('fixture-three', 'SECRET-FIXTURE-333', '', ''), /^committed the folder flush failed \(EIO\)/);
+  delete process.env.BACKPLANE_VAULT_FAULT;
+  assert.equal(JSON.parse(fx.status()).flush, 'unflushed EIO', 'status records the failed flush');
+  assert.ok(fx.values().split('\n').includes('SECRET-FIXTURE-333'), 'committed: in use (masked)');
+  assert.ok(readFileSync(vfile(h), 'utf8').includes('fixture-three'), 'committed: on disk');
+  assert.equal(JSON.parse(fx.open(h)).n, 3, 'committed: reopens with it');
+  assert.ok(fx.values().split('\n').includes('SECRET-FIXTURE-333'));
+  process.env.BACKPLANE_VAULT_FAULT = 'dirsync-unsupported';
+  assert.equal(fx.del('fixture-three'), 'ok', 'an unsupported folder flush is accepted');
+  delete process.env.BACKPLANE_VAULT_FAULT;
+  assert.equal(JSON.parse(fx.status()).flush, 'unsupported EINVAL', 'and recorded');
+  assert.equal(JSON.parse(fx.open(h)).n, 2);
+  assert.equal(fx.put('fixture-two', F2, '', ''), 'ok');
+  assert.equal(JSON.parse(fx.status()).flush, 'durable');
+
   // 3c. fail closed: corrupt, foreign or unreadable vaults lock; nothing is
   // written over them and nothing re-keyed
   const good = readFileSync(vfile(h), 'utf8');

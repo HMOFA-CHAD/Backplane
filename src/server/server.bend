@@ -11634,12 +11634,21 @@ def Hub.rpc.view(+thin: Bool, +o: J.Json, h: Hub, +client: U32, +text: String, +
 # effect (VaultFx.put): it is in no change, no out, no reply and no log
 # line. Replies carry the vault's status and its metadata, never a value.
 
+# a write the vault answered "ok" (durable) or "committed <why>" (saved
+# and in use, the folder flush failed: the hub says so in its log)
+def SecRpc.saved.is(+r: String) -> Bool:
+  Bool.or(String.eq(r, "ok"), String.starts_with(r, "committed "))
+
 def SecRpc.list.text(+id: String, +status: String, +ms: String) -> String:
   J.Json.show(J.Json.obj([J.KV{"t", J.Str{"reply"}}, J.KV{"id", J.Num{id}}, J.KV{"ok", J.Flag{True{}}}, J.KV{"secrets", J.Str{ms}}, J.KV{"vault", J.Str{status}}]))
+
+def SecRpc.flush.log(+f: String) -> IO(Unit):
+  Bool.pick(IO(Unit), String.starts_with(f, "unflushed"), PS.Log.warn("vault", "the last save is not known to be durable: " ++ f), IO.pure(Unit, Unit{}))
 
 def SecRpc.list(h: Hub, +client: U32, +id: String) -> IO(Hub):
   do IO<Hub>:
     +status : String <- VX.VaultFx.status()
+    SecRpc.flush.log(J.Json.get_str(Maybe.default(&2, J.Json, J.Json.parse(status), J.Null{}), "flush", ""))
     +ms : String <- VX.VaultFx.list()
     Hub.out(h, B.Send{client, SecRpc.list.text(id, status, ms)})
 
@@ -11659,7 +11668,7 @@ def SecRpc.put(ok: Bool, +bad: String, h: Hub, +client: U32, +id: String, +p: J.
   match ok:
     case True{}:
       IO.bind(String, Hub, VX.VaultFx.put(name, String.trim(J.Json.get_str(p, "value", "")), String.take(J.Json.get_str(p, "purpose", ""), 400n), "person"),
-        +r => SecRpc.done(String.eq(r, "ok"), r, h, client, id, name, J.Json.get_str(p, "thread", ""), now))
+        +r => SecRpc.done(SecRpc.saved.is(r), r, h, client, id, name, J.Json.get_str(p, "thread", ""), now))
     case False{}:
       Hub.out(h, B.Reply.err(client, id, bad))
 
@@ -11683,7 +11692,7 @@ def SecRpc.go(i: Nat, h: Hub, +client: U32, +id: String, +p: J.Json, +now: Nat) 
     case 0n:
       SecRpc.set.k(SEC.Sec.name(J.Json.get_str(p, "name", "")), h, client, id, p, now)
     case 1n:
-      IO.bind(String, Hub, VX.VaultFx.del(SEC.Sec.name(J.Json.get_str(p, "name", ""))), +r => SecRpc.del.k(String.eq(r, "ok"), r, h, client, id))
+      IO.bind(String, Hub, VX.VaultFx.del(SEC.Sec.name(J.Json.get_str(p, "name", ""))), +r => SecRpc.del.k(SecRpc.saved.is(r), r, h, client, id))
     case 2n:
       SecRpc.list(h, client, id)
     case 3n:
