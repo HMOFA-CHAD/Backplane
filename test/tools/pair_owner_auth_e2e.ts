@@ -5,7 +5,6 @@
 import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,readdirSync,existsSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
-import {connect} from 'node:net';
 const args=process.argv.slice(2), [binary,wire]=args.filter(x=>!x.startsWith('--'));
 if(!binary||!wire)throw Error('BINARY WIREDIR required');
 for(const f of readdirSync(wire).filter(f=>f.endsWith('.js')))(0,eval)(readFileSync(join(wire,f),'utf8'));
@@ -33,12 +32,37 @@ let ws:WebSocket|undefined, machines:any, failed=false;const timings:any={};
 const check=(name:string,ok:boolean,got?:unknown)=>{console.log(`${ok?'ok':'FAIL'} ${name}${ok?'':': '+JSON.stringify(got)}`);if(!ok)failed=true;};
 const sleep=(n:number)=>new Promise(r=>setTimeout(r,n));
 async function until(ms:number,f:()=>any){const t=performance.now();while(performance.now()-t<ms){const x=await f();if(x)return x;if(child.exitCode!==null)throw Error('fixture hub exited');await sleep(30);}return null;}
-function raw(host:string,source:string,method:string,path:string,fields:[string,string][]=[],onLoopback=false):Promise<{status:number,body:string,ms:number}>{
- return new Promise((done,reject)=>{const t=performance.now(), chunks:Buffer[]=[];let ended=false;const s=connect({host:onLoopback?'127.0.0.1':'127.0.0.2',port,localAddress:source});
- const finish=()=>{if(ended)return;ended=true;const all=Buffer.concat(chunks).toString();const split=all.indexOf('\r\n\r\n'), status=Number(/^HTTP\/1\.1\s+(\d+)/.exec(all)?.[1]||0);if(!status){reject(Error('missing HTTP reply'));return;}done({status,body:split<0?'':all.slice(split+4),ms:performance.now()-t});};
- s.setTimeout(10000,()=>s.destroy(Error('fixture request timeout')));s.on('error',e=>{ended=true;reject(e)});s.on('data',c=>chunks.push(c));s.on('end',finish);s.on('close',()=>{if(!ended){if(chunks.length)finish();else{ended=true;reject(Error('closed without HTTP reply'))}}});
- s.on('connect',()=>s.write(`${method} ${path} HTTP/1.1\r\nHost: ${host}\r\n${fields.some(([k])=>k.toLowerCase()==='connection')?'':'Connection: close\r\n'}Content-Length: 0\r\n${fields.map(([k,v])=>`${k}: ${v}\r\n`).join('')}\r\n`));
- });
+// Bun 1.3.10 ignores node:net's localAddress. A Python socket explicitly
+// binds before connect, and each tailnet request verifies its own whois row.
+const socketRequest=`import json,socket,sys
+p=json.load(sys.stdin)
+with socket.socket(socket.AF_INET,socket.SOCK_STREAM) as s:
+ s.settimeout(10)
+ s.bind((p['source'],0))
+ s.connect((p['destination'],p['port']))
+ local=s.getsockname()[0]
+ peer=s.getpeername()[0]
+ s.sendall(p['request'].encode('utf-8'))
+ chunks=[]
+ while True:
+  data=s.recv(65536)
+  if not data: break
+  chunks.append(data)
+ print(json.dumps(dict(local=local,peer=peer,response=b''.join(chunks).decode('utf-8'))))
+`;
+function whoisRows(source:string){return existsSync(whoisLog)?readFileSync(whoisLog,'utf8').split('\n').filter(l=>l===`whois --json ${source}`).length:0;}
+async function raw(host:string,source:string,method:string,path:string,fields:[string,string][]=[],onLoopback=false):Promise<{status:number,body:string,ms:number}>{
+ const t=performance.now(), destination=onLoopback?'127.0.0.1':'127.0.0.2', before=whoisRows(source);
+ const request=`${method} ${path} HTTP/1.1\r\nHost: ${host}\r\n${fields.some(([k])=>k.toLowerCase()==='connection')?'':'Connection: close\r\n'}Content-Length: 0\r\n${fields.map(([k,v])=>`${k}: ${v}\r\n`).join('')}\r\n`;
+ const client=Bun.spawn(['python3','-c',socketRequest],{stdin:new Response(JSON.stringify({source,destination,port,request})),stdout:'pipe',stderr:'pipe'});
+ const [rc,out,err]=await Promise.all([client.exited,new Response(client.stdout).text(),new Response(client.stderr).text()]);
+ if(rc!==0)throw Error('bound socket fixture failed: '+err);
+ const response=JSON.parse(out);
+ if(response.local!==source||response.peer!==destination)throw Error('fixture socket source/destination mismatch');
+ if(!onLoopback&&whoisRows(source)!==before+1)throw Error(`request did not verify actual socket source ${source}`);
+ const all=response.response, split=all.indexOf('\r\n\r\n'), status=Number(/^HTTP\/1\.1\s+(\d+)/.exec(all)?.[1]||0);
+ if(!status)throw Error('missing HTTP reply');
+ return {status,body:split<0?'':all.slice(split+4),ms:performance.now()-t};
 }
 function peerFiles(){const p=join(home,'secrets/peers');return existsSync(p)?readdirSync(p).length:0;}
 try{
@@ -69,7 +93,7 @@ try{
   else{let invite='';try{invite=JSON.parse(x.body).invite||''}catch{}check(`verified owner pairs at own ${name} authority`,x.status===200&&!!invite,x.status);}
  }
  const denied=await raw(`127.0.0.2:${port}`,'127.0.0.4','POST',path);check('owner success never grants untrusted socket',denied.status===401,denied.status);
- check('actual socket whois checked untrusted source',readFileSync(whoisLog,'utf8').includes('127.0.0.4'));
+ check('both untrusted requests checked actual .4 socket source',whoisRows('127.0.0.4')===2);
  const hello=await raw(`127.0.0.2:${port}`,'127.0.0.1','GET','/hello');timings.helloAfterRefusalsMs=hello.ms;check('service responds after refused requests',hello.status===200&&hello.ms<1000,hello.ms);
  console.log(JSON.stringify({mode:baseline?'old-401-control':'corrected-native-listener',passed:!failed,sourceKind:'synthetic socket whois fixture; not a live tailnet/phone claim',timings}));
 }catch(error){
