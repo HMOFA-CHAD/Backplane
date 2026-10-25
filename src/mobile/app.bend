@@ -11,6 +11,8 @@ import ../core/msgs.bend as MSG
 import ./session.bend as PS
 import ./thin.bend as TH
 
+import ../core/bub-move.bend as HOP
+
 # Resolve the native host's language once when device settings change. This uses
 # the same normalization and preview gate as each hub's Ui, including no hubs.
 def native_locale(setting: String, os: String, preview: String) -> String:
@@ -281,3 +283,7 @@ def thin_partial(shown: J.Json, window: J.Json) -> J.Json:
 
 def thin_search(screenText: String, searchText: String) -> J.Json:
   TH.Search.screen(json_parse(screenText), json_parse(searchText))
+
+# Tiny lease comparison shared by the web and phone presentation hosts.
+def bub_move(before: String, after: String) -> J.Json:
+  HOP.Hop.text(before, after)

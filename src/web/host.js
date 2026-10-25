@@ -6,6 +6,19 @@
 // is dumb).
 
 import App from "./app.bend";
+import { BubMoveObserver, showBubMove } from "./bub-move.js";
+const bubMoves = new BubMoveObserver((before, after) => Wire.plain(App.bub_move(JSON.stringify(before), JSON.stringify(after))));
+function bubMoveSync() {
+  if (document.visibilityState === "hidden") { bubMoves.disconnect(location.origin);return; }
+  if (!(frontendNode && remoteReady || canonicalBoot && App.synced(ui))) return;
+  const snapshot = root.querySelector("[data-bub-home]")?.getAttribute("data-bub-home");
+  if (!snapshot) return;
+  try {
+    const move = bubMoves.observe(location.origin, JSON.parse(snapshot));
+    if (move) showBubMove(move);
+  } catch { /* Older hubs may not supply a lease snapshot. */ }
+}
+document.addEventListener("visibilitychange", () => { bubMoves.disconnect(location.origin); });
 import { installUsageTabs } from "./usage-tabs.js";
 import { installWorkspaceKeys } from "./workspace-keys.js";
 import { installFloatingTerminal } from "./floating-terminal.js";
@@ -550,6 +563,7 @@ function render() {
     || (canonicalBoot ? App.view(ui) : App.presentation_node(presentationJson(themed(Wire.plain(App.presentation_view(App.presentation_wait(ui)))))));
   const t1 = PERF ? pnow() : 0;
   patch(root, { $: T.El, tag: "div", key: "", attrs: { $: "Nil" }, kids: { $: "Con", head: page, tail: { $: "Nil" } } });
+  bubMoveSync();
   if (PERF) PERF.render.push([t1 - t0, pnow() - t1]);
   if (frontendNode || canonicalBoot && App.synced(ui)) themeSeen(root.querySelector(".app"));
   if (canonicalBoot) {
@@ -1726,6 +1740,7 @@ function showThinMessage(message) {
   }
 }
 function stopThin(keepView = false, reason = "replaced") {
+  bubMoves.disconnect(location.origin);
   checkpointFocused();
   thinRetry.cancel();
   thinContinuations.clear();
@@ -1772,6 +1787,7 @@ async function startThin(again = false, reason = "initial") {
     if (typeof event === "string") diagnostic.initiate(event);
     trace("thin-disconnect", { reason: typeof event === "string" ? event : event?.type || "connection-ended", code: event?.code });
     ended = true;
+    bubMoves.disconnect(location.origin);
     checkpointFocused();remoteReady = false;desktopBrowser.hide();Plot2d.reset();Solid.reset();
     clearTimeout(thinGreetingTimer);clearInterval(thinExpiry);clearTimeout(thinDraftTimer);clearTimeout(thinFieldTimer);
     thin?.disconnect();if (socket === s) socket = null;

@@ -2308,8 +2308,16 @@ def Hubs.tabs(+ss: List<&2, Shown>, +hs: List<&2, Hub>, +many: Bool) -> J.Json:
     J.KV{"routines", J.Json.obj([J.KV{"badge", J.Json.nat(Hubs.tabs.sum(ss, "routines", 0n))},
       J.KV{"rows", J.Json.arr(Hubs.pl.once(List.sort(~J.Json, ~Hubs.pl.due.before, Hubs.tabs.rows(ss, hs, many))))}])}])
 
+# Keep one small lease snapshot per paired hub, including background hubs.
+# The hosts reset observations at each transport epoch and dedupe by lease.
+def Hubs.bub.homes(ss: List<&2, Shown>) -> List<&2, J.Json>:
+  match ss:
+    case Nil{}: Nil{}
+    case Shown{k, _, j} <> rest:
+      J.Json.obj([J.KV{"hub", J.Str{k}}, J.KV{"home", J.Json.get_obj(j, "bubHome")}]) <> Hubs.bub.homes(rest)
+
 def Hubs.screen.p.loc(+lc: I.Loc, +pl: MPL.MUber, +ss: List<&2, Shown>, +cur: String, +list: List<&2, Hub>) -> J.Json:
-  J.Json.obj(List.append(&2, J.KV, Hubs.pl.kv(MPL.MUber.plane(pl)), [J.KV{"online", J.Json.bool(Hubs.all_on(ss))}, J.KV{"version", J.Json.str(J.Json.get_str(Hubs.of(ss, cur), "version", ""))},
+  J.Json.obj(List.append(&2, J.KV, Hubs.pl.kv(MPL.MUber.plane(pl)), [J.KV{"bubHomes", J.Json.arr(Hubs.bub.homes(ss))}, J.KV{"online", J.Json.bool(Hubs.all_on(ss))}, J.KV{"version", J.Json.str(J.Json.get_str(Hubs.of(ss, cur), "version", ""))},
     J.KV{"error", J.Json.str(Hubs.said(ss, "error"))}, J.KV{"note", J.Json.str(Hubs.said(ss, "note"))},
     J.KV{"sel", J.Json.str(J.Json.get_str(Hubs.of(ss, cur), "sel", ""))},
     J.KV{"making", J.Json.bool(J.Json.get_bool(Hubs.of(ss, cur), "making", False{}))},

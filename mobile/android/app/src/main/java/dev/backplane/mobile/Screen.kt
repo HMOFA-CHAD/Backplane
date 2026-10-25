@@ -451,6 +451,7 @@ data class Screen(
     val locale: String = "en",
     // Legacy conversations remain selectable outside project sections.
     val legacy: List<Row> = emptyList(),
+    val bubMove: BubMove? = null,
 )
 
 data class Cmd(
@@ -773,6 +774,7 @@ fun parseScreen(o: JSONObject) = Screen(
     plane = o.optJSONObject("plane")?.let(::parsePlane),
     active = o.optJSONArray("active").map(::row),
     legacy = o.optJSONArray("legacy").map(::row),
+    bubMove = o.optJSONObject("bubMove")?.let(::parseBubMove),
     older = o.optJSONObject("older")?.let { Older(it.optInt("count"), it.optBoolean("open")) },
     settled = o.optJSONObject("settled")?.let { Older(it.optInt("count"), it.optBoolean("open")) },
     rowMenu = o.optJSONObject("rowMenu")?.let { mn ->

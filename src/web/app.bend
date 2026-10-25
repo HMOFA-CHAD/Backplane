@@ -17,6 +17,8 @@ import ./cat.bend as WC
 import ../core/onboard.bend as OB
 import ./workspace.bend as WS
 
+import ../core/bub-move.bend as HOP
+
 # What host.js calls. Everything the page decides happens behind these.
 
 def lang(u: U.Ui) -> String:
@@ -457,3 +459,7 @@ def mail_local_field(u: U.Ui, text: String) -> U.Ui:
 
 def mail_local_text(u: U.Ui) -> String:
   U.Ui.scratch(u, "@f.mrreply")
+
+# Tiny lease comparison shared by the web and phone presentation hosts.
+def bub_move(before: String, after: String) -> J.Json:
+  HOP.Hop.text(before, after)

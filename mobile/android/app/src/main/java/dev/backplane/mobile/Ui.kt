@@ -202,7 +202,10 @@ private fun OpeningDestination(m: AppModel, s: Screen, o: Core.Opening) {
 fun App(m: AppModel) {
     Column(Modifier.fillMaxSize()) {
         ViewStartupBanner(m)
-        Box(Modifier.weight(1f)) { AppContent(m) }
+        Box(Modifier.weight(1f)) {
+            AppContent(m)
+            BubMoveOverlay(if (m.contentReady) m.screen?.bubMove else null)
+        }
     }
 }
 

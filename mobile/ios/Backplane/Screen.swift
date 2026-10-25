@@ -865,6 +865,7 @@ struct HubIsland: Decodable {
 }
 
 struct Screen: Decodable {
+    let bubMove: BubMove?
     let locale: String?
     let online: Bool
     // hub: the one in focus (its thread is shown, its plots are drawn)
