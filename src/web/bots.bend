@@ -184,25 +184,37 @@ def WB.shown(v: BI.View) -> Bool:
 # A bot
 # -----
 
+def WB.tabs.go(+lc: I.Loc, ts: List<&2, String>, +cur: String) -> List<&2, D.Node>:
+  match ts:
+    case Nil{}:
+      Nil{}
+    case +t <> r:
+      D.Dom.button(Bool.pick(String, String.eq(t, cur), "tab on", "tab"), "bot-tab", t, BI.BU.tab.label(lc, t), BI.BU.tab.label(lc, t)) <> WB.tabs.go(lc, r, cur)
+
+def WB.pages.menu(+lc: I.Loc, +ts: List<&2, String>, +cur: String) -> D.Node:
+  D.El{"details", "bot-menu", [D.At{"class", "local-menu bot-mobile-menu"}], [
+    D.El{"summary", "", [D.At{"aria-label", "Bot pages"}, D.At{"title", BI.BU.tab.label(lc, cur)}], [D.Txt{"Pages"}, WI.WIcon.svg("chevron-down", 14)]},
+    D.El{"div", "", [D.At{"class", "local-menu-body"}], WB.tabs.go(lc, ts, cur)}]}
+
 # a bot's header (BU.head, the same for a bot here, one mirrored from a
 # linked machine and one only reported by one): its cat, its name with
 # where it lives, its mood, then sub (its model) and tools (Stop)
 def WB.header.loc(+lc: I.Loc, hd: BI.Head, sub: List<&2, D.Node>, tools: List<&2, D.Node>) -> D.Node:
   match hd:
-    case BI.Head{+title, +look, +mood, +note, _, _, _, _}:
+    case BI.Head{+title, +look, +mood, +note, +tabs, +tab, _, _}:
       D.El{"header", "", [D.At{"class", "thread-head bot-head"}], [
         D.Dom.button("back", "select", "", MSG.T.tour.back(lc), "‹"),
         WC.WCat.img(look, mood, 72),
         WB.div("bot-id", D.Dom.span("bot-title", title) <> D.Dom.span(WB.mood.cls(mood), note) <> sub),
-        D.El{"div", "", [D.At{"class", "tools"}], tools}]}
+        D.El{"div", "", [D.At{"class", "tools"}], List.append(&2, D.Node, tools, [WB.pages.menu(lc, tabs, BI.BU.nav.parent(tabs, tab))])}]}
 
 def WB.header(hd: BI.Head, sub: List<&2, D.Node>, tools: List<&2, D.Node>) -> D.Node:
   WB.header.loc(I.En{}, hd, sub, tools)
 
-def WB.head.t.loc(+lc: I.Loc, t: M.Thread, hd: BI.Head) -> D.Node:
+def WB.head.t.loc(+lc: I.Loc, t: M.Thread, +hd: BI.Head) -> D.Node:
   match t:
     case M.Thread{_, _, _, _, _, turn, _, _, _, _, _, _, _, _, _, +pr, +mo, _, _, _, _}:
-      WB.header.loc(lc, hd, [D.Dom.span("bot-model", pr ++ " · " ++ Bool.pick(String, String.is_empty(mo), MSG.T.common.default(lc), mo))], D.Dom.when(WB.running(turn), D.Dom.button("", "interrupt", "", MSG.T.composer.stop.tip(lc), MSG.T.composer.stop(lc))))
+      WB.header.loc(lc, hd, [D.Dom.span("bot-model", pr ++ " · " ++ Bool.pick(String, String.is_empty(mo), MSG.T.common.default(lc), mo))], D.Dom.when(Bool.and(WB.running(turn), Bool.not(String.eq(BI.Head.tab(hd), "chat"))), D.Dom.button("", "interrupt", "", MSG.T.composer.stop.tip(lc), MSG.T.composer.stop(lc))))
 
 # the bot's header: its cat, name, mood and model
 
@@ -215,16 +227,10 @@ def WB.head.loc(+lc: I.Loc, +u: U.Ui, +b: BT.Bot, hd: BI.Head) -> D.Node:
 def WB.head(+u: U.Ui, +b: BT.Bot, hd: BI.Head) -> D.Node:
   WB.head.loc(I.En{}, u, b, hd)
 
-def WB.tabs.go(+lc: I.Loc, ts: List<&2, String>, +cur: String) -> List<&2, D.Node>:
-  match ts:
-    case Nil{}:
-      Nil{}
-    case +t <> r:
-      D.Dom.button(Bool.pick(String, String.eq(t, cur), "tab on", "tab"), "bot-tab", t, BI.BU.tab.label(lc, t), BI.BU.tab.label(lc, t)) <> WB.tabs.go(lc, r, cur)
-
 # the tabs a bot has (BU.head), the one shown on
 def WB.tabs(+lc: I.Loc, +hd: BI.Head) -> D.Node:
-  D.El{"nav", "", [D.At{"class", "bot-tabs"}], WB.tabs.go(lc, BI.Head.tabs(hd), BI.BU.nav.parent(BI.Head.tabs(hd), BI.Head.tab(hd)))}
+  D.El{"nav", "", [D.At{"class", "bot-tabs bot-primary-tabs"}], [
+    D.El{"div", "", [D.At{"class", "bot-desktop-tabs"}], WB.tabs.go(lc, BI.Head.tabs(hd), BI.BU.nav.parent(BI.Head.tabs(hd), BI.Head.tab(hd)))}]}
 
 # Browser: the bot's page, a frame the hub serves (the pairing cookie
 # carries the token, as for /img); n changes with each "shot" message.
