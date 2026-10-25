@@ -108,11 +108,54 @@ def Mcp.kicad_tools() -> List<&2, J.Json>:
    Tool.def("kicad_ipc_status", "The project's headless KiCad: its server's state (starting, ready, failed or stopped), its version, its start command line (argv), and the capabilities and commands it has (kiapi.backplane.GetCapabilities). Starts the server if it is not running. Headless KiCad has no selection or view state: always pass explicit item IDs (KIIDs from GetItems) in kicad_ipc, wrap edits in BeginCommit/EndCommit, then SaveDocument.",
      [Tool.prop("path", "string", "Absolute path of the project's .kicad_pro, .kicad_pcb or .kicad_sch.")], ["path"])]
 
-def Mcp.thread_json(t: M.Thread) -> J.Json:
+def Mcp.thread_kvs(t: M.Thread) -> List<&2, J.KV>:
   match t:
     case M.Thread{id, project, title, _, act, turn, _, _, _, _, _, _, _, _, _, provider, model, _, _, _, _}:
-      J.Json.obj([J.KV{"id", J.Str{id}}, J.KV{"project", J.Str{project}}, J.KV{"title", J.Str{title}}, J.KV{"provider", J.Str{provider}},
-        J.KV{"model", J.Str{model}}, J.KV{"turn", J.Str{C.Turn.name(turn)}}, J.KV{"activity", C.Codec.nat(act)}])
+      [J.KV{"id", J.Str{id}}, J.KV{"project", J.Str{project}}, J.KV{"title", J.Str{title}}, J.KV{"provider", J.Str{provider}},
+        J.KV{"model", J.Str{model}}, J.KV{"turn", J.Str{C.Turn.name(turn)}}, J.KV{"activity", C.Codec.nat(act)}]
+
+def Mcp.thread_json(t: M.Thread) -> J.Json:
+  J.Json.obj(Mcp.thread_kvs(t))
+
+# Where a thread stands
+# ---------------------
+# A turn is only part of it: a Claude turn can end while a background
+# subagent, shell or monitor it started (or a task it delegated) still works,
+# and an agent that read only "turn": "completed" told the person the work had
+# stopped, or that it went on after it was killed. An agent sees what every
+# client's timeline says (model.bend's Phase.of: "monitoring" while owned work
+# is out, "complete" once nothing is), how much is out ("waiting") and what
+# it is ("work") (laws mcp_phase_*).
+
+def Mcp.ask.on(as: List<&2, M.Ask>, +th: String, +k: String) -> Bool:
+  match as:
+    case Nil{}:
+      False{}
+    case M.Ask{_, +t, +x, _, _, _, +op, _} <> rest:
+      Bool.or(Bool.and(op, Bool.and(String.eq(t, th), String.eq(x, k))), Mcp.ask.on(rest, th, k))
+
+# a question for the person: an agent's, a proposed plan, or a browser task
+# paused for help (the clients' Asks.question)
+def Mcp.ask.q(+as: List<&2, M.Ask>, +th: String) -> Bool:
+  Bool.or(Bool.or(Mcp.ask.on(as, th, "input"), Mcp.ask.on(as, th, "plan")), Mcp.ask.on(as, th, "browser"))
+
+def Mcp.phase(+s: M.State, t: M.Thread) -> M.Phase:
+  match t:
+    case M.Thread{+id, _, _, _, _, turn, +pending, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      M.Phase.of(Bool.or(Nat.is_gt(pending, 0n), Mcp.ask.on(M.Asks.all(s), id, "approval")), Mcp.ask.q(M.Asks.all(s), id),
+        M.Work.busy(s, id), turn, M.Queue.starting(s, id))
+
+def Mcp.titles(xs: List<&2, String>) -> List<&2, J.Json>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case x <> t:
+      J.Str{x} <> Mcp.titles(t)
+
+# a thread as agents read it: its turn and where it stands with its work
+def Mcp.thread_json.w(+s: M.State, +t: M.Thread) -> J.Json:
+  J.Json.obj(List.append(&2, J.KV, Mcp.thread_kvs(t), [J.KV{"phase", J.Str{M.Phase.name(Mcp.phase(s, t))}},
+    J.KV{"waiting", J.Json.nat(M.Work.busy(s, M.Thread.id(t)))}, J.KV{"work", J.Json.arr(Mcp.titles(M.Work.titles(s, M.Thread.id(t))))}]))
 
 # Handlers
 # --------
@@ -205,10 +248,10 @@ def Mcp.bot(+s: M.State, +thread: String) -> Bool:
 def Mcp.same_project(+s: M.State, +a: String, +b: String) -> Bool:
   Bool.or(Mcp.bot(s, a), String.eq(Mcp.project_of(B.Hub.thread(s, a)), Mcp.project_of(B.Hub.thread(s, b))))
 
-def Mcp.threads.k(keep: Bool, t: M.Thread, rest: List<&2, J.Json>) -> List<&2, J.Json>:
+def Mcp.threads.k(keep: Bool, +s: M.State, +t: M.Thread, rest: List<&2, J.Json>) -> List<&2, J.Json>:
   match keep:
     case True{}:
-      Mcp.thread_json(t) <> rest
+      Mcp.thread_json.w(s, t) <> rest
     case False{}:
       rest
 
@@ -219,12 +262,12 @@ def Mcp.visible(t: M.Thread, +project: String) -> Bool:
     case M.Thread{_, +p, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, de}:
       Bool.and(Bool.or(String.eq(p, project), Bool.and(String.eq(project, "*"), Bool.not(String.is_empty(p)))), Bool.not(de))
 
-def Mcp.threads(ts: List<&2, M.Thread>, +project: String) -> List<&2, J.Json>:
+def Mcp.threads(ts: List<&2, M.Thread>, +s: M.State, +project: String) -> List<&2, J.Json>:
   match ts:
     case Nil{}:
       Nil{}
     case +t <> rest:
-      Mcp.threads.k(Mcp.visible(t, project), t, Mcp.threads(rest, project))
+      Mcp.threads.k(Mcp.visible(t, project), s, t, Mcp.threads(rest, s, project))
 
 def Mcp.scope(+s: M.State, +thread: String) -> String:
   Bool.pick(String, Mcp.bot(s, thread), "*", Mcp.project_of(B.Hub.thread(s, thread)))
@@ -255,7 +298,7 @@ def Mcp.run.threads(+ts: List<&2, M.Thread>, +s: M.State, +caller: String) -> Li
 def Mcp.list(+s: M.State, +thread: String) -> Res:
   match s:
     case M.State{_, ts, _, _, _, _, _, _, _, _, _}:
-      Res.ok(J.Json.obj([J.KV{"threads", J.Json.arr(Mcp.threads(Mcp.run.threads(Map.values(&2, M.Thread, ts), s, thread), Mcp.scope(s, thread)))}]))
+      Res.ok(J.Json.obj([J.KV{"threads", J.Json.arr(Mcp.threads(Mcp.run.threads(Map.values(&2, M.Thread, ts), s, thread), s, Mcp.scope(s, thread)))}]))
 
 def Mcp.entry(e: M.Entry) -> J.Json:
   match e:
@@ -293,7 +336,7 @@ def Mcp.read.last(+xs: List<&2, J.Json>, +limit: Nat, +target: String, status: J
 def Mcp.read.k(ok: Bool, +s: M.State, +target: String, +limit: Nat) -> Res:
   match ok s:
     case True{} M.State{_, _, es, _, _, _, _, _, _, _, _}:
-      Mcp.read.last(Mcp.mine(es, target, Nil{}), limit, target, Mcp.thread_json(B.Hub.thread(s, target)))
+      Mcp.read.last(Mcp.mine(es, target, Nil{}), limit, target, Mcp.thread_json.w(s, B.Hub.thread(s, target)))
     case False{} _:
       Res.fail("that thread is not in this project")
 
@@ -790,10 +833,10 @@ def Mcp.tools() -> J.Json:
       [Tool.prop("taskId", "string", "The task id delegate_task returned.")], ["taskId"]),
     Tool.def("task_cancel", "Cancel a running delegated task (stops its child agent). Finished tasks keep their result.",
       [Tool.prop("taskId", "string", "The task id.")], ["taskId"]),
-    Tool.def("thread_list", "List the threads of this thread's project (id, title, provider, model, turn state), newest activity first. With `machine` (machine_list shows them), the threads of that other machine of the person's, whose ids work in the thread tools here; `project` narrows it to one project there.",
+    Tool.def("thread_list", "List the threads of this thread's project (id, title, provider, model, turn state, and phase: monitoring while work it owns runs after its turn), newest activity first. With `machine` (machine_list shows them), the threads of that other machine of the person's, whose ids work in the thread tools here; `project` narrows it to one project there.",
       [Tool.prop("machine", "string", "Another machine's name (or link id): list its threads."), Tool.prop("project", "string", "With machine: a project there, by name or id.")], Nil{}),
     Tool.def("machine_list", "List the person's machines linked to this one (this one first), whether each is here or away, and each one's projects with ids you can give thread_launch. A thread elsewhere has an id like <link>~<id>; thread_send, thread_read, thread_wait, thread_interrupt and thread_update take it, so you can work with a thread on any of their machines.", Nil{}, Nil{}),
-    Tool.def("thread_read", "Read a thread's status (including turn state) and available timeline in this project (or on another machine, by its <link>~<id>): messages and tool activity, oldest first (the last `limit` entries). Empty entries alone do not mean stopped or completed; inspect status.turn.",
+    Tool.def("thread_read", "Read a thread's status (including turn state) and available timeline in this project (or on another machine, by its <link>~<id>): messages and tool activity, oldest first (the last `limit` entries). Empty entries alone do not mean stopped or completed; inspect status.turn and status.phase: monitoring means the turn is over but work the thread owns (a background subagent, shell or monitor, or a delegated task) still runs (status.waiting counts it, status.work names it); only complete means nothing is left.",
       [Tool.prop("threadId", "string", "The thread to read."), Tool.prop("limit", "number", "How many entries (default 40).")], ["threadId"]),
     Tool.def("thread_send", "Send a message to another thread in this project, or on another machine by its <link>~<id>. It is delivered at once: an idle thread starts a turn with it, a running turn takes it (Claude at once; Codex, Grok and Muse with their next Backplane tool result, or as a new turn if theirs ends first).",
       [Tool.prop("threadId", "string", "The thread."), Tool.prop("text", "string", "The message.")], ["threadId", "text"]),
