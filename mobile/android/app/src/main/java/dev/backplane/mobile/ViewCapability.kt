@@ -22,7 +22,9 @@ object ViewCapability {
     }.getOrDefault(false)
     // What discovery found: a hub that is down or starting (refused, a
     // timeout, 502-504) is not a hub without views, and is asked again.
-    enum class Found { SUPPORTED, UNSUPPORTED, UNREACHABLE }
+    // A hub that refuses the link's token (401/403) is not one either: the
+    // phone has to be paired again.
+    enum class Found { SUPPORTED, UNSUPPORTED, UNREACHABLE, REFUSED }
 
     suspend fun discover(link: String): Boolean = find(link) == Found.SUPPORTED
 
@@ -34,6 +36,7 @@ object ViewCapability {
             if (token != null) request.header("Authorization", "Bearer $token")
             client.newCall(request.build()).execute().use { response ->
                 if (response.code in 502..504) return@use Found.UNREACHABLE
+                if (response.code == 401 || response.code == 403) return@use Found.REFUSED
                 if (response.code != 200) return@use Found.UNSUPPORTED
                 val body = response.body ?: return@use Found.UNSUPPORTED
                 if (body.contentLength() > 16384) return@use Found.UNSUPPORTED
