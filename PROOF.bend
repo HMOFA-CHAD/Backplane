@@ -13242,3 +13242,27 @@ def Laws.sec_changes_empty(cs):
 # ---- pairing without tailscale ----
 def Laws.tailnet_announce_off(): {==}
 # ---- end pairing without tailscale ----
+
+# ---- native owner tailnet pairing ----
+def Laws.auth_owner_pair_untrusted(own, hs, method, path): {==}
+def Laws.auth_owner_pair_routes(): {==}
+def Laws.auth_owner_pair_rebound(): {==}
+# ---- end native owner tailnet pairing ----
+
+# ---- far queue ----
+def Laws.fq_tools(): {==}
+def Laws.fq_fields(): {==}
+def Laws.fq_at(): {==}
+def Laws.fq_order(): {==}
+def Laws.fq_done_drops(): {==}
+def Laws.fq_done_once(): {==}
+def Laws.fq_old(): {==}
+def Laws.fq_queue(): {==}
+def Laws.fq_room(): {==}
+def Laws.fq_window(): {==}
+def Laws.fq_replay_once(): {==}
+def Laws.fq_bytes_utf8(): {==}
+def Laws.fq_room_keyed(): {==}
+# ---- end far queue ----
+
+def Laws.queue_copy_refuses_network(): {==}

@@ -32,6 +32,40 @@ def Auth.browser(+hs: List<&2, H.Header>) -> Bool:
   Bool.and(Auth.origin(H.Http.header_of(hs, "origin"), H.Http.header_of(hs, "host")),
     Bool.not(String.eq(String.to_lower(H.Http.header_of(hs, "sec-fetch-site")), "cross-site")))
 
+# Native machine auto-pairing has a separate, route-only trust path.
+# These authorities come from this listener's OWN tailnet address and
+# Self.DNSName, never the request, a peer advertisement or proxy headers.
+def Auth.owner.hosts.one(empty: Bool, +name: String, +port: String) -> List<&2, String>:
+  match empty:
+    case True{}: Nil{}
+    case False{}: [String.to_lower(name), String.to_lower(name) ++ ":" ++ port]
+
+def Auth.owner.hosts(+ip: String, +dns: String, +port: String) -> List<&2, String>:
+  List.append(&2, String, Auth.owner.hosts.one(String.is_empty(ip), ip, port), Auth.owner.hosts.one(String.is_empty(dns), dns, port))
+
+def Auth.owner.host(xs: List<&2, String>, +host: String) -> Bool:
+  match xs:
+    case Nil{}: False{}
+    case +x <> rest:
+      Bool.or(Bool.and(Bool.not(String.is_empty(x)), String.eq(x, host)), Auth.owner.host(rest, host))
+
+# Duplicate authority fields are ambiguous and cannot grant owner trust.
+def Auth.owner.header_count(hs: List<&2, H.Header>, +name: String) -> Nat:
+  match hs:
+    case Nil{}: 0n
+    case H.Header{k, _} <> rest:
+      Nat.add(Bool.pick(Nat, String.eq(String.to_lower(k), name), 1n, 0n), Auth.owner.header_count(rest, name))
+
+# trusted here is the socket peer's whois-verified owner identity. Only a
+# native POST /bots/pair may use it, only to an exact own authority, with
+# no browser Origin or proxy identity. Other routes keep their existing
+# token/localhost/signature gates, including locks, OAuth and MCP.
+def Auth.owner.pair(+trusted: Bool, +own: List<&2, String>, +hs: List<&2, H.Header>, +method: String, +path: String) -> Bool:
+  Bool.and(trusted, Bool.and(Nat.is_eq(Auth.owner.header_count(hs, "host"), 1n), Bool.and(String.eq(method, "POST"), Bool.and(String.eq(H.Http.route(path), "/bots/pair"),
+    Bool.and(Auth.browser(hs), Bool.and(String.is_empty(H.Http.header_of(hs, "origin")),
+      Bool.and(String.is_empty(H.Http.header_of(hs, "tailscale-user-login")),
+        Auth.owner.host(own, String.to_lower(H.Http.header_of(hs, "host"))))))))))
+
 # A browser cannot use DNS rebinding to inherit a localhost exemption.
 def Auth.local.host(+host: String) -> Bool:
   Bool.or(String.eq(host, "localhost"), Bool.or(String.starts_with(host, "localhost:"),

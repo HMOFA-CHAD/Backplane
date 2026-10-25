@@ -12358,3 +12358,78 @@ law sec_changes_empty:
 law tailnet_announce_off:
   {[TN.Tailnet.announce(True{}, "http://100.64.0.1:3787"), TN.Tailnet.announce(False{}, "http://100.64.0.1:3787")] == ["http://100.64.0.1:3787", ""] : List<&2, String>}
 # ---- end pairing without tailscale ----
+
+# ---- native owner tailnet pairing: route-only, own-authority trust ----
+law auth_owner_pair_untrusted:
+  for own: List<&2, String>
+  for hs: List<&2, HTTPAUTH.Header>
+  for method: String
+  for path: String
+  {AUTH.Auth.owner.pair(False{}, own, hs, method, path) == False{} : Bool}
+
+law auth_owner_pair_routes:
+  {[AUTH.Auth.owner.pair(True{}, ["100.64.0.8:3787"], [HTTPAUTH.Header{"host", "100.64.0.8:3787"}], "POST", "/bots/pair"),
+    AUTH.Auth.owner.pair(True{}, ["100.64.0.8:3787"], [HTTPAUTH.Header{"host", "100.64.0.8:3787"}], "POST", "/mcp/t1")] == [True{}, False{}] : List<&2, Bool>}
+
+law auth_owner_pair_rebound:
+  {AUTH.Auth.owner.pair(True{}, ["100.64.0.8:3787"], [HTTPAUTH.Header{"host", "attacker.invalid:3787"}], "POST", "/bots/pair") == False{} : Bool}
+# ---- end native owner tailnet pairing ----
+
+# ---- far queue: calls for the owner's machines that are away (hub.bend's Fq.*) ----
+# thread_send and thread_launch wait for a machine that is away; nothing else does
+law fq_tools:
+  {[H.Fq.tool("thread_send"), H.Fq.tool("thread_launch"), H.Fq.tool("thread_interrupt"), H.Fq.tool("thread_read")] == [True{}, True{}, False{}, False{}] : List<&2, Bool>}
+
+# a line keeps each field
+law fq_fields:
+  {[H.Fq.f.key(H.Fq.demo.l1()), H.Fq.f.link(H.Fq.demo.l1()), H.Fq.f.thread(H.Fq.demo.l1()), H.Fq.f.tool(H.Fq.demo.l1()), H.Fq.f.body(H.Fq.demo.l1())]
+    == ["q1", "p1", "t1", "thread_send", "{}"] : List<&2, String>}
+
+law fq_at:
+  {H.Fq.f.at(H.Fq.demo.l2()) == 200n : Nat}
+
+# queued calls are sent in the order they were queued
+law fq_order:
+  {H.Fq.lines(H.Fq.demo.s()) == [H.Fq.demo.l1(), H.Fq.demo.l2()] : List<&2, String>}
+
+# a call answered leaves the queue, the others stay in order
+law fq_done_drops:
+  {H.Fq.step.sets(H.Fq.done(H.Fq.demo.s(), 300n, "q1", "t1", "ok")) == [H.Fq.demo.l2()] : List<&2, String>}
+
+# and its thread is told once: a key no longer queued does nothing
+law fq_done_once:
+  {H.Fq.step.n(H.Fq.done(H.Fq.demo.s(), 300n, "q9", "t1", "ok")) == 0n : Nat}
+
+# a call older than a day is not sent
+law fq_old:
+  {[H.Fq.old(H.Fq.demo.l1(), 86500n), H.Fq.old(H.Fq.demo.l1(), 86501n)] == [False{}, True{}] : List<&2, Bool>}
+
+# a call queued keeps what was there and asks for the queue to be sent
+law fq_queue:
+  {H.Fq.step.sets(H.Fq.queue(H.Fq.demo.s(), 5n, "q3", "p3", "t1", "thread_send", "{}")) == [H.Fq.demo.l1() ++ "\n" ++ H.Fq.demo.l2() ++ "\n" ++ H.Fq.line("q3", "p3", "t1", "thread_send", 5n, "{}")] : List<&2, String>}
+
+# the queue is bounded in calls and in bytes per call
+law fq_room:
+  {[H.Fq.room.n(99n, 10n), H.Fq.room.n(100n, 10n), H.Fq.room.n(0n, 65536n), H.Fq.room.n(0n, 65537n)] == [True{}, False{}, True{}, False{}] : List<&2, Bool>}
+
+# its machine keeps more receipts per link than the queue holds calls, so a
+# call sent again always finds its answer
+law fq_window:
+  {Nat.is_lt(H.Fq.max(), FMC.Fm.seen.max()) == True{} : Bool}
+
+# a keyed call that comes again is answered the same and runs nothing: one
+# message reached t0, the second time made no change
+law fq_replay_once:
+  {FMC.Fm.replay.demo() == ["1", "0", "same"] : List<&2, String>}
+
+# the bound counts UTF-8 bytes, and of the request as keyed
+law fq_bytes_utf8:
+  {[H.Fq.utf8("a\u{e9}\u{20ac}\u{1f600}", 0n), H.Fq.utf8("", 0n)] == [10n, 0n] : List<&2, Nat>}
+
+law fq_room_keyed:
+  {Nat.is_gt(FMC.Fm.later.size("{\"id\":0,\"m\":\"mcp.call\",\"p\":{\"tool\":\"thread_send\"}}", "q1"), H.Fq.utf8("{\"id\":0,\"m\":\"mcp.call\",\"p\":{\"tool\":\"thread_send\"}}", 0n)) == True{} : Bool}
+# ---- end far queue ----
+
+# A copied home never drains queued calls to real machines.
+law queue_copy_refuses_network:
+  {JCOPY.Copy.outs(True{}, [H.FarQueued{}]) == [] : List<&2, H.Out>}

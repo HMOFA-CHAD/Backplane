@@ -22,7 +22,7 @@
     "src/core/bot.bend": "0b7815bd2284ec6fba68c771edf0293b445571773d30f8f2e70f7b7ff8d1be8b",
     "src/core/botui.bend": "24053ae1a601d1b84ef480361a447c9d3cf927ccee80d89fc1b1a6672504bd95",
     "src/core/browser-tabs.bend": "005221bc7077a405f82e375dd04cf2783620ff485734a8eafb79b8cfa3c64c53",
-    "src/core/bub-move.bend": "52a46d6064a9632a238241eaccecdb7594d79fb34e6b8703dc24f54cb05a2763",
+    "src/core/bub-move.bend": "d898f633015acd0406a965b5f069db09e37b6c7fd6fc07f1151b7847c839dc14",
     "src/core/cad.bend": "e69f4c5172e7472127aef77ebebb284d0a03a94ce7e6f41a024a00d08cd58e14",
     "src/core/cat.bend": "0130231a18e515a94d40d7584d19a9b5a2d1663f9601fbff944bf97e37f9fd6b",
     "src/core/cef.bend": "f2d3fa4c991d0e341620fe634ddb4e08da97f8e471ec46afac0b3de471cc69fb",
@@ -35,7 +35,7 @@
     "src/core/diff.bend": "eb7b53917e3b587cb423379946a9b8da8035c8a39b8b6d8e4f3a819b25a7497d",
     "src/core/emb.bend": "48012888273e4de02f0618ca1f308fc6d87e42499aa1dafe504837c2b14e2904",
     "src/core/fallback.bend": "b8604144a115b0de6f43af2b294f7cf09f6cabb882afb962c13829a21ea50601",
-    "src/core/far.bend": "98625de0b822f4dd5c077c16943d74176363a5fe1472789ee6cee92ec8f690e5",
+    "src/core/far.bend": "ef1eb0e9ae47c88d70646812cd9a150ac72510031ab250ac973627b5bfc0ea1e",
     "src/core/farlive.bend": "0fec3c222121256751cf620ad82248a178a7f54581c4f20570fdce2fa0b2e25c",
     "src/core/farsnap.bend": "7a07c3774070be7443dc5c0a9143f496767147cf0caac9fd916e3255466c005b",
     "src/core/fm.bend": "a25fe30ac6ac70ca63add2b335aaf49d38b5dba5994941022cd068eb3392913d",
@@ -174,7 +174,14 @@
       "scope": "F1 reintroduced; source-reference sidebar graph860 unchanged. Current main/full picture drafts and every unknown @ key retained.24 full-output draft/IME/search/info cases passed. Pairing and MCP work-status do not add sidebar draft readers. Conservative source/import guard remains fail-closed.",
       "fullOutputCheck": "test/sidebar_draft_image_test.bend",
       "assertions": 24
+    },
+    "queueAuth": {
+      "base": "064079bd878d513f82f27b53b1760f693678f9cb",
+      "queue": "ff921f992a574f62243750f6404fbed5da92f8f6",
+      "scope": "Queue dispatch key, server owner-pair listener context and Hop title snapshot; unchanged860 sidebar reachable functions.24 full-output draft/IME/search/info cases passed. Every unknown @ key and full main/picture drafts retained.",
+      "fullOutputCheck": "test/sidebar_draft_image_test.bend",
+      "assertions": 24
     }
   },
-  "reviewNote": "F1+reachable-pairing+background-status: reviewed127-file module/import closure, unchanged860 reachable sidebar functions,24 actual full-output dependency cases passed; all unknown @ keys and main/full-picture draft freshness retained."
+  "reviewNote": "Queue + native route-only owner pairing + toast polish: conservative127-file closure reviewed, unchanged860 sidebar functions and24 full-output cases; all unknown @ keys/full picture/main drafts preserved. Guard remains fail-closed."
 }

@@ -350,6 +350,11 @@ type Msg is Data:
   # a report to a launcher on another machine was taken there (hub.bend's
   # Lr.far.*): its line leaves the outbox
   LaunchSent{key: String}
+  # a queued call for a machine that was away was answered there, or
+  # expired (hub.bend's Fq.*): its line leaves the queue, its thread is told
+  FarQueueSent{key: String, thread: String, text: String}
+  # the far queue's sender ended: another may start
+  FarQueueIdle{}
   # time to start the threads a restart left marked (B.Rec.release): after
   # each turn's end and each minute
   Release{}
@@ -8305,6 +8310,17 @@ def Far.own.go(ps: List<&2, BO.Peer>, +st: M.State, +cfg: Cfg) -> List<&2, BO.Pe
 def Far.own.id(+st: M.State, +cfg: Cfg, +id: String) -> Bool:
   Bool.and(Bot.peer.live(st, id), Far.own(st, cfg, BO.World.peer(M.State.bots(st), id)))
 
+# a link to one of the owner's machines that may be away (not found now):
+# the peer is kept, not revoked, and sync with it is not off; what a call
+# may be queued for (hub.bend's Fq.*), sent only once Far.own.id holds
+def Far.kept.p(+st: M.State, p: BO.Peer) -> Bool:
+  match p:
+    case BO.Peer{_, +n, _, _, r}:
+      Bool.and(Bool.not(r), Bool.not(UC.Mate.off(st, n)))
+
+def Far.kept.id(+st: M.State, +id: String) -> Bool:
+  Bool.and(Bot.peer.live(st, id), Far.kept.p(st, BO.World.peer(M.State.bots(st), id)))
+
 def Far.dir(+home: String) -> String:
   home ++ "/far"
 
@@ -9451,6 +9467,94 @@ def Lr.far.run(ls: List<&2, String>, +bad: List<&2, String>, +st: M.State, +cfg:
         Lr.far.done(err, M.Bg.field(l, 0n), inbox)
         Lr.far.run(t, Bool.pick(List<&2, String>, String.is_empty(err), bad, FR.Fr.link(M.Bg.field(l, 1n)) <> bad), st, cfg, inbox)
 
+# The queue for machines that are away (hub.bend's Fq.*): sent in order,
+# each line to its machine; a machine that gives no answer keeps all of its
+# lines back (held, as Lr.far.run); a line answered, or too old, is posted
+# back as FarQueueSent and leaves the queue in the hub's step.
+def Fq.reply(m: Maybe<&2, J.Json>) -> Bool & String:
+  match m:
+    case Some{+o}:
+      (J.Json.get_bool(J.Json.get_obj(o, "mcp"), "ok", False{}), String.take(J.Json.show(J.Json.get_obj(J.Json.get_obj(o, "mcp"), "body")), 600n))
+    case None{}:
+      (False{}, "its answer was not understood")
+
+def Fq.answered(r: Bool & String, +l: String, +name: String, +inbox: Chan(Msg)) -> IO(Unit):
+  (ok, +detail) = r
+  Far.send(inbox, FarQueueSent{B.Fq.f.key(l), B.Fq.f.thread(l), B.Fq.said(B.Fq.f.tool(l), name, ok, detail)})
+
+def Fq.code(+code: Nat, +body: String, +l: String, +name: String, +inbox: Chan(Msg)) -> IO(String):
+  Bool.pick(IO(String), Nat.is_eq(code, 0n), IO.pure(String, "away"),
+    IO.bind(Unit, String, Bool.pick(IO(Unit), Nat.is_eq(code, 200n), Fq.answered(Fq.reply(J.Json.parse(body)), l, name, inbox),
+      Far.send(inbox, FarQueueSent{B.Fq.f.key(l), B.Fq.f.thread(l), B.Fq.said(B.Fq.f.tool(l), name, False{}, "it answered " ++ Nat.show(code) ++ ": " ++ String.take(body, 200n))})),
+      _ => IO.pure(String, "")))
+
+# "" when the machine answered (any answer), "away" when it gave none
+def Fq.send(+l: String, +name: String, +home: String, +url: String, +inbox: Chan(Msg)) -> IO(String):
+  do IO<String>:
+    now : Nat <- Now.nat()
+    +n : String <- BN.Bn.random(4n)
+    +r : BN.Resp <- BN.Bn.to_peer(home, url, B.Fq.f.link(l), now, "/far/rpc", True{}, FR.Fr.nonced(B.Fq.f.body(l), n))
+    Fq.code(Far.code(r), Far.body(r), l, name, inbox)
+
+def Fq.name.k(m: Maybe<&2, FR.In>, +link: String) -> String:
+  match m:
+    case Some{i}:
+      FR.In.name.of(i)
+    case None{}:
+      link
+
+def Fq.name(+st: M.State, +link: String, +cfg: Cfg) -> String:
+  Fq.name.k(FR.Ins.find(Far.mirrors(cfg), link), link)
+
+def Fq.one(old: Bool, +l: String, +st: M.State, +cfg: Cfg, +inbox: Chan(Msg), +now: Nat) -> IO(String):
+  match old:
+    case True{}:
+      IO.bind(Unit, String, Far.send(inbox, FarQueueSent{B.Fq.f.key(l), B.Fq.f.thread(l), B.Fq.expired(B.Fq.f.tool(l), Fq.name(st, B.Fq.f.link(l), cfg))}), _ => IO.pure(String, ""))
+    case False{}:
+      Bool.pick(IO(String), Far.own.id(st, cfg, B.Fq.f.link(l)), Fq.send(l, Fq.name(st, B.Fq.f.link(l), cfg), Cfg.home(cfg), Bot.peer.url(st, B.Fq.f.link(l)), inbox), IO.pure(String, "off"))
+
+def Fq.try(held: Bool, +l: String, +st: M.State, +cfg: Cfg, +inbox: Chan(Msg), +now: Nat) -> IO(String):
+  match held:
+    case True{}:
+      IO.pure(String, "held")
+    case False{}:
+      Fq.one(B.Fq.old(l, now), l, st, cfg, inbox, now)
+
+def Fq.run(ls: List<&2, String>, +bad: List<&2, String>, +st: M.State, +cfg: Cfg, +inbox: Chan(Msg), +now: Nat) -> IO(Unit):
+  match ls:
+    case Nil{}:
+      IO.pure(Unit, Unit{})
+    case +l <> t:
+      do IO<Unit>:
+        +err : String <- Fq.try(Lr.far.held(bad, B.Fq.f.link(l)), l, st, cfg, inbox, now)
+        Fq.run(t, Bool.pick(List<&2, String>, String.is_empty(err), bad, B.Fq.f.link(l) <> bad), st, cfg, inbox, now)
+
+def Fq.job(+st: M.State, +cfg: Cfg, +inbox: Chan(Msg)) -> IO(Unit):
+  do IO<Unit>:
+    now : Nat <- Now.nat()
+    Fq.run(B.Fq.lines(st), Nil{}, st, cfg, inbox, now)
+    Far.send(inbox, FarQueueIdle{})
+
+# one sender at a time (a line is never sent twice at once: the owner keeps
+# no record of what it took); a FarQueued meanwhile is left to the next
+# minute's
+def Fq.start.k(busy: Bool, fh: FR.Fh, h: Hub) -> IO(Hub):
+  match busy h:
+    case True{} h2:
+      IO.pure(Hub, Far.with(h2, fh))
+    case False{} Hub{+st, f, ls, cl, as, +inbox, +cfg, note}:
+      do IO<Hub>:
+        IO.spawn(Unit, Fq.job(st, cfg, inbox))
+        return Far.with(Hub{st, f, ls, cl, as, inbox, cfg, note}, FR.Fh.pull.on(fh, FR.Fh.fq.key()))
+
+def Fq.start(p: FR.Fh & Hub) -> IO(Hub):
+  (+fh, h) = p
+  Fq.start.k(FR.Fh.busy(fh, FR.Fh.fq.key()), fh, h)
+
+def Fq.idle(p: FR.Fh & Hub) -> IO(Hub):
+  (fh, h) = p
+  IO.pure(Hub, Far.with(h, FR.Fh.pull.off(fh, FR.Fh.fq.key())))
+
 # One bounded job per distinct target, outside the hub loop.
 def WakeJob.pr.sent(+r: P.Ran, +target: String, +inbox: Chan(Msg)) -> IO(Unit):
   match r:
@@ -9848,6 +9952,8 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
       do IO<Hub>:
         IO.spawn(Unit, Lr.far.run(B.Lr.far.lines(st), Nil{}, st, cfg, inbox))
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case Hub{st, f, ls, cl, as, inbox, cfg, note} B.FarQueued{}:
+      Fq.start(Far.fh(Hub{st, f, ls, cl, as, inbox, cfg, note}))
     case Hub{st, f, ls, cl, as, +inbox, cfg, note} B.BotReply{+thread, +to, +text, _}:
       do IO<Hub>:
         Self.post(inbox, Replied{thread, to, text})
@@ -14136,63 +14242,78 @@ def Conn.route(s: Socket, +req: W.Request, rest: List<&2, U32>, +web: String, +i
     case W.Request{+method, +path, +hs}:
       Desktop.route(String.eq(W.Http.route(path), "/desktop/browser/v1"), s, W.Request{method, path, hs}, rest, web, id, inbox, trusted, token)
 
+# A whois-verified native machine may request an auto-pair invite on
+# this tailnet listener's own authorities. All other requests go through
+# the original routing/auth gates with their original headers intact.
+def Conn.owner.gate(go: Bool, s: Socket, +req: W.Request, rest: List<&2, U32>, +web: String, +id: U32, +inbox: Chan(Msg), +trusted: Bool, +token: String) -> IO(Unit):
+  match go req:
+    case True{} W.Request{_, p, _}:
+      Conn.bot.own(True{}, s, BotReq{"pair", p, "", "", "", "", ""}, inbox)
+    case False{} _:
+      Conn.route(s, req, rest, web, id, inbox, trusted, token)
+
+def Conn.owner.route(s: Socket, +req: W.Request, rest: List<&2, U32>, +web: String, +id: U32, +inbox: Chan(Msg), +trusted: Bool, +token: String, +own: List<&2, String>) -> IO(Unit):
+  match req:
+    case W.Request{+method, +path, +hs}:
+      Conn.owner.gate(AUTH.Auth.owner.pair(trusted, own, hs, method, path), s, W.Request{method, path, hs}, rest, web, id, inbox, trusted, token)
+
 def Conn.head.k(m: Maybe<&2, W.Split>, s: Socket, buf: List<&2, U32>, +web: String, +id: U32, +inbox: Chan(Msg),
-    +trusted: Bool, +token: String, k: Socket -> List<&2, U32> -> IO(Unit)) -> IO(Unit):
+    +trusted: Bool, +token: String, +own: List<&2, String>, k: Socket -> List<&2, U32> -> IO(Unit)) -> IO(Unit):
   match m:
     case Some{W.Split{head, rest}}:
-      Conn.route(s, W.Http.request(head), rest, web, id, inbox, trusted, token)
+      Conn.owner.route(s, W.Http.request(head), rest, web, id, inbox, trusted, token, own)
     case None{}:
       IO.bind(Socket & Result<&1, &1, U32 & String, List<&2, U32>>, Unit, H.Sock.recv_bytes(s, 65536), r => Conn.head.got(r, buf, k))
 
 # read until the request head is complete (at most 64 reads)
-def Conn.head(fuel: Nat, s: Socket, +buf: List<&2, U32>, +web: String, +id: U32, +inbox: Chan(Msg), +trusted: Bool, +token: String) -> IO(Unit):
+def Conn.head(fuel: Nat, s: Socket, +buf: List<&2, U32>, +web: String, +id: U32, +inbox: Chan(Msg), +trusted: Bool, +token: String, +own: List<&2, String>) -> IO(Unit):
   match fuel:
     case 0n:
       Conn.finish(s, W.Http.text("431 Request Header Fields Too Large", "too large"))
     case 1n+f:
-      Conn.head.k(W.Http.split(buf), s, buf, web, id, inbox, trusted, token, s2 => b2 => Conn.head(f, s2, b2, web, id, inbox, trusted, token))
+      Conn.head.k(W.Http.split(buf), s, buf, web, id, inbox, trusted, token, own, s2 => b2 => Conn.head(f, s2, b2, web, id, inbox, trusted, token, own))
 
 # Accepting
 # ---------
 
 # a tailnet connection from a device its owner also owns is trusted like
 # loopback (Tailscale vouches for it); others still need the token
-def Accept.whois(r: Socket & String, +owner: String, +id: U32, +web: String, +inbox: Chan(Msg), +token: String) -> IO(Unit):
+def Accept.whois(r: Socket & String, +owner: String, +id: U32, +web: String, +inbox: Chan(Msg), +token: String, +own: List<&2, String>) -> IO(Unit):
   (s, ip) = r
   do IO<Unit>:
     w : P.Ran <- P.Proc.run("sh", PT.Port.timeout(["5", "tailscale", "whois", "--json", ip]), "/")
-    Conn.head(64n, s, Nil{}, web, id, inbox, TN.Tailnet.trusts(owner, TN.Tailnet.login(Tailnet.out(w))), token)
+    Conn.head(64n, s, Nil{}, web, id, inbox, TN.Tailnet.trusts(owner, TN.Tailnet.login(Tailnet.out(w))), token, own)
 
 def Accept.local(r: Socket & String, +id: U32, +web: String, +inbox: Chan(Msg), +trusted: Bool, +token: String) -> IO(Unit):
   (s, ip) = r
-  Conn.head(64n, s, Nil{}, web, id, inbox, Bool.and(trusted, CF.Cef.loopback(ip)), token)
+  Conn.head(64n, s, Nil{}, web, id, inbox, Bool.and(trusted, CF.Cef.loopback(ip)), token, Nil{})
 
-def Accept.trust(ask: Bool, s: Socket, +owner: String, +id: U32, +web: String, +inbox: Chan(Msg), +trusted: Bool, +token: String) -> IO(Unit):
+def Accept.trust(ask: Bool, s: Socket, +owner: String, +id: U32, +web: String, +inbox: Chan(Msg), +trusted: Bool, +token: String, +own: List<&2, String>) -> IO(Unit):
   match ask:
     case True{}:
-      IO.bind(Socket & String, Unit, H.Sock.peer(s), r => Accept.whois(r, owner, id, web, inbox, token))
+      IO.bind(Socket & String, Unit, H.Sock.peer(s), r => Accept.whois(r, owner, id, web, inbox, token, own))
     case False{}:
       IO.bind(Socket & String, Unit, H.Sock.peer(s), r => Accept.local(r, id, web, inbox, trusted, token))
 
-def Accept.got(r: Listener & Result<&1, &1, U32 & String, Socket>, +id: U32, +web: String, +inbox: Chan(Msg), +trusted: Bool, +token: String, +owner: String, k: Listener -> IO(Unit)) -> IO(Unit):
+def Accept.got(r: Listener & Result<&1, &1, U32 & String, Socket>, +id: U32, +web: String, +inbox: Chan(Msg), +trusted: Bool, +token: String, +owner: String, +own: List<&2, String>, k: Listener -> IO(Unit)) -> IO(Unit):
   (l, res) = r
   match res:
     case Done{s}:
       do IO<Unit>:
-        IO.spawn(Unit, Accept.trust(Bool.and(Bool.not(trusted), Bool.not(String.is_empty(owner))), s, owner, id, web, inbox, trusted, token))
+        IO.spawn(Unit, Accept.trust(Bool.and(Bool.not(trusted), Bool.not(String.is_empty(owner))), s, owner, id, web, inbox, trusted, token, own))
         k(l)
     case Fail{_}:
       k(l)
 
 # connections from one listener; ids count up from `id` (loopback from 1,
 # the tailnet from 2^31, so they never meet)
-def Accept.loop(fuel: Nat, l: Listener, +id: U32, +web: String, +inbox: Chan(Msg), +trusted: Bool, +token: String, +owner: String) -> IO(Unit):
+def Accept.loop(fuel: Nat, l: Listener, +id: U32, +web: String, +inbox: Chan(Msg), +trusted: Bool, +token: String, +owner: String, +own: List<&2, String>) -> IO(Unit):
   match fuel:
     case 0n:
       Listener.close(l)
     case 1n+f:
       IO.bind(Listener & Result<&1, &1, U32 & String, Socket>, Unit, TCP.accept(l),
-        r => Accept.got(r, id, web, inbox, trusted, token, owner, l2 => Accept.loop(f, l2, (id + 1 : U32), web, inbox, trusted, token, owner)))
+        r => Accept.got(r, id, web, inbox, trusted, token, owner, own, l2 => Accept.loop(f, l2, (id + 1 : U32), web, inbox, trusted, token, owner, own)))
 
 # the tailnet address answers when the main listener already covers it
 # (--host 0.0.0.0, or the address itself): the extra bind then fails by design
@@ -14205,9 +14326,11 @@ def Tailnet.listened(r: Result<&1, &1, U32 & String, Listener>, +host: String, +
       do IO<Unit>:
         w : P.Ran <- P.Proc.run("tailscale", ["whois", "--json", ip], "/")
         +owner : String = TN.Tailnet.login(Tailnet.out(w))
+        status : P.Ran <- P.Proc.run("sh", PT.Port.timeout(["5", "tailscale", "status", "--json"]), "/")
+        +own : List<&2, String> = AUTH.Auth.owner.hosts(ip, Tailnet.dns(status), U32.show(port))
         IO.print("Backplane on your tailnet: http://" ++ ip ++ ":" ++ U32.show(port) ++ "/ (" ++ Bool.pick(String, String.is_empty(owner), "pair in Settings", owner ++ "'s devices; pair in Settings") ++ ")")
         ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, LinkFound{TN.Tailnet.report("reachable", TN.Tailnet.link("http://" ++ ip ++ ":" ++ U32.show(port), token))})
-        IO.spawn(Unit, Accept.loop(Fuel.forever(), l, 2147483648, web, inbox, False{}, token, owner))
+        IO.spawn(Unit, Accept.loop(Fuel.forever(), l, 2147483648, web, inbox, False{}, token, owner, own))
     case Fail{_}:
       do IO<Unit>:
         Log.info("could not listen on the tailnet address " ++ ip)
@@ -15115,6 +15238,15 @@ def Hub.mcp.far(own: Bool, h: Hub, +link: String, +rq: String, +o: J.Json, body:
     case False{} _:
       Hub.mcp.k(MC.Mcp.reply(Maybe.default(&2, J.Json, J.Json.get(o, "id"), J.Null{}), MC.Res.fail("sync with that machine is off here")), h, reply, body)
 
+# a call for a machine that is away waits for it (hub.bend's Fq.*): kept
+# in the queue by the answer's own step (only with sync on, as Hub.mcp.far)
+def Hub.mcp.later(own: Bool, h: Hub, +link: String, +name: String, +tool: String, +rq: String, +thread: String, +o: J.Json, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match own h:
+    case True{} Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Hub.mcp.k(MC.Mcp.reply(Maybe.default(&2, J.Json, J.Json.get(o, "id"), J.Null{}), FM.Fm.later.res(st, now, link, name, tool, thread, rq)), Hub{st, f, ls, cl, as, inbox, cfg, note}, reply, body)
+    case False{} _:
+      Hub.mcp.k(MC.Mcp.reply(Maybe.default(&2, J.Json, J.Json.get(o, "id"), J.Null{}), MC.Res.fail("sync with that machine is off here")), h, reply, body)
+
 # a tool call for a machine of the owner's goes there (fmcp.bend); machine_list
 # is answered here; any other runs as before
 def Hub.mcp.f(p: FM.Plan, h: Hub, +thread: String, +o: J.Json, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
@@ -15125,6 +15257,8 @@ def Hub.mcp.f(p: FM.Plan, h: Hub, +thread: String, +o: J.Json, body: String, +re
       Hub.mcp.k(MC.Mcp.reply(Maybe.default(&2, J.Json, J.Json.get(o, "id"), J.Null{}), r), h, reply, body)
     case FM.PFar{+link, +rq} Hub{+st, f, ls, cl, as, +inbox, +cfg, note}:
       Hub.mcp.far(Far.own.id(st, cfg, link), Hub{st, f, ls, cl, as, inbox, cfg, note}, link, rq, o, body, reply)
+    case FM.PLater{+link, +name, +tool, +rq} Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
+      Hub.mcp.later(Far.kept.id(st, link), Hub{st, f, ls, cl, as, inbox, cfg, note}, link, name, tool, rq, thread, o, body, reply, now)
 
 def Hub.mcp.p(+o: J.Json, h: Hub, +thread: String, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
   match h:
@@ -15422,6 +15556,10 @@ def Msg.kind(m: Msg) -> String:
       "replied"
     case LaunchSent{_}:
       "launch_sent"
+    case FarQueueSent{_, _, _}:
+      "far_queue_sent"
+    case FarQueueIdle{}:
+      "far_queue_idle"
     case Release{}:
       "release"
     case SpawnFailed{_, _, _}:
@@ -15830,6 +15968,10 @@ def Hub.launch.sent(p: M.State & Hub, +key: String, +now: Nat) -> IO(Hub):
   (st, h) = p
   Hub.step(h, B.Lr.far.sent(st, now, key))
 
+def Hub.far.queue.sent(p: M.State & Hub, +key: String, +thread: String, +text: String, +now: Nat) -> IO(Hub):
+  (st, h) = p
+  Hub.step(h, B.Fq.done(st, now, key, thread, text))
+
 def Hub.lock.probe.after.k(pending: Bool, h: Hub, +name: String, +holder: String) -> IO(Hub):
   match pending h:
     case True{} Hub{s, f, ls, cl, as, +inbox, cfg, note}:
@@ -15979,7 +16121,7 @@ def Bulk.back(+tok: Chan(Unit), h: Hub, k: Hub -> IO(Unit)) -> IO(Unit):
 def Listen.up(l: Listener, +web: String, +inbox: Chan(Msg), +cfg: Cfg, +addr: String) -> IO(Unit):
   do IO<Unit>:
     Log.info("web server on: " ++ addr)
-    IO.spawn(Unit, Accept.loop(Fuel.forever(), l, 1, web, inbox, True{}, Net.token(Cfg.net(cfg)), ""))
+    IO.spawn(Unit, Accept.loop(Fuel.forever(), l, 1, web, inbox, True{}, Net.token(Cfg.net(cfg)), "", Nil{}))
     Tailnet.start(Cfg.net(cfg), Cfg.host(cfg), Cfg.port(cfg), web, inbox)
     Machines.start(inbox, Cfg.port(cfg))
 
@@ -16706,6 +16848,10 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.replied(Hub.state(h), thread, to, text, now)
     case LaunchSent{+key}:
       Hub.launch.sent(Hub.state(h), key, now)
+    case FarQueueSent{+key, +thread, +text}:
+      Hub.far.queue.sent(Hub.state(h), key, thread, text, now)
+    case FarQueueIdle{}:
+      Fq.idle(Far.fh(h))
     case Release{}:
       Hub.release(Hub.state(h), now)
     case SpawnFailed{thread, gen, line}:
@@ -16782,7 +16928,7 @@ def Main.headless(h: Hub, +inbox: Chan(Msg), +cfg: Cfg, +tok: Chan(Unit), front:
 
 def Main.serve(l: Listener, h: Hub, +web: String, +inbox: Chan(Msg), +cfg: Cfg, +tok: Chan(Unit), front: Chan(Msg) -> IO(Unit)) -> IO(Unit):
   do IO<Unit>:
-    IO.spawn(Unit, Accept.loop(Fuel.forever(), l, 1, web, inbox, True{}, Net.token(Cfg.net(cfg)), ""))
+    IO.spawn(Unit, Accept.loop(Fuel.forever(), l, 1, web, inbox, True{}, Net.token(Cfg.net(cfg)), "", Nil{}))
     Tailnet.start(Cfg.net(cfg), Cfg.host(cfg), Cfg.port(cfg), web, inbox)
     IO.spawn(Unit, Ticker.loop(Fuel.forever(), inbox))
     IO.spawn(Unit, Beat.loop(Fuel.forever(), inbox))
