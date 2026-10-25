@@ -397,7 +397,10 @@ function createDesktopBrowserController({electron,window,appSession,origin,versi
    void task.catch(()=>{try{write('result',{owner:p.owner,dispatchTarget:p.target??null,grantRevision:p.grantRevision,target:p.target??null,resultRevision:p.grantRevision,reply:{ok:false,error:'Browser request refused',dispatched:false}},message.id);}catch{fail();}}).finally(()=>incoming.delete(message.id));
   }else if(message.op!=='result')throw new Error('Unsupported private Browser operation');
   const request=pending.get(message.id);
-  if(request&&request.expected===message.op){clearTimeout(request.timer);pending.delete(message.id);if(p.ok===false)request.reject(Object.assign(new Error('Browser service refused request'),{dispatched:false}));else request.resolve(p);}
+  // A refusal is a terminal reply even when success would carry a grant.
+  // Envelope/lease/sequence validation above still precedes settlement; an
+  // unrelated success or a late reply never creates authority or retries work.
+  if(request&&(request.expected===message.op||(message.op==='result'&&p.ok===false))){clearTimeout(request.timer);pending.delete(message.id);if(p.ok===false)request.reject(Object.assign(new Error('Browser service refused request'),{dispatched:false}));else request.resolve(p);}
   wake();
  }
  function refreshPresentation(){
