@@ -265,26 +265,11 @@ type Plan is Data:
   PFar{link: String, body: String}
 
 # one machine as the agent sees it
-# (a mirror's projects, from its project changes alone: the rest of its
-# history is not decoded for a listing)
-def Fm.pitems.k(keep: Bool, i: FR.Item, rest: List<&2, FR.Item>) -> List<&2, FR.Item>:
-  match keep:
-    case True{}:
-      i <> rest
-    case False{}:
-      rest
-
-def Fm.pitems(xs: List<&2, FR.Item>) -> List<&2, FR.Item>:
-  match xs:
-    case Nil{}:
-      Nil{}
-    case FR.Item{+n, +c} <> t:
-      Fm.pitems.k(String.starts_with(J.Json.get_str(c, "$", ""), "Project"), FR.Item{n, c}, Fm.pitems(t))
-
+# (a mirror's projects, from its fold kept with it: FR.In.view)
 def Fm.machine(+i: FR.In) -> J.Json:
   J.Json.obj([J.KV{"machine", J.Str{FR.In.name.of(i)}}, J.KV{"link", J.Str{FR.In.link(i)}},
     J.KV{"state", J.Str{Bool.pick(String, FR.In.away(i), "away", "here")}},
-    J.KV{"projects", J.Json.arr(Fm.proj.rows(FR.Fr.apply(Fm.pitems(FR.In.items(i)), FR.In.link(i), M.State.empty())))}])
+    J.KV{"projects", J.Json.arr(Fm.proj.rows(FR.In.view(i)))}])
 
 def Fm.machines.go(ins: List<&2, FR.In>) -> List<&2, J.Json>:
   match ins:
@@ -443,21 +428,6 @@ def Fm.hand.req(+link: String, +i: Nat, src: Src, +target: J.KV) -> Plan:
       PFar{link, Fm.request(link, "thread_handoff", FR.Fr.id(link, id), J.Json.obj([target, J.KV{"hand", J.Str{hand}}, J.KV{"key", J.Str{key ++ "." ++ Nat.show(i)}},
         J.KV{"title", J.Str{ti}}, J.KV{"provider", J.Str{pr}}, J.KV{"model", J.Str{mo}}]))}
 
-# (a mirror's threads, from its thread and project changes alone)
-def Fm.titems.k(keep: Bool, i: FR.Item, rest: List<&2, FR.Item>) -> List<&2, FR.Item>:
-  match keep:
-    case True{}:
-      i <> rest
-    case False{}:
-      rest
-
-def Fm.titems(xs: List<&2, FR.Item>) -> List<&2, FR.Item>:
-  match xs:
-    case Nil{}:
-      Nil{}
-    case FR.Item{+n, +c} <> t:
-      Fm.titems.k(Bool.or(String.starts_with(J.Json.get_str(c, "$", ""), "Thread"), String.starts_with(J.Json.get_str(c, "$", ""), "Project")), FR.Item{n, c}, Fm.titems(t))
-
 def Fm.give.thread(m: Maybe<&2, RF.Cand>, +link: String, +word: String, +i: Nat, src: Src) -> Plan:
   match m:
     case Some{RF.Cand{+id, _, _, _}}:
@@ -468,7 +438,7 @@ def Fm.give.thread(m: Maybe<&2, RF.Cand>, +link: String, +word: String, +i: Nat,
 def Fm.give.t(m: Maybe<&2, FR.In>, +slug: String, +word: String, +i: Nat, src: Src) -> Plan:
   match m:
     case Some{+in}:
-      Fm.give.thread(List.head(&2, RF.Cand, List.sort(~RF.Cand, ~RF.Cand.before, RF.Refs.t.hits(XR.Xref.threads(FR.Fr.apply(Fm.titems(FR.In.items(in)), FR.In.link(in), M.State.empty())), slug, ""))), FR.In.link(in), word, i, src)
+      Fm.give.thread(List.head(&2, RF.Cand, List.sort(~RF.Cand, ~RF.Cand.before, RF.Refs.t.hits(XR.Xref.threads(FR.In.view(in)), slug, ""))), FR.In.link(in), word, i, src)
     case None{}:
       PAnswer{MC.Res.fail("no machine of yours called " ++ RF.Refs.x.m(String.drop(word, 1n)) ++ " is linked here")}
 

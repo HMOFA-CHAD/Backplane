@@ -13190,7 +13190,8 @@ def Laws.far_snap_fix(): {==}
 def Laws.far_compact_live(): {==}
 def Laws.far_compact_head(): {==}
 def Laws.far_compact_tail(): {==}
-def Laws.far_fact_shared(): {==}
-def Laws.far_fact_private(): {==}
+def Laws.far_view_put_threads(): {==}
+def Laws.far_view_put_projects(): {==}
+def Laws.far_view_compact(): {==}
 def Laws.hot_demo_threads(): {==}
 # ---- end F1 ----

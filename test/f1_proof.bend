@@ -25,12 +25,16 @@ law far_compact_head:
 law far_compact_tail:
   {FR.In.tail(FR.In.compact(FR.Fr.demo.in())) == 0n : Nat}
 
-# a shared change gives its store row, a private one none
-law far_fact_shared:
-  {FR.Fr.fact(FSNAP.Snap.demo(), M.ThreadRenamed{"t1", "x", 50n}, 7n) == [["#7", "p1"]] : List<&2, List<&2, String>>}
+# a mirror's fold, kept as batches come (FR.In.view), is the fold of what
+# it holds: Xref and machine_list read it instead of folding again
+law far_view_put_threads:
+  {FR.Fr.view.threads(FR.In.view(FR.Fr.demo.put())) == FR.Fr.view.threads(FR.Fr.apply(FR.In.items(FR.Fr.demo.put()), "p1", M.State.empty())) : List<&2, M.Thread>}
 
-law far_fact_private:
-  {FR.Fr.fact(FSNAP.Snap.demo(), M.SettingSet{"k", "v", 50n}, 7n) == Nil{} : List<&2, List<&2, String>>}
+law far_view_put_projects:
+  {FR.Fr.view.projects(FR.In.view(FR.Fr.demo.put())) == FR.Fr.view.projects(FR.Fr.apply(FR.In.items(FR.Fr.demo.put()), "p1", M.State.empty())) : List<&2, M.Project>}
+
+law far_view_compact:
+  {FR.Fr.view.threads(FR.In.view(FR.In.compact(FR.Fr.demo.put()))) == FR.Fr.view.threads(FR.Fr.apply(FR.In.items(FR.In.compact(FR.Fr.demo.put())), "p1", M.State.empty())) : List<&2, M.Thread>}
 
 # live: settled, archived and deleted threads are not; a task, a bot and a
 # running turn keep one
@@ -49,8 +53,10 @@ def far_compact_head(): {==}
 
 def far_compact_tail(): {==}
 
-def far_fact_shared(): {==}
-
-def far_fact_private(): {==}
-
 def hot_demo_threads(): {==}
+
+def far_view_put_threads(): {==}
+
+def far_view_put_projects(): {==}
+
+def far_view_compact(): {==}
