@@ -456,6 +456,8 @@ function anchorOf(tl) {
 // paints, so nothing read moves. Leaving the end and coming back are told
 // to the client ("hold-away"/"hold-end": the "N new" pill).
 let held = null;
+// until when an upward gesture keeps the end from catching the view (leaveEnd)
+let leavingEndUntil = 0;
 let away = "";
 // where the last of our own corrections left the timeline: its scroll
 // event is ours, not the person's, and keeps the offset held (no drift)
@@ -505,7 +507,9 @@ function holdRead(tl) {
   fixedAt = -1;
   // on an earlier page (thin-host's page/newer) the page's end is not the
   // thread's: it holds like anywhere else, and newer rows come by scrolling
-  held = holdEnd(tl) && !(thin && thin.atNewest?.() === false) ? null : anchorOf(tl);
+  // while an upward gesture lasts the end does not catch the view again:
+  // a smooth scroll's first frames are still within the end's few px
+  held = holdEnd(tl) && performance.now() > leavingEndUntil && !(thin && thin.atNewest?.() === false) ? null : anchorOf(tl);
   holdSay(held ? App.sel(ui) : "");
 }
 const holdSizes = typeof ResizeObserver === "function" ? new ResizeObserver(() => holdFix(document.getElementById("timeline"))) : null;
@@ -1438,8 +1442,10 @@ function earlierCheck(tl) {
   const mark = tl.querySelector("[data-earlier]");
   if (!mark || tl.scrollTop > tl.clientHeight * 2) return;
   earlierAsked = true;
+  // a page already on its way refuses the request: nothing was asked, so
+  // the gesture still stands and the next check asks again
+  if (dispatch("earlier", mark.getAttribute("data-earlier") ?? "") === false) { earlierAsked = false;return; }
   olderGestureUntil = 0;
-  dispatch("earlier", mark.getAttribute("data-earlier") ?? "");
 }
 document.addEventListener("scroll", (e) => earlierCheck(e.target), true);
 // and back down: on an earlier page, within two screens of its bottom after
@@ -1452,11 +1458,24 @@ function laterCheck(tl) {
   if (laterAsked || !(tl instanceof Element) || tl.id !== "timeline") return;
   if (tl.scrollHeight - tl.scrollTop - tl.clientHeight > tl.clientHeight * 2) return;
   laterAsked = true;
+  if (!thin.newer()) { laterAsked = false;return; }
   newerGestureUntil = 0;
-  thin.newer();
 }
 document.addEventListener("scroll", (e) => laterCheck(e.target), true);
 let olderGestureUntil = 0, olderTouchY = null;
+// An upward gesture leaves the end at once. Smooth scrolling (the desktop
+// window's) moves a few px in its first frame, still "at the end", and a
+// streamed reply's render then put the view back at the end, cancelling the
+// scroll: the first notch up did nothing while an agent worked.
+function leaveEnd(tl) {
+  if (!tl) return;
+  leavingEndUntil = performance.now() + 700;
+  if (held || (focusedNode && !frontendNode)) return;
+  if (tl.scrollHeight <= tl.clientHeight + 2 || tl.scrollTop <= 0) return;
+  held = anchorOf(tl);
+  heldSize = holdSize(tl);
+  holdSay(App.sel(ui));
+}
 function noteOlderGesture(e) {
   if (!e.isTrusted) return;
   const tl = e.target.closest?.("#timeline");
@@ -1478,8 +1497,17 @@ function noteOlderGesture(e) {
   // the latest gesture's way wins: a swipe down right after one up must not
   // still ask for the older page (and the other way round)
   if (older && !newer) { olderGestureUntil = performance.now() + 1200;newerGestureUntil = 0; }
-  if (newer && !older) { newerGestureUntil = performance.now() + 1200;olderGestureUntil = 0; }
+  if (newer && !older) { newerGestureUntil = performance.now() + 1200;olderGestureUntil = 0;leavingEndUntil = 0; }
+  if (older && !newer && e.type !== "pointerdown") leaveEnd(tl || document.getElementById("timeline"));
   if (older && newer) { olderGestureUntil = newerGestureUntil = performance.now() + 1200; }
+  // A timeline already at its top or bottom does not scroll, so no scroll
+  // event comes to ask for the next page: the gesture asks itself. A page
+  // of folded tool calls is barely a screen, so this is the common case.
+  if (older || newer) requestAnimationFrame(() => {
+    const now = document.getElementById("timeline");
+    earlierCheck(now);
+    laterCheck(now);
+  });
 }
 for (const event of ["wheel", "touchstart", "touchmove", "pointerdown", "keydown"]) document.addEventListener(event, noteOlderGesture, { capture: true, passive: true });
 

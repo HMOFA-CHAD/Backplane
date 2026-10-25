@@ -67,6 +67,11 @@ test('scrolling pages: older pages are retraced back down to the newest, and a s
  f.host.newer();assert.equal(f.sent.at(-1).p.cursor,'');assert.equal(f.host.atNewest(),true);f.host.receive(f.reply(f.sent.at(-1)));
  f.host.page();f.host.receive(f.reply(f.sent.at(-1)));assert.equal(f.host.atNewest(),false);f.host.request('send','');assert.equal(f.host.atNewest(),true);
 });
+test('a send drops the older page still on its way: its late reply never puts the reader back on it',async()=>{
+ const f=await fixture();f.open();f.host.page();const pg=f.sent.at(-1);f.host.request('send','');const count=f.views.length;
+ f.host.receive(f.reply(pg));assert.equal(f.views.length,count,'the old page is not shown');assert.equal(f.host.atNewest(),true);assert.equal(f.host.paging,null);
+ assert(f.sent.some(x=>x.m==='view.action'),'the send still goes');
+});
 test('page and search are explicit requests; ordinary open and selected updates never fetch older pages',async()=>{
  const f=await fixture();f.open();assert.equal(f.sent.length,1);f.host.page();assert.equal(f.sent.at(-1).m,'view.page');assert.equal(f.sent.at(-1).p.cursor,'older-bound-to-A');
  f.host.search('日本語 query');assert.equal(f.sent.at(-1).m,'view.search');assert.equal(f.sent.at(-1).p.query,'日本語 query');

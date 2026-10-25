@@ -50,7 +50,7 @@ export function presentationTarget(session) {
 // it alone validates transport identity, generations, targets and RPC ids.
 export class ThinHost {
   constructor(api, Views, next) {
-    this.api = api;this.hub = api.hub;this.ready = false;this.window = null;this.cursor = '';this.back = [];this.paging = null;
+    this.api = api;this.hub = api.hub;this.ready = false;this.window = null;this.cursor = '';this.back = [];this.paging = null;this.overtaken = new Set();
     this.session = clone(api.session());
     this.validatePresentation = api.validatePresentation || validatePresentation;
     const rid = this.session.rid;
@@ -146,7 +146,10 @@ export class ThinHost {
     if (!this.ready) { settled?.(false);this.api.blocked();return true; }
     // a message sent from an earlier page shows the newest (the hub's
     // Hub.thin.act moves the page there too)
-    if (action === 'send' || action === 'send-alt') { this.cursor = '';this.back = [];this.paging = null; }
+    // A page still on its way is dropped when it comes: shown after the
+    // newest, it put the reader back on the old page and the message just
+    // sent was nowhere to be seen.
+    if (action === 'send' || action === 'send-alt') { if (this.paging) this.overtaken.add(this.paging.id);this.cursor = '';this.back = [];this.paging = null; }
     if (action === 'bfield') {
       const split = value.indexOf('\u001f');
       if (split <= 0) { settled?.(false);this.api.blocked();return false; }
@@ -372,6 +375,7 @@ export class ThinHost {
     if (this.active === envelope.id) this.active = null;
     const paged = this.paging?.id === envelope.id ? this.paging : null;
     if (paged) this.paging = null;
+    if (this.overtaken.delete(envelope.id)) { this.pump(true);return true; }
     if (paged && result.failed) { this.cursor = paged.undo.cursor;this.back = paged.undo.back; }
     if (result.failed) {
       metadata?.operation?.settled?.(false);
