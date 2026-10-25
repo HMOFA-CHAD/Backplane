@@ -7183,11 +7183,20 @@ def Bots.bfield.proj(proj: Bool, u: Ui) -> Ui:
     case False{}:
       u
 
+# (the secret box's value field, "sval", is never kept: an older phone app
+# that sends its keystrokes as a form field leaves nothing in this state)
+def Bots.bfield.keep(vault: Bool, +k: String, t: List<&2, String>, u: Ui) -> Ui:
+  match vault:
+    case True{}:
+      u
+    case False{}:
+      Bots.bfield.proj(String.eq(k, "proj"), Ui.scratch_set(u, "@f." ++ k, String.join(t, "\u{1f}")))
+
 # "name\u001ftext": a form field
 def Bots.bfield.k(ps: List<&2, String>, u: Ui) -> Ui:
   match ps:
     case +k <> t:
-      Bots.bfield.proj(String.eq(k, "proj"), Ui.scratch_set(u, "@f." ++ k, String.join(t, "\u{1f}")))
+      Bots.bfield.keep(String.eq(k, "sval"), k, t, u)
     case Nil{}:
       u
 
@@ -9002,6 +9011,11 @@ def Sbox.del.k(again: Bool, +u: Ui, +name: String) -> Act:
 def Sbox.dismiss(+u: Ui, +name: String) -> Act:
   Ui.rpc(Sbox.shut.u(u), "secret.dismiss", [J.KV{"name", J.Str{name}}])
 
+# (phones: a request's Set opens the box in Settings, where the masked
+# field is)
+def Sbox.open.set(+u: Ui, +name: String) -> Act:
+  Sbox.list(Ui.flag_on(Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(u, "@sbox", Bool.pick(String, String.is_empty(name), "+", name)), "@sbox.th", ""), "@sbox.err", ""), "@f.sname", name), "settings"))
+
 # "secret-" actions: open (value: a name or ""), open-here (in the
 # selected thread), shut, sent, err (value: why), del (asks once), dismiss,
 # list
@@ -9021,11 +9035,13 @@ def Sbox.act.k(i: Nat, +u: Ui, +value: String) -> Act:
       Sbox.del.k(String.eq(Ui.scratch(u, "@sbox.rm"), value), u, value)
     case 6n:
       Sbox.dismiss(u, value)
+    case 8n:
+      Sbox.open.set(u, value)
     case _:
       Sbox.list(u)
 
 def Sbox.act(+u: Ui, +action: String, +value: String) -> Act:
-  Sbox.act.k(C.Codec.pos(["secret-open", "secret-open-here", "secret-shut", "secret-sent", "secret-err", "secret-del", "secret-dismiss", "secret-list"], action), u, value)
+  Sbox.act.k(C.Codec.pos(["secret-open", "secret-open-here", "secret-shut", "secret-sent", "secret-err", "secret-del", "secret-dismiss", "secret-list", "secret-open-set"], action), u, value)
 
 # Settings' rows: the vault's metadata as the hub answered it
 def Sbox.metas(+u: Ui) -> List<&2, SEC.SecMeta>:

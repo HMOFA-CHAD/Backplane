@@ -1043,7 +1043,8 @@ fun LazyListScope.hubSettingsRows(m: AppModel, rows: List<SetRow>, notify: Boole
             if (r.chart.isNotEmpty()) UsageDayChart(r.chart)
             for (f in r.fields) {
                 var t by remember(r.label, f.name) { mutableStateOf(f.value) }
-                OutlinedTextField(t, { t = it; m.field(f.name, it) }, Modifier.fillMaxWidth(), singleLine = true, label = { Text(f.hint) },
+                // the secret box's value stays in the app until Save (Core.vaultText)
+                OutlinedTextField(t, { t = it; if (f.vault) m.vault(it) else m.field(f.name, it) }, Modifier.fillMaxWidth(), singleLine = true, label = { Text(f.hint) },
                     visualTransformation = if (f.secret) PasswordVisualTransformation() else VisualTransformation.None,
                     keyboardOptions = KeyboardOptions(keyboardType = if (f.secret) KeyboardType.Password else KeyboardType.Ascii, autoCorrectEnabled = false))
             }

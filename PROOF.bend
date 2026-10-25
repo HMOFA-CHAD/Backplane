@@ -13202,3 +13202,5 @@ def Laws.sec_json_total(v, j, h):
   SECPROOF.secp_json_total(v, j, h)
 def Laws.sec_handle_shape(n, b):
   SECPROOF.secp_handle_shape(n, b)
+def Laws.sec_changes_empty(cs):
+  {==}

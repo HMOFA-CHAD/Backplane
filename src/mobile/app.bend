@@ -110,6 +110,12 @@ def cbor_words() -> List<&2, String>:
 
 # a message for the hub (a Send command's JSON text) as the base64 of the
 # CBOR frame the app sends
+# the secret box's Save (bridge.js's Backplane.secret): "<name>\u001f
+# <purpose>\u001f<thread>\u001f<value>" to {"rpc": the secret.set request}
+# or {"error"}
+def secret_req(+packed: String) -> String:
+  U.Sbox.req(packed)
+
 def wire(text: String) -> String:
   SH.B64.encode(CB.Cbor.encode(Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{})))
 

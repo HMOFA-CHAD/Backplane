@@ -336,6 +336,9 @@ class Engine(private val app: android.content.Context, source: () -> String, pri
     }
     suspend fun act(action: String, value: String) = out("Backplane.act(${q(action)}, ${q(value)})", person = true)
     suspend fun quiet(action: String, value: String) = out("Backplane.quiet(${q(action)}, ${q(value)})", screen = false, person = true)
+    // the secret box's Save: the value goes in one request built by Bend
+    // (bridge.js's Backplane.secret), never as an action or a form field
+    suspend fun secret(packed: String) = out("Backplane.secret(${q(packed)})", person = true)
     suspend fun online(key: String, b: Boolean, epoch: String = "") = out("Backplane.online(${q(key)}, $b, ${q(epoch)})")
     // a hub marked offline with no screen of its own (after load())
     suspend fun offline(key: String) = out("Backplane.online(${q(key)}, false, true)", screen = false)

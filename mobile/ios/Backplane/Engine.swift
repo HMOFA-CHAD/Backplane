@@ -197,6 +197,9 @@ final class Engine: @unchecked Sendable {
         return answer
     }
     func quiet(_ action: String, _ value: String) async -> Out? { await out("quiet", [action, value], screen: false, person: true) }
+    // the secret box's Save: the value goes in one request built by Bend
+    // (bridge.js's Backplane.secret), never as an action or a form field
+    func secret(_ packed: String) async -> Out? { await out("secret", [packed], person: true) }
     func online(_ key: String, _ b: Bool, epoch: String = "") async -> Out? { await out("online", [key, b, false, epoch], person: true) }
     // a hub marked offline with no screen of its own (after load())
     func offline(_ key: String) async -> Out? { await out("online", [key, false, true], screen: false) }

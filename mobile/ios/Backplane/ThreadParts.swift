@@ -996,7 +996,11 @@ private struct SetFieldView: View {
 
     var body: some View {
         Group {
-            if field.secret {
+            if field.vault {
+                // the secret box: what is typed stays in the app until Save
+                SecureField(field.hint, text: $text)
+                    .autocorrectionDisabled()
+            } else if field.secret {
                 SecureField(field.hint, text: $text)
             } else {
                 TextField(field.hint, text: $text)
@@ -1005,7 +1009,9 @@ private struct SetFieldView: View {
             }
         }
         .onAppear { text = field.value }
-        .onChange(of: text) { _, t in model.field(field.name, t) }
+        .onChange(of: text) { _, t in
+            if field.vault { model.vaultText = t } else { model.field(field.name, t) }
+        }
     }
 }
 

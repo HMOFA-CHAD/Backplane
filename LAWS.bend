@@ -12242,3 +12242,9 @@ law sec_handle_shape:
   for +n: String
   for b: Bool
   {SEC.Sec.handle(n, b) == J.Obj{J.Field{"secret", J.Str{n}, J.Field{"set", J.Flag{b}, J.End{}}}} : J.Json}
+
+# with nothing stored, the commit's masking passes a step's changes through
+# unencoded (hub.bend's Secret.changes, server.bend's Hub.step.go)
+law sec_changes_empty:
+  for cs: List<&2, M.Change>
+  {H.Secret.changes(SEC.Vault{[]}, cs) == cs : List<&2, M.Change>}
