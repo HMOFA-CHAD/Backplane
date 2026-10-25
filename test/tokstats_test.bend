@@ -71,8 +71,8 @@ def main() -> IO(Unit):
       "Last turn\n  Model: claude · claude-haiku-4-5-20251001\n  Input: 10\n  Cache read: 13,803\n  Cache write: 0\n  Output: 40\n  Cost: not reported\n  Turn time: 9.0 s\n")
     C.Check.str("secs", UZ.Ts.secs(1366n) ++ " " ++ UZ.Ts.secs(125000n), "1.3 s 2m 05s")
     +c2 : M.State = then(s2, [M.UsageSet{"t1", 62000n, 200000n, 5n}])
-    C.Check.str("chip: the context held", UZ.Ts.chip(c2, "t1"), "62k · 31%")
-    C.Check.str("chip: before a reading, the thread's tokens", UZ.Ts.chip(s2, "t1"), "27k tok")
+    C.Check.str("chip: the thread's tokens, their cost and the context held", UZ.Ts.chip(c2, "t1"), "27k tok · $0.0225 · 31%")
+    C.Check.str("chip: before a context reading, the thread's tokens and cost", UZ.Ts.chip(s2, "t1"), "27k tok · $0.0225")
     C.Check.str("chip: nothing yet", UZ.Ts.chip(s0, "t2"), "")
     C.Check.str("panel, claude", show(UZ.Ts.sections(c2, "t1", "claude")),
       "Context\n  Held now: 62,000 of 200,000 (31%)\n  Room left: 138,000\n" ++

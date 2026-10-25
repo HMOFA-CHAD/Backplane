@@ -753,15 +753,19 @@ def Ts.if(keep: Bool, r: TsRow) -> List<&2, TsRow>:
     case False{}:
       Nil{}
 
-# the chip's text: the context held ("62k · 31%"), else the thread's tokens
-# ("1.2M tok"), else nothing (the chip shows its icon alone)
-def Ts.chip.t(+tv: String) -> String:
-  Bool.pick(String, Nat.is_eq(Tk.part(tv, 0n), 0n), "",
-    Use.tokens(Nat.add(Nat.add(Tk.part(tv, 1n), Tk.part(tv, 2n)), Nat.add(Tk.part(tv, 3n), Tk.part(tv, 4n)))) ++ " tok")
+# the chip's text: the thread's tokens so far ("1.2M tok"), their cost when
+# its provider gave one ("$0.4210"), and the context held ("31%", or "62k
+# ctx" while the window is unknown); nothing before any of them (the chip
+# shows its icon alone)
+def Ts.chip.parts(+tv: String, +used: Nat, +window: Nat) -> List<&2, String>:
+  List.concat(&2, String, [
+    Bool.pick(List<&2, String>, Nat.is_eq(Tk.part(tv, 0n), 0n), Nil{},
+      [Use.tokens(Nat.add(Nat.add(Tk.part(tv, 1n), Tk.part(tv, 2n)), Nat.add(Tk.part(tv, 3n), Tk.part(tv, 4n)))) ++ " tok"]),
+    Bool.pick(List<&2, String>, Nat.is_eq(Tk.part(tv, 7n), 0n), Nil{}, [Tk.usd(Tk.part(tv, 6n))]),
+    Bool.pick(List<&2, String>, Nat.is_eq(used, 0n), Nil{}, [Bool.pick(String, Nat.is_eq(window, 0n), Use.tokens(used) ++ " ctx", Ts.pct(used, window))])])
 
 def Ts.chip.k(+used: Nat, +window: Nat, +tv: String) -> String:
-  Bool.pick(String, Nat.is_eq(used, 0n), Ts.chip.t(tv),
-    Use.tokens(used) ++ Bool.pick(String, Nat.is_eq(window, 0n), "", " · " ++ Ts.pct(used, window)))
+  String.join(Ts.chip.parts(tv, used, window), " · ")
 
 def Ts.chip(+st: M.State, +th: String) -> String:
   Ts.chip.k(M.Usage.used(M.Setting.get(st, M.Usage.key(th), "")), M.Usage.window(M.Setting.get(st, M.Usage.key(th), "")),
