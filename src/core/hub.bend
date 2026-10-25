@@ -5889,12 +5889,18 @@ def Wake.or(+a: String, +b: String) -> String:
 def Wake.title(+s: M.State, +thread: String, +o: J.Json) -> String:
   Wake.or(J.Json.get_str(o, "summary", ""), Wake.or(Wake.row(M.Bg.of(s, thread), J.Json.get_str(o, "task_id", "")), "background work"))
 
+# how the work that woke it ended, when not by finishing: a subagent
+# killed by a Stop or an interrupt woke the agent too, and "Woken: <task>"
+# alone read as that task done (law wake_says_killed)
+def Wake.how(+status: String) -> String:
+  Bool.pick(String, Bool.or(String.is_empty(status), String.eq(status, "completed")), "", " (" ++ status ++ ")")
+
 def Wake.text(lc: Bool, +s: M.State, +thread: String, +o: J.Json) -> String:
   match lc:
     case True{}:
       "Resumed after Stop"
     case False{}:
-      "Woken: " ++ Wake.title(s, thread, o)
+      "Woken: " ++ Wake.title(s, thread, o) ++ Wake.how(J.Json.get_str(o, "status", ""))
 
 # a turn Claude started by itself runs where the person sees it
 def Wake.start(+s: M.State, +thread: String, +now: Nat, +text: String) -> List<&2, M.Change>:

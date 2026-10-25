@@ -28,7 +28,7 @@ def Xref.pick(ins: List<&2, FR.In>, +m: String) -> Maybe<&2, FR.In>:
 
 # a mirror as a read model, named as clients name it
 def Xref.state(+i: FR.In) -> M.State:
-  FR.Fr.mark(FR.Fr.apply(FR.In.items(i), FR.In.link(i), M.State.empty()), FR.In.link(i), FR.In.name.of(i), FR.In.away(i))
+  FR.Fr.mark(FR.In.view(i), FR.In.link(i), FR.In.name.of(i), FR.In.away(i))
 
 def Xref.threads(s: M.State) -> List<&2, M.Thread>:
   match s:

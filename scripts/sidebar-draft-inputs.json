@@ -35,8 +35,9 @@
     "src/core/diff.bend": "eb7b53917e3b587cb423379946a9b8da8035c8a39b8b6d8e4f3a819b25a7497d",
     "src/core/emb.bend": "48012888273e4de02f0618ca1f308fc6d87e42499aa1dafe504837c2b14e2904",
     "src/core/fallback.bend": "b8604144a115b0de6f43af2b294f7cf09f6cabb882afb962c13829a21ea50601",
-    "src/core/far.bend": "2cf9714da0292476f37b7d663be9512db7d0d0e8c86c9d4e7d98ac58062cbc13",
+    "src/core/far.bend": "98625de0b822f4dd5c077c16943d74176363a5fe1472789ee6cee92ec8f690e5",
     "src/core/farlive.bend": "0fec3c222121256751cf620ad82248a178a7f54581c4f20570fdce2fa0b2e25c",
+    "src/core/farsnap.bend": "7a07c3774070be7443dc5c0a9143f496767147cf0caac9fd916e3255466c005b",
     "src/core/fm.bend": "a25fe30ac6ac70ca63add2b335aaf49d38b5dba5994941022cd068eb3392913d",
     "src/core/fold.bend": "82a1975d50651cfc8da972150cf092c1bda13946b24e10adb634ee6c7e0c47ee",
     "src/core/fuzzy.bend": "23098d1fc905bec7556734757cec8bfee65bc7fdbe9e317742e6c86f2e2f5e10",
@@ -46,6 +47,7 @@
     "src/core/handoff.bend": "690d78b37f32187a3356d3df2ccb90aafa6d8b1f7234a5583dcbd55baadb55e4",
     "src/core/hier.bend": "d1a478aa9e244d2de67e97a5bb2e515dfb1f4f699a43446fe403b986b2cac743",
     "src/core/hist.bend": "fac0d2e2231ad699476497c173d4d97b78551c3c65c207b974721f956105b5f2",
+    "src/core/hot.bend": "d1d28df84cf63261cb39a5e69d4fe84228933901e5030d730454f2c27cc270d3",
     "src/core/i18n.bend": "92cae5df736659757d9a2a4cf44931b34f618220b78440711a4afecb2cf8d867",
     "src/core/icons.bend": "eb93494df6a91897d70507cebe3e6f4a41968bfd28b9c2c7aa583d209f37b193",
     "src/core/images.bend": "a54d91708c69be1453dc434e9166d16b2398c96745125f6f5c31cbc3cd33d966",
@@ -160,7 +162,19 @@
       "scope": "Only usage.bend's Ts.chip.* (the composer's opt-in token chip text: thread tokens, cost, context) changed; it is read only by view.bend's composer (View.tok.chip), never by the sidebar renderer or any draft reader. Reviewed sidebar source-reference graph unchanged; 24 full-output draft/IME/search/info fallback cases passed on current source.",
       "fullOutputCheck": "test/sidebar_draft_image_test.bend",
       "assertions": 24
+    },
+    "farPairStatus": {
+      "base": "1e170be845c4152954c4c4e1b51259cd315921dc",
+      "inputs": {
+        "far": "1ebe3c4bd99915f25fb7cc4e3ddc156da3c89f61",
+        "pairing": "37260b9aa5111003d4e074a19ed4926334a175cb",
+        "backgroundStatus": "815477f8ff4d4542934608149200cbd26c1cf831",
+        "swiftOnlyMerge": "1e170be845c4152954c4c4e1b51259cd315921dc"
+      },
+      "scope": "F1 reintroduced; source-reference sidebar graph860 unchanged. Current main/full picture drafts and every unknown @ key retained.24 full-output draft/IME/search/info cases passed. Pairing and MCP work-status do not add sidebar draft readers. Conservative source/import guard remains fail-closed.",
+      "fullOutputCheck": "test/sidebar_draft_image_test.bend",
+      "assertions": 24
     }
   },
-  "reviewNote": "Current-main cat/Secret/terminal fallback excludes unqualified F1 far-mirror. Restored far/fmcp/xref exactly to main; removed only hot/farsnap from conservative import closure. Unknown @ keys, main/full-picture freshness unchanged; token chip composer-only review retained. Renewed125-source fail-closed guard; affected full-output/server qualification required separately."
+  "reviewNote": "F1+reachable-pairing+background-status: reviewed127-file module/import closure, unchanged860 reachable sidebar functions,24 actual full-output dependency cases passed; all unknown @ keys and main/full-picture draft freshness retained."
 }
