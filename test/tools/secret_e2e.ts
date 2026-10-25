@@ -14,6 +14,8 @@
 //      it. After a restart on the same home (now known at the probe, the
 //      cache read before the vault opens), the info, the replay and the
 //      cache still do not.
+//   5. an old unmasked models.cache written before boot: masked before
+//      /hello answers, and the first join's info carries it masked.
 //
 //   bun test/tools/secret_e2e.ts [BINARY] [WIREDIR]
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -168,6 +170,22 @@ try {
   await sleep(1500);
   check(!c.frames.some((f) => f.includes(VALUE)), "nor a reconnect after the restart's probe");
   check(!read(join(home, "models.cache")).includes(VALUE), "nor the models cache");
+
+  // 5. an old, unmasked models cache on disk (an older hub, or a probe
+  // from before the value was stored): masked before the hub serves
+  // anything, the very first join included
+  c.ws.close();
+  process.kill(proc.pid, "SIGKILL");
+  await proc.exited;
+  writeFileSync(join(home, "models.cache"), JSON.stringify({ about: { claude: { cli: `old (build ${VALUE})` } } }) + "\n" + `old text ${VALUE}\n`);
+  proc = spawnHub();
+  await ready();
+  check(!read(join(home, "models.cache")).includes(VALUE), "an old unmasked cache is masked before the hub answers /hello");
+  c = await connect();
+  await sleep(300);
+  check(c.frames.length > 0 && !c.frames.some((f) => f.includes(VALUE)), "the first join after it holds the value nowhere");
+  // (the start's probe may already have replaced the old list)
+  check(c.frames.some((f) => f.includes("old (build ") || f.includes("9.9.9 (build ")), "and its info carries the models, masked");
 } finally {
   process.kill(proc.pid, "SIGKILL");
   await proc.exited;

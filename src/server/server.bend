@@ -11480,11 +11480,15 @@ def Hub.thin.render.full(h: Hub, +client: U32, +o: J.Json, +c: Client, +now: Nat
 
 # a view.update whose render memo still holds (thin-actor.bend's
 # Memo.reply: only the live row can have changed) answers with it spliced
-# (thin-splice.bend); anything else renders in full and is remembered
+# (thin-splice.bend); anything else renders in full and is remembered. A
+# memo hit is masked with the vault as it is now: its key (seq, raw info
+# key) does not move when a value is saved with no request waiting, so a
+# render from before the save could otherwise go out again (a clean reply
+# comes back from Sec.json as it was)
 def Hub.thin.render.memo(+m: Maybe<&2, J.Json>, h: Hub, +client: U32, +o: J.Json, +c: Client, +now: Nat, +context: ThinContext, +anchor: Nat, +p: J.Json, +key: String, +ms: Nat) -> IO(Hub):
   match m:
     case Some{+res}:
-      Hub.thin.respond(h, client, o, res, c, context, now)
+      IO.bind(SEC.Vault, Hub, VX.Vx.vault(), v => Hub.thin.respond(h, client, o, SEC.Sec.json(v, res), c, context, now))
     case None{}:
       Hub.thin.render.full(h, client, o, c, now, context, anchor, p, key, ms)
 
@@ -16744,6 +16748,14 @@ def Main.boot(cfg: Cfg, need: Bool, front: Chan(Msg) -> IO(Unit)) -> IO(Unit):
         f0 : Result<&1, &1, U32 & String, File> <- File.open(Store.path(home), "a")
         f : Result<&1, &1, U32 & String, File> <- Main.torn(f0, torn)
         tok : String <- Token.load(home)
+        # the secret box's vault opens before anything can be served, and
+        # the models cache (untrusted probe output, perhaps written before a
+        # value was stored or by an older hub) is masked again before it is
+        # read into the config (Models.cache.remask; Hub.recover opens the
+        # vault again, idempotent)
+        vst : String <- VX.VaultFx.open(home)
+        Log.info("vault " ++ vst)
+        Models.cache.remask(home)
         +mc : String <- Files.text(Models.cache(home))
         +bc : String <- BN.Bf.text(BN.Bn.cache(home))
         exe : String <- H.Sys.exe_dir()
