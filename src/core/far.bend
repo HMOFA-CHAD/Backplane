@@ -4,7 +4,6 @@ import ./model.bend as M
 import ./codec.bend as C
 import ./bot.bend as BT
 import ./store.bend as ST
-import ./farsnap.bend as FS
 
 # Threads that live on a linked machine (docs/bots.md, "Threads elsewhere").
 #
@@ -944,143 +943,46 @@ def Fr.recv(+s: M.State, +link: String, +epoch: String, +since: Nat, +to: Nat, x
 # whether it answered last time (away: shown, stale, until it does).
 
 type In is Data:
-  In{link: String, name: String, head: Nat, items: List<&2, Item>, away: Bool, epoch: String, tail: Nat, view: M.State}
+  In{link: String, name: String, head: Nat, items: List<&2, Item>, away: Bool, epoch: String}
 
 def In.new(+link: String, +name: String) -> In:
-  In{link, name, 0n, Nil{}, True{}, "", 0n, M.State.empty()}
+  In{link, name, 0n, Nil{}, True{}, ""}
 
 def In.link(i: In) -> String:
   match i:
-    case In{l, _, _, _, _, _, _, _}:
+    case In{l, _, _, _, _, _}:
       l
 
 def In.head(i: In) -> Nat:
   match i:
-    case In{_, _, h, _, _, _, _, _}:
+    case In{_, _, h, _, _, _}:
       h
 
 def In.away(i: In) -> Bool:
   match i:
-    case In{_, _, _, _, a, _, _, _}:
+    case In{_, _, _, _, a, _}:
       a
 
 def In.away.set(i: In, a: Bool) -> In:
   match i:
-    case In{l, n, h, xs, _, e, tl, v}:
-      In{l, n, h, xs, a, e, tl, v}
+    case In{l, n, h, xs, _, e}:
+      In{l, n, h, xs, a, e}
 
 def In.name.set(i: In, +nm: String) -> In:
   match i:
-    case In{l, n, h, xs, a, e, tl, v}:
-      In{l, Bool.pick(String, String.is_empty(nm), n, nm), h, xs, a, e, tl, v}
-
-# Compaction: a mirror keeps a snapshot of what its machine has live
-# (farsnap.bend) and the items that came after it. Once more than
-# In.tail.max() came, they are folded (in that machine's ids) and the
-# snapshot made again, so a mirror holds what that machine shows live and
-# never its history (law far_compact_live). The items keep their numbers'
-# order: the snapshot's end at the mirror's head.
-def In.tail.max() -> Nat:
-  2000n
-
-def Fr.items.fold.k(m: Maybe<&2, M.Change>, s: M.State) -> M.State:
-  match m:
-    case Some{c}:
-      M.State.apply(s, c)
-    case None{}:
-      s
-
-# items folded as their own machine names things
-def Fr.items.fold(xs: List<&2, Item>, s: M.State) -> M.State:
-  match xs:
-    case Nil{}:
-      s
-    case Item{_, +c} <> t:
-      Fr.items.fold(t, Fr.items.fold.k(C.Change.decode(c), s))
-
-def Fr.snap.go(cs: List<&2, M.Change>, +n: Nat, acc: List<&2, Item>) -> List<&2, Item>:
-  match cs:
-    case Nil{}:
-      List.reverse(&2, Item, acc)
-    case c <> t:
-      Fr.snap.go(t, 1n+n, Item{1n+n, C.Change.wire(c)} <> acc)
-
-# a snapshot's changes as items ending at `head` (from 1 when there are
-# more of them than numbers below it)
-def Fr.snap.items(+cs: List<&2, M.Change>, +head: Nat) -> List<&2, Item>:
-  Fr.snap.go(cs, Nat.sub(head, List.length(&2, M.Change, cs)), Nil{})
-
-def In.compacted(+l: String, n: String, +h: Nat, +ys: List<&2, Item>, a: Bool, e: String) -> In:
-  In{l, n, h, ys, a, e, 0n, Fr.apply(ys, l, M.State.empty())}
-
-# (a snapshot longer than the head has no numbers of its own below it: the
-# mirror stays as it is and tries again after another In.tail.max() items)
-def In.compact.k(fits: Bool, +l: String, n: String, +h: Nat, cs: List<&2, M.Change>, xs: List<&2, Item>, a: Bool, e: String, v: M.State) -> In:
-  match fits:
-    case True{}:
-      In.compacted(l, n, h, Fr.snap.items(cs, h), a, e)
-    case False{}:
-      In{l, n, h, xs, a, e, 0n, v}
-
-def In.compact(i: In) -> In:
-  match i:
-    case In{+l, n, +h, +xs, a, e, _, v}:
-      +cs = FS.Snap.of(Fr.items.fold(xs, M.State.empty()))
-      In.compact.k(Nat.is_le(List.length(&2, M.Change, cs), h), l, n, h, cs, xs, a, e, v)
-
-# a mirror whose items are a demo machine's whole log (for laws)
-def Fr.demo.items(cs: List<&2, M.Change>, +n: Nat) -> List<&2, Item>:
-  match cs:
-    case Nil{}:
-      Nil{}
-    case c <> t:
-      Item{1n+n, C.Change.wire(c)} <> Fr.demo.items(t, 1n+n)
-
-def Fr.demo.in() -> In:
-  In{"p1", "desk", List.length(&2, M.Change, FS.Snap.demo.log()), Fr.demo.items(FS.Snap.demo.log(), 0n), False{}, "e1", 0n, Fr.apply(Fr.demo.items(FS.Snap.demo.log(), 0n), "p1", M.State.empty())}
-
-# what a folded mirror holds that a law compares: its threads and projects
-def Fr.view.threads(s: M.State) -> List<&2, M.Thread>:
-  match s:
-    case M.State{_, ts, _, _, _, _, _, _, _, _, _}:
-      Map.values(&2, M.Thread, ts)
-
-def Fr.view.projects(s: M.State) -> List<&2, M.Project>:
-  match s:
-    case M.State{ps, _, _, _, _, _, _, _, _, _, _}:
-      Map.values(&2, M.Project, ps)
-
-def In.tidy.k(over: Bool, i: In) -> In:
-  match over:
-    case True{}:
-      In.compact(i)
-    case False{}:
-      i
-
-def In.tail(i: In) -> Nat:
-  match i:
-    case In{_, _, _, _, _, _, tl, _}:
-      tl
-
-# compacted when the items since the last snapshot are too many
-def In.tidy(+i: In) -> In:
-  In.tidy.k(Nat.is_gt(In.tail(i), In.tail.max()), i)
+    case In{l, n, h, xs, a, e}:
+      In{l, Bool.pick(String, String.is_empty(nm), n, nm), h, xs, a, e}
 
 def In.put.k(g: Got, i: In) -> In:
   match g i:
     case Got{_, _, True{}} _:
       i
-    case Got{h, +ys, False{}} In{+l, n, _, xs, _, e, tl, v}:
-      In.tidy(In{l, n, h, List.append(&2, Item, xs, ys), False{}, e, Nat.add(tl, List.length(&2, Item, ys)), Fr.apply(ys, l, v)})
+    case Got{h, ys, False{}} In{l, n, _, xs, _, e}:
+      In{l, n, h, List.append(&2, Item, xs, ys), False{}, e}
 
 # a batch into the mirror (it answered, so it is here)
 def In.put(+i: In, +since: Nat, +to: Nat, xs: List<&2, Item>) -> In:
   In.put.k(Fr.take(In.head(i), since, to, xs), i)
-
-# the demo log taken by a mirror in two batches (for laws)
-def Fr.demo.put() -> In:
-  In.put(In.put(In.new("p1", "desk"), 0n, 20n, List.take(&2, Item, Fr.demo.items(FS.Snap.demo.log(), 0n), 20n)),
-    20n, List.length(&2, M.Change, FS.Snap.demo.log()), List.drop(&2, Item, Fr.demo.items(FS.Snap.demo.log(), 0n), 20n))
 
 # what a batch brings that the mirror lacks (Nil on a gap)
 def In.got(+i: In, +since: Nat, +to: Nat, xs: List<&2, Item>) -> Got:
@@ -1100,13 +1002,13 @@ def Fr.epoch.fields(o: J.Json) -> J.Json:
 
 def In.epoch(i: In) -> String:
   match i:
-    case In{_, _, _, _, _, e, _, _}:
+    case In{_, _, _, _, _, e}:
       e
 
 def In.epoch.set(i: In, e: String) -> In:
   match i:
-    case In{l, n, h, xs, a, _, tl, v}:
-      In{l, n, h, xs, a, e, tl, v}
+    case In{l, n, h, xs, a, _}:
+      In{l, n, h, xs, a, e}
 
 # Optional on the wire: old clients still decode the same far message.
 def Fr.with.epoch(+text: String, epoch: String) -> String:
@@ -1135,7 +1037,7 @@ def Fr.msg.epoch(+link: String, +name: String, away: Bool, +since: Nat, +head: N
 # all a mirror holds, for a client that just joined
 def In.msg(i: In) -> String:
   match i:
-    case In{+l, +n, +h, xs, a, +e, _, _}:
+    case In{+l, +n, +h, xs, a, +e}:
       Fr.msg.epoch(l, n, a, 0n, h, xs, e)
 
 # A mirror for a client that is joining goes a chunk at a time (at most
@@ -1197,13 +1099,13 @@ def Fr.over(xs: List<&2, Item>, +k: Nat) -> Bool:
 
 def In.chunk.k(i: In, +after: Nat, +ys: List<&2, Item>) -> FC:
   match i:
-    case In{+l, +nm, +h, _, a, +e, _, _}:
+    case In{+l, +nm, +h, _, a, +e}:
       FC.of(Bool.not(Fr.over(ys, In.most())), l, nm, a, h, after, List.take(&2, Item, ys, In.most()), e)
 
 # the next chunk of a mirror, after its item `after`
 def In.chunk(+i: In, +after: Nat) -> FC:
   match i:
-    case In{_, _, _, +xs, _, _, _, _}:
+    case In{_, _, _, +xs, _, _}:
       In.chunk.k(i, after, Fr.after(xs, after, Fr.first.gt(xs, after)))
 
 # Mirrors by link
@@ -1625,197 +1527,6 @@ def Page.json(p: Page) -> String:
     case Page{h, xs, m}:
       J.Json.show(J.Json.obj([J.KV{"head", J.Json.nat(h)}, J.KV{"items", J.Json.arr(Fr.items.json(xs))}, J.KV{"more", J.Json.bool(m)}]))
 
-# /far/log v3: an owner with a store (core/storedb.bend's far_line)
-# ----------------------------------------------------------------
-# A peer that says v 3 and holds none of this history (since 0, or another
-# epoch) is sent what is live here instead of the whole history: the
-# snapshot (farsnap.bend), only what Fr.shared lets go, numbered so it
-# ends at this log's length, in one page. Otherwise it is sent the shared
-# lines after `since`, read from the store's far_line and line tables a
-# page at a time, so the hub keeps no feed in memory. A snapshot never
-# goes into a log: it travels in this answer and in the mirror's file.
-# Old peers (no v) and a hub with no store keep the feed (Fh.feed).
-
-# rows read per page
-def Fr.v3.rows() -> Nat:
-  2000n
-
-# whether a pull gets the snapshot
-def Fr.v3.snap(+since: Nat, +peer: String, +own: String) -> Bool:
-  Bool.or(Nat.is_eq(since, 0n), Fr.epoch.changed(peer, own))
-
-def Fr.snap.keep.k(sh: Bool, c: M.Change, acc: List<&2, M.Change>) -> List<&2, M.Change>:
-  match sh:
-    case True{}:
-      c <> acc
-    case False{}:
-      acc
-
-def Fr.snap.keep(cs: List<&2, M.Change>, +s: M.State, acc: List<&2, M.Change>) -> List<&2, M.Change>:
-  match cs:
-    case Nil{}:
-      List.reverse(&2, M.Change, acc)
-    case +c <> t:
-      Fr.snap.keep(t, s, Fr.snap.keep.k(Fr.shared(s, c), c, acc))
-
-# the snapshot a peer is sent, oldest first (law far_v3_snap_shared)
-def Fr.snap.shared(+s: M.State) -> List<&2, M.Change>:
-  Fr.snap.keep(FS.Snap.of(s), s, Nil{})
-
-# a snapshot numbers each item below the log's length, so it must not be
-# longer (a tiny log with many live threads is sent its history instead)
-def Fr.snap.fits(+cs: List<&2, M.Change>, +seq: Nat) -> Bool:
-  Nat.is_le(List.length(&2, M.Change, cs), seq)
-
-# the snapshot as the one page of a pull
-def Fr.snap.page(+cs: List<&2, M.Change>, +seq: Nat) -> Page:
-  Page{seq, Fr.snap.items(cs, seq), False{}}
-
-# a row's number, its digits (no Nat.read: see AGENTS.md)
-def Fr.dig(skip: Bool, +c: U32, +acc: Nat) -> Nat:
-  match skip:
-    case True{}:
-      acc
-    case False{}:
-      Nat.add(Nat.mul(acc, 10n), U32.to_nat((c - 48 : U32)))
-
-def Fr.digits(s: String, +acc: Nat) -> Nat:
-  match s:
-    case SNil{}:
-      acc
-    case SCon{Chr{+c}, t}:
-      Fr.digits(t, Fr.dig(Bool.or(U32.is_lt(c, 48), U32.is_gt(c, 57)), c, acc))
-
-# A store row of a shared line: its number, where its text is in the log
-# (off, len: bytes), and its wire text when that is not the line's own
-type FarRow is Data:
-  FarRow{n: Nat, off: Nat, len: Nat, wire: String}
-
-def Fr.row.of(r: List<&2, String>) -> FarRow:
-  match r:
-    case n <> o <> l <> w <> _:
-      FarRow{Fr.digits(n, 0n), Fr.digits(o, 0n), Fr.digits(l, 0n), w}
-    case _:
-      FarRow{0n, 0n, 0n, ""}
-
-# the store's rows [seq, off, len, wire], oldest first
-def Fr.rows.of(rows: List<&2, List<&2, String>>, acc: List<&2, FarRow>) -> List<&2, FarRow>:
-  match rows:
-    case Nil{}:
-      List.reverse(&2, FarRow, acc)
-    case r <> t:
-      Fr.rows.of(t, Fr.row.of(r) <> acc)
-
-# the bytes of the log the rows' lines are in: from the first's start to
-# the last's end
-def Fr.rows.from(rs: List<&2, FarRow>) -> Nat:
-  match rs:
-    case FarRow{_, o, _, _} <> _:
-      o
-    case Nil{}:
-      0n
-
-def Fr.rows.to(rs: List<&2, FarRow>, +e: Nat) -> Nat:
-  match rs:
-    case Nil{}:
-      e
-    case FarRow{_, +o, +l, _} <> t:
-      Fr.rows.to(t, Nat.add(o, l))
-
-def Fr.gap.k(none: Bool, +a: Nat, +b: Nat, acc: List<&2, String>) -> List<&2, String>:
-  match none:
-    case True{}:
-      acc
-    case False{}:
-      Nat.show(b) <> Nat.show(a) <> acc
-
-def Fr.rows.gap(first: Bool, +end: Nat, +o: Nat, acc: List<&2, String>) -> List<&2, String>:
-  match first:
-    case True{}:
-      acc
-    case False{}:
-      Fr.gap.k(Nat.is_le(o, Nat.add(end, 1n)), Nat.add(end, 1n), o, acc)
-
-def Fr.rows.gaps(rs: List<&2, FarRow>, +end: Nat, first: Bool, acc: List<&2, String>) -> List<&2, String>:
-  match rs:
-    case Nil{}:
-      List.reverse(&2, String, acc)
-    case FarRow{_, +o, +l, _} <> t:
-      Fr.rows.gaps(t, Nat.add(o, l), False{}, Fr.rows.gap(first, end, o, acc))
-
-# the stretches between the rows' lines (lines of other changes), skipped
-# when the log is read: [a1, b1, ...], a <= a line's start < b
-def Fr.rows.skips(rs: List<&2, FarRow>) -> List<&2, String>:
-  Fr.rows.gaps(rs, 0n, True{}, Nil{})
-
-def Fr.row.text(+w: String, +t: String) -> String:
-  Bool.pick(String, String.is_empty(w), t, w)
-
-# the rows (newest first) beside the lines read (newest first), as feed
-# lines oldest first; a row the read did not give is left out
-def Fr.rows.zip(rs: List<&2, FarRow>, ts: List<&2, String>, acc: List<&2, Line>) -> List<&2, Line>:
-  match rs ts:
-    case FarRow{+n, _, _, +w} <> r +t <> u:
-      Fr.rows.zip(r, u, Line{n, Fr.row.text(w, t)} <> acc)
-    case _ _:
-      acc
-
-# the lines of rows (oldest first) from the text read (newest first)
-def Fr.rows.lines(+rs: List<&2, FarRow>, ts: List<&2, String>) -> List<&2, Line>:
-  Fr.rows.zip(List.reverse(&2, FarRow, rs), ts, Nil{})
-
-def Fr.v3.page.k(full: Bool, p: Page, +last: Nat) -> Page:
-  match full p:
-    case True{} Page{_, xs, False{}}:
-      Page{last, xs, True{}}
-    case _ q:
-      q
-
-def Fr.lines.last(ls: List<&2, Line>, +n: Nat) -> Nat:
-  match ls:
-    case Nil{}:
-      n
-    case Line{m, _} <> t:
-      Fr.lines.last(t, m)
-
-# a page of the shared lines after `since` (ls: the rows read, at most
-# Fr.v3.rows(); full: as many as asked, so more may follow the last)
-def Fr.v3.page(+ls: List<&2, Line>, +since: Nat, +seq: Nat, +cap: Nat, full: Bool) -> Page:
-  Fr.v3.page.k(full, Fr.page.k(ls, since, seq, cap), Fr.lines.last(ls, since))
-
-# what laws read of a page and of items
-def Page.where(p: Page) -> List<&2, Nat>:
-  match p:
-    case Page{h, xs, m}:
-      [h, List.length(&2, Item, xs), Bool.pick(Nat, m, 1n, 0n)]
-
-def Fr.items.ns(xs: List<&2, Item>) -> List<&2, Nat>:
-  match xs:
-    case Nil{}:
-      Nil{}
-    case Item{n, _} <> t:
-      n <> Fr.items.ns(t)
-
-# a batch that adds or removes a project: the peer pulls once after it,
-# for the owner's catalog (pushes carry none), which clients that join
-# later are given (Fh.cat); a v3 link otherwise pulls only when new
-def Fr.items.projects(xs: List<&2, Item>) -> Bool:
-  match xs:
-    case Nil{}:
-      False{}
-    case Item{_, +c} <> t:
-      Bool.or(String.starts_with(J.Json.get_str(c, "$", ""), "Project"), Fr.items.projects(t))
-
-# each project's last shared change, from the store's rows [scope, max]
-def Fr.lasts.rows(rows: List<&2, List<&2, String>>, m: Map<&2, Nat>) -> Map<&2, Nat>:
-  match rows:
-    case Nil{}:
-      m
-    case (+p <> +n <> _) <> t:
-      Fr.lasts.rows(t, Fr.last.put(p, Fr.digits(n, 0n), m))
-    case _ <> t:
-      Fr.lasts.rows(t, m)
-
 # What the history's identity is made of: the log's first line, and, when
 # the log holds lines this build does not decode (a newer build wrote them:
 # `len` lines against `seq` changes), how many, so the feed's numbering
@@ -2071,12 +1782,6 @@ def Fh.feed.ready(f: Fh, fd: Feed) -> Fh:
     case Fh{ms, os, _, e, p, ep, Cx{la, ca, ub}} Feed{ls, +fl}:
       Fh{ms, os, Some{List.append(&2, Line, e, ls)}, Nil{}, p, ep, Cx{Fr.lasts.merge(Map.keys(&2, Nat, fl), fl, la), ca, ub}}
 
-# the projects' numbers the store had at start (Fr.lasts.rows), merged in
-def Fh.lasts.boot(f: Fh, +m: Map<&2, Nat>) -> Fh:
-  match f:
-    case Fh{ms, os, fd, e, p, ep, Cx{la, ca, ub}}:
-      Fh{ms, os, fd, e, p, ep, Cx{Fr.lasts.merge(Map.keys(&2, Nat, m), m, la), ca, ub}}
-
 # a commit's changes counted into the projects' numbers
 def Fh.lasts.add(f: Fh, cs: List<&2, M.Change>, +seq: Nat, +s: M.State) -> Fh:
   match f:
@@ -2173,13 +1878,6 @@ def Fr.file.items(xs: List<&2, Item>) -> String:
 def Fr.file.batch(xs: List<&2, Item>, +head: Nat) -> String:
   Fr.file.items(xs) ++ "{\"head\":" ++ Nat.show(head) ++ "}\n"
 
-# all a mirror holds as its file (written over the old one when it was
-# compacted): the epoch and a tail of none, the items, the head
-def In.file(i: In) -> String:
-  match i:
-    case In{_, _, +h, xs, _, e, _, _}:
-      J.Json.show(J.Json.obj([J.KV{"epoch", J.Str{e}}, J.KV{"tail", J.Json.nat(0n)}])) ++ "\n" ++ Fr.file.batch(xs, h)
-
 def Bool.is_some.j(m: Maybe<&2, J.Json>) -> Bool:
   match m:
     case Some{_}:
@@ -2198,9 +1896,9 @@ def Fr.some.j(m: Maybe<&2, J.Json>) -> Bool:
 # readable; the first epoch-aware pull replaces that legacy projection.
 def Fr.file.line(m: Maybe<&2, J.Json>, i: In) -> In:
   match m i:
-    case Some{+o} In{+l, +n, +h, +xs, +a, +e, +tl, +v}:
-      Bool.pick(In, Fr.some.j(J.Json.get(o, "c")), In{l, n, h, Item.of(o) <> xs, a, e, 1n+tl, v},
-        In{l, n, J.Json.get_nat(o, "head", h), xs, a, J.Json.get_str(o, "epoch", e), J.Json.get_nat(o, "tail", tl), v})
+    case Some{+o} In{+l, +n, +h, +xs, +a, +e}:
+      Bool.pick(In, Fr.some.j(J.Json.get(o, "c")), In{l, n, h, Item.of(o) <> xs, a, e},
+        In{l, n, J.Json.get_nat(o, "head", h), xs, a, J.Json.get_str(o, "epoch", e)})
     case None{} _:
       i
 
@@ -2211,34 +1909,23 @@ def Fr.file.scan(ls: List<&2, String>, i: In) -> In:
     case l <> t:
       Fr.file.scan(t, Fr.file.line(J.Json.parse(l), i))
 
-def In.done.k(+l: String, n: String, h: Nat, +xs: List<&2, Item>, a: Bool, e: String, tl: Nat) -> In:
-  In{l, n, h, xs, a, e, tl, Fr.apply(xs, l, M.State.empty())}
-
 def Fr.file.done(i: In) -> In:
   match i:
-    case In{+l, n, h, xs, a, e, tl, _}:
-      In.tidy(In.done.k(l, n, h, List.reverse(&2, Item, xs), a, e, tl))
+    case In{l, n, h, xs, a, e}:
+      In{l, n, h, List.reverse(&2, Item, xs), a, e}
 
 def Fr.file.read(+text: String, +link: String, +name: String) -> In:
   Fr.file.done(Fr.file.scan(String.lines(text), In.new(link, name)))
 
-# the mirror folded, in the ids this machine gives them (Fr.apply over
-# its items, kept as each batch comes: law far_view_fold), so a
-# reference, thread_read or machine_list never folds it again
-def In.view(i: In) -> M.State:
-  match i:
-    case In{_, _, _, _, _, _, _, v}:
-      v
-
 # what a mirror holds, oldest first
 def In.items(i: In) -> List<&2, Item>:
   match i:
-    case In{_, _, _, xs, _, _, _, _}:
+    case In{_, _, _, xs, _, _}:
       xs
 
 def In.name.of(i: In) -> String:
   match i:
-    case In{_, n, _, _, _, _, _, _}:
+    case In{_, n, _, _, _, _}:
       n
 
 # a push that only says where it ends, as a gap: the other end pulls
@@ -2265,5 +1952,5 @@ def Fr.page.html.go(xs: List<&2, Item>, +bot: String, +cur: String) -> String:
 
 def In.page(i: In, +bot: String) -> String:
   match i:
-    case In{_, _, _, xs, _, _, _, _}:
+    case In{_, _, _, xs, _, _}:
       Fr.page.html.go(xs, bot, "")
