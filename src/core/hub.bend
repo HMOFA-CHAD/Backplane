@@ -84,7 +84,7 @@ type Out is Data:
   # opencode over ACP (`opencode acp`, Grok's runner)
   OcTurn{thread: String, cwd: String, model: String, session: String, runtime: M.RuntimeMode, text: String}
   # Pi over its RPC (`pi --mode rpc`, core/pi.bend) and Oh My Pi over its
-  # own ACP (`omp acp`, core/omp.bend), both on Grok's runner
+  # own RPC (`omp --mode rpc-ui`, core/omp.bend), both on Grok's runner
   PiTurn{thread: String, cwd: String, model: String, session: String, runtime: M.RuntimeMode, text: String}
   OmpTurn{thread: String, cwd: String, model: String, session: String, runtime: M.RuntimeMode, text: String}
   # a turn ended: "completed", "failed", or "stopped" (Stop, archive,
@@ -1684,11 +1684,22 @@ def Turn.codex.d(up: Bool, +was: List<&2, String>, +i: Nat, +v: Nat) -> Nat:
     case False{}:
       v
 
+# the provider a Codex-shaped turn is counted for: the thread's (Codex,
+# or Oh My Pi, whose session totals come the same way, omp.bend)
+def Turn.codex.prov(+s: M.State, +th: String) -> String:
+  Turn.or(M.Thread.provider(Hub.thread(s, th)), "codex")
+
+# the session's running cost (nano-dollars), when the provider gives one
+# (Oh My Pi's cost_usd; Codex gives none)
+def Turn.codex.cost(+u: J.Json) -> Nat:
+  Turn.nusd(Turn.raw(u, "cost_usd"))
+
 def Turn.codex.m(+s: M.State, +th: String, +now: Nat, +se: String, +u: J.Json, +was: List<&2, String>, +ci: Nat, +cc: Nat, +cw: Nat, +co: Nat, +ct: Nat, +up: Bool) -> List<&2, M.Change>:
-  [M.TurnUsage{th, "codex", Turn.or(Turn.model(Hub.thread(s, th)), "default"), "x:" ++ se ++ ":" ++ Nat.show(ci) ++ "/" ++ Nat.show(co),
+  [M.TurnUsage{th, Turn.codex.prov(s, th), Turn.or(Turn.model(Hub.thread(s, th)), "default"), "x:" ++ se ++ ":" ++ Nat.show(ci) ++ "/" ++ Nat.show(co),
     Nat.sub(Turn.codex.d(up, was, 0n, ci), Turn.codex.d(up, was, 1n, cc)), Turn.codex.d(up, was, 1n, cc), Turn.codex.d(up, was, 2n, cw),
-    Turn.codex.d(up, was, 3n, co), Turn.codex.d(up, was, 4n, ct), 0n, "irwo" ++ Bool.pick(String, Turn.has(u, "reasoning_output_tokens"), "t", ""),
-    "x:" ++ se ++ ":" ++ String.join([Nat.show(ci), Nat.show(cc), Nat.show(cw), Nat.show(co), Nat.show(ct)], "/"), now}]
+    Turn.codex.d(up, was, 3n, co), Turn.codex.d(up, was, 4n, ct), Bool.pick(Nat, Turn.has(u, "cost_usd"), Turn.codex.d(up, was, 5n, Turn.codex.cost(u)), 0n),
+    "irwo" ++ Bool.pick(String, Turn.has(u, "reasoning_output_tokens"), "t", "") ++ Bool.pick(String, Turn.has(u, "cost_usd"), "c", ""),
+    "x:" ++ se ++ ":" ++ String.join([Nat.show(ci), Nat.show(cc), Nat.show(cw), Nat.show(co), Nat.show(ct), Nat.show(Turn.codex.cost(u))], "/"), now}]
 
 # a session whose start the hub saw (Turn.codex.start set its totals to 0)
 # counts the rise; one already running when it was first seen counts the
@@ -1698,8 +1709,8 @@ def Turn.codex.seen(seen: Bool, +s: M.State, +th: String, +now: Nat, +se: String
     case True{}:
       Turn.codex.m(s, th, now, se, u, was, ci, cc, cw, co, ct, Turn.codex.up(was, ci, cc, cw, co, ct))
     case False{}:
-      [M.TurnUsage{th, "codex", Turn.or(Turn.model(Hub.thread(s, th)), "default"), "x:" ++ se ++ ":" ++ Nat.show(ci) ++ "/" ++ Nat.show(co),
-        0n, 0n, 0n, 0n, 0n, 0n, "", "x:" ++ se ++ ":" ++ String.join([Nat.show(ci), Nat.show(cc), Nat.show(cw), Nat.show(co), Nat.show(ct)], "/"), now}]
+      [M.TurnUsage{th, Turn.codex.prov(s, th), Turn.or(Turn.model(Hub.thread(s, th)), "default"), "x:" ++ se ++ ":" ++ Nat.show(ci) ++ "/" ++ Nat.show(co),
+        0n, 0n, 0n, 0n, 0n, 0n, "", "x:" ++ se ++ ":" ++ String.join([Nat.show(ci), Nat.show(cc), Nat.show(cw), Nat.show(co), Nat.show(ct), Nat.show(Turn.codex.cost(u))], "/"), now}]
 
 # a Codex session the hub sees start: its totals start at 0
 def Turn.codex.start(same: Bool, +th: String, +se: String, +now: Nat) -> List<&2, M.Change>:
@@ -3383,8 +3394,8 @@ def Codex.todo(todo: Bool, +thread: String, +now: Nat, +it: J.Json) -> Step:
 # there; "notice" is a provider's word to the person, neither the agent's
 # reply nor a failure (opencode's renewed session, opencode.bend)
 def Codex.kind(+t: String) -> Nat:
-  Bool.pick(Nat, String.eq(t, "notice"), 7n, Bool.pick(Nat, String.eq(t, "tool.done"), 6n, Bool.pick(Nat, Bool.or(String.eq(t, "item.started"), String.eq(t, "item.updated")), 5n,
-    C.Codec.pos(["thread.started", "item.completed", "turn.completed", "turn.failed", "item.delta"], t))))
+  Bool.pick(Nat, String.eq(t, "context.usage"), 8n, Bool.pick(Nat, String.eq(t, "notice"), 7n, Bool.pick(Nat, String.eq(t, "tool.done"), 6n, Bool.pick(Nat, Bool.or(String.eq(t, "item.started"), String.eq(t, "item.updated")), 5n,
+    C.Codec.pos(["thread.started", "item.completed", "turn.completed", "turn.failed", "item.delta"], t)))))
 
 def Codex.line.k(i: Nat, +s: M.State, +thread: String, +now: Nat, +o: J.Json) -> Step:
   match i:
@@ -3403,6 +3414,8 @@ def Codex.line.k(i: Nat, +s: M.State, +thread: String, +now: Nat, +o: J.Json) ->
       Step.outs([Steps.out(thread, Hub.cwd(s, Hub.thread(s, thread)), "")])
     case 7n:
       Step{[M.ActivityLogged{thread, Hub.id("n", now, Hub.seq(s)), "info", "session", J.Json.get_str(o, "message", ""), now}], Nil{}}
+    case 8n:
+      Step{Usage.set(Nat.is_gt(J.Json.get_nat(o, "used", 0n), 0n), thread, J.Json.get_nat(o, "used", 0n), J.Json.get_nat(o, "window", 0n), now), Nil{}}
     case 3n:
       Step{[M.ActivityLogged{thread, Hub.id("e", now, Hub.seq(s)), "error", Hub.provider(Hub.thread(s, thread)), J.Json.get_str(J.Json.get_obj(o, "error"), "message", J.Json.get_str(o, "message", "turn failed")), now}, M.TurnChanged{thread, M.Failed{}, now}], Nil{}}
     case _:
