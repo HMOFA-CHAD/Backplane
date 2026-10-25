@@ -424,7 +424,7 @@ button.chip:hover { border-color: var(--bad); color: var(--bad); }
 /* folded subagents alone keep no place at the top: they scroll with the thread */
 .work:has(> .subs.shut:only-child) { position: static; }
 .emb-pins { padding: 0 0 4px; border-bottom: 1px solid var(--line); }
-.term-probe { position: absolute; visibility: hidden; font: 12px/17px var(--mono); white-space: pre; }
+.term-probe { position: absolute; top: 0; left: 0; visibility: hidden; font: 12px/17px var(--mono); white-space: pre; }
 
 /* Diff */
 .viewer.diff { display: flex; flex-direction: column; background: var(--bg); min-height: 0; height: 100%; }

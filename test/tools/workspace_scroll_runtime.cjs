@@ -27,6 +27,7 @@ function dimensions() {
   return { width: innerWidth, height: innerHeight, documentHeight: document.documentElement.scrollHeight, pageY: scrollY, rail: rect('.workspace-bar'), header: rect('.thread-head'), composer: rect('.composer'), timeline: rect('#timeline'), sidebar: rect('.sidebar'), ancestors, scripts: [...document.scripts].map(x => x.src), styles: [...document.styleSheets].map(x => x.href) };
 }
 function bounded(d) {
+  results.lastDimensions = d;
   assert(d.documentHeight <= d.height + 1, `document escapes: ${d.documentHeight}/${d.height}`);
   assert.equal(d.pageY, 0, 'document must not scroll');
   for (const name of ['rail', 'header', 'composer']) {
@@ -63,7 +64,7 @@ async function clickDestination(page, action) {
 (async () => {
   try {
     browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM || '/home/h/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome', args: ['--no-sandbox', '--disable-dev-shm-usage'] });
-    for (const mode of ['old', 'current']) {
+    for (const mode of (process.env.BACKPLANE_SCROLL_MODES || 'old,current').split(',')) {
       const home = createHome(mode), web = path.join(mode === 'old' ? oldStage : stage, 'payload/web');
       assert(fs.existsSync(path.join(web, 'index.html')), 'immutable web assets missing');
       service = new Service({ home, binary: path.join(stage, 'payload/backplane-serve'), web, expectedVersion: version });
@@ -76,7 +77,10 @@ async function clickDestination(page, action) {
       await page.goto(connection.origin);
       await page.waitForFunction(() => document.documentElement.dataset.backplaneRemoteReady === 'true' && document.getElementById('composer'));
       const skip = page.locator('[data-on-click="ob-skip"]'); if (await skip.count()) await skip.click();
+      await page.waitForFunction(() => !document.querySelector('.app.tour-on'));
       for (const bot of [false, true]) {
+        if ((process.env.BACKPLANE_SCROLL_SKIP || '').split(',').includes(mode + ':' + (bot ? 'bot' : 'thread'))) continue;
+        await page.setViewportSize({ width: 1440, height: 900 });
         if (bot) { await page.locator('[data-on-click="bot"][data-value="fixture-bot"]').first().click(); await page.waitForFunction(() => document.querySelector('.bot-head')); }
         for (const [width, height] of [[1440, 900], [1024, 560], [360, 740], [360, 420]]) {
           await page.setViewportSize({ width, height });

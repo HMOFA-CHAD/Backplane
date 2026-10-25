@@ -2745,7 +2745,9 @@ def View.thread.frame(rail: Bool, +attrs: List<&2, D.Attr>, +nav: D.Node, +conte
     case True{}:
       D.El{"main", "thread", attrs, [nav, D.El{"div", "thread-content", [D.At{"class", "thread-content"}], content}]}
     case False{}:
-      D.El{"main", "thread", attrs, nav <> content}
+      # Retained hosts append their hidden font probe after the page. Anchor
+      # its absolute box so measuring terminal cells cannot extend the page.
+      D.El{"main", "thread", attrs, D.El{"style", "workspace-compat", Nil{}, [D.Txt{".term-probe { top: 0; left: 0; }"}]} <> nav <> content}
 
 def View.thread.p(+lc: I.Loc, +u: U.Ui, t: M.Thread, pend: List<&2, String>, +atts: List<&2, String>, +up: String, +term: Bool, hd: List<&2, D.Node>, vo: List<&2, D.Node>, +mic: String, fab: List<&2, D.Node>, rd: List<&2, D.Node>, mini: List<&2, TO.Tool>, +pill: String) -> D.Node:
   match u t:
