@@ -26,3 +26,7 @@ test('on an earlier page a downward gesture near its bottom asks for the newer p
 test('at the newest there is nothing below to ask for',()=>{
  const f=fixture(),asked=[];f.ctx.thin={atNewest:()=>true,newer:()=>asked.push(1)};f.tl.scrollTop=1200;f.event('wheel',{deltaY:40});f.ctx.laterCheck(f.tl);assert.equal(asked.length,0);
 });
+test('the latest gesture wins: a swipe down right after one up asks for no older page',()=>{
+ const f=fixture();f.event('wheel',{deltaY:-40});f.event('wheel',{deltaY:40});f.ctx.earlierCheck(f.tl);assert.equal(f.sent.length,0);
+ const asked=[];f.ctx.thin={atNewest:()=>false,newer:()=>asked.push(1)};f.tl.scrollTop=1200;f.event('wheel',{deltaY:40});f.event('wheel',{deltaY:-40});f.ctx.laterCheck(f.tl);assert.equal(asked.length,0);
+});

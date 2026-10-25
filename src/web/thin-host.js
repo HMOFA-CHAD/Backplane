@@ -50,7 +50,7 @@ export function presentationTarget(session) {
 // it alone validates transport identity, generations, targets and RPC ids.
 export class ThinHost {
   constructor(api, Views, next) {
-    this.api = api;this.hub = api.hub;this.ready = false;this.window = null;this.cursor = '';this.back = [];
+    this.api = api;this.hub = api.hub;this.ready = false;this.window = null;this.cursor = '';this.back = [];this.paging = null;
     this.session = clone(api.session());
     this.validatePresentation = api.validatePresentation || validatePresentation;
     const rid = this.session.rid;
@@ -101,7 +101,7 @@ export class ThinHost {
     for (const operation of this.actions) operation.settled?.(false);
     this.actions = [];this.terminalBytes = 0;this.fields.clear();
     this.messages.clear();this.target = target;
-    this.ready = false;this.window = null;this.cursor = '';this.back = [];this.api.state({ phase: 'loading', remoteReady: false });
+    this.ready = false;this.window = null;this.cursor = '';this.back = [];this.paging = null;this.api.state({ phase: 'loading', remoteReady: false });
     this.api.selection?.(target, this.session);
     return this.flush(this.client.select(this.hub, target, requestSession(this.session, false, target), this.api.cid), { selection: true });
   }
@@ -146,7 +146,7 @@ export class ThinHost {
     if (!this.ready) { settled?.(false);this.api.blocked();return true; }
     // a message sent from an earlier page shows the newest (the hub's
     // Hub.thin.act moves the page there too)
-    if (action === 'send' || action === 'send-alt') { this.cursor = '';this.back = []; }
+    if (action === 'send' || action === 'send-alt') { this.cursor = '';this.back = [];this.paging = null; }
     if (action === 'bfield') {
       const split = value.indexOf('\u001f');
       if (split <= 0) { settled?.(false);this.api.blocked();return false; }
@@ -238,16 +238,29 @@ export class ThinHost {
   }
   // Scrolling pages: each older page overlaps the one before by half
   // (thin-view.bend's Page.mid), and the cursors that led here are kept so
-  // scrolling back down retraces them to the newest ('' : no cursor).
+  // scrolling back down retraces them to the newest ('' : no cursor). One
+  // page request at a time: the next is taken from the page its reply
+  // shows (a request made from a page still on its way would skip or
+  // repeat one, and out of order replies left the view on an old page
+  // while the trail said newest, so new messages never showed). A page
+  // that fails puts the trail back as it was.
+  pageTo(cursor, undo) {
+    const result = this.client.request(this.hub, 'view.page', { cursor, session: requestSession(this.session, false, this.target) });
+    if (!this.flush(result)) { this.cursor = undo.cursor;this.back = undo.back;return false; }
+    this.paging = { id: result.id, undo };
+    return true;
+  }
   page() {
-    if (!this.ready || !this.window?.older) return false;
+    if (!this.ready || !this.window?.older || this.paging) return false;
+    const undo = { cursor: this.cursor, back: this.back.slice() };
     this.back.push(this.cursor);this.cursor = this.window.older;
-    return this.flush(this.client.request(this.hub, 'view.page', { cursor: this.cursor, session: requestSession(this.session, false, this.target) }));
+    return this.pageTo(this.cursor, undo);
   }
   newer() {
-    if (!this.ready || !this.back.length) return false;
+    if (!this.ready || !this.back.length || this.paging) return false;
+    const undo = { cursor: this.cursor, back: this.back.slice() };
     this.cursor = this.back.pop();
-    return this.flush(this.client.request(this.hub, 'view.page', { cursor: this.cursor, session: requestSession(this.session, false, this.target) }));
+    return this.pageTo(this.cursor, undo);
   }
   atNewest() { return this.back.length === 0; }
   search(query, cursor = '') {
@@ -357,6 +370,9 @@ export class ThinHost {
     if (!result) return false;
     this.pending.delete(envelope.id);
     if (this.active === envelope.id) this.active = null;
+    const paged = this.paging?.id === envelope.id ? this.paging : null;
+    if (paged) this.paging = null;
+    if (paged && result.failed) { this.cursor = paged.undo.cursor;this.back = paged.undo.back; }
     if (result.failed) {
       metadata?.operation?.settled?.(false);
       if (this.abortField(metadata) || this.isCurrent(metadata)) this.fail(result.failed);
