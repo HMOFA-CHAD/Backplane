@@ -11628,14 +11628,14 @@ def Hub.rpc.view(+thin: Bool, +o: J.Json, h: Hub, +client: U32, +text: String, +
 # effect (VaultFx.put): it is in no change, no out, no reply and no log
 # line. Replies carry the vault's status and its metadata, never a value.
 
-def SecRpc.list.json(+status: String, +ms: String) -> J.Json:
-  J.Json.obj([J.KV{"status", Maybe.default(&2, J.Json, J.Json.parse(status), J.Null{})}, J.KV{"items", Maybe.default(&2, J.Json, J.Json.parse(ms), J.Json.arr([]))}])
+def SecRpc.list.text(+id: String, +status: String, +ms: String) -> String:
+  J.Json.show(J.Json.obj([J.KV{"t", J.Str{"reply"}}, J.KV{"id", J.Num{id}}, J.KV{"ok", J.Flag{True{}}}, J.KV{"secrets", J.Str{ms}}, J.KV{"vault", J.Str{status}}]))
 
 def SecRpc.list(h: Hub, +client: U32, +id: String) -> IO(Hub):
   do IO<Hub>:
     +status : String <- VX.VaultFx.status()
     +ms : String <- VX.VaultFx.list()
-    Hub.out(h, B.Reply.data(client, id, SecRpc.list.json(status, ms)))
+    Hub.out(h, B.Send{client, SecRpc.list.text(id, status, ms)})
 
 def SecRpc.saved(h: Hub, +client: U32, +id: String, +name: String, +thread: String, +now: Nat) -> IO(Hub):
   match h:

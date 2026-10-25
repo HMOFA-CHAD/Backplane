@@ -480,6 +480,15 @@ button.chip:hover { border-color: var(--bad); color: var(--bad); }
 .ask-detail { font-family: var(--mono); font-size: calc(12px * var(--text-scale, 100) / 100); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 50vh; overflow: auto; }
 .ask .body { max-height: 40vh; overflow: auto; }
 .ask-btns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+/* the secret box (view.bend's View.sbox): a masked paste box, square, accent-edged */
+.sbox { border: 1px solid var(--accent); background: var(--panel); padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; max-width: 860px; }
+.set-row + .sbox { margin: 4px 0 8px; }
+.sbox-head { color: var(--accent); font-size: calc(12px * var(--text-scale, 100) / 100); }
+.sbox-purpose { font-size: calc(13px * var(--text-scale, 100) / 100); }
+.sbox-note { color: var(--faint); font-size: calc(11px * var(--text-scale, 100) / 100); }
+.sbox .field { width: 100%; box-sizing: border-box; }
+.sbox-val { font-family: var(--mono); letter-spacing: 0.08em; }
+.sbox-btns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .todos { display: flex; flex-direction: column; gap: 2px; margin: 0 16px 4px; padding: 6px 10px; border: 1px solid var(--line); background: var(--raise); font-size: calc(12px * var(--text-scale, 100) / 100); }
 .todos:empty { display: none; }
 .todos .head { display: flex; align-items: center; gap: 6px; width: 100%; color: var(--soft, inherit); margin-bottom: 2px; background: none; border: 0; padding: 0; text-align: left; cursor: pointer; font-size: inherit; }

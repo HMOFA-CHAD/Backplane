@@ -283,6 +283,11 @@ def composer(u: U.Ui) -> D.Node:
 def asks(+u: U.Ui) -> D.Node:
   V.View.asks.u(U.Lang.loc(u), u)
 
+# the secret box's Save (host.js's secretSave): "<name>\u001f<purpose>\u001f
+# <thread>\u001f<value>" to {"rpc": the secret.set request} or {"error"}
+def secret_req(+packed: String) -> String:
+  U.Sbox.req(packed)
+
 # A value of each Json constructor, for wire.js: bend 2.0.36 tags a module's
 # constructors with their file ("../core/json.Str"), so the JavaScript that
 # builds Json learns the tags from Bend instead of spelling them.

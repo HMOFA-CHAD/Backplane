@@ -774,7 +774,23 @@ function fabLook(target) {
   setTimeout(() => { if (thin?.ready) thin.request("fab-look", ""); }, 0);
 }
 
+// The secret box's Save: valueOf read the masked field once (and emptied
+// it); the value goes in one secret.set request straight to the hub, never
+// through a view action, the outbox, a draft or the client's state. Bend
+// builds and checks it (app.bend's secret_req); only the name comes back.
+function secretSave(packed) {
+  let r;
+  try { r = JSON.parse(App.secret_req(packed)); } catch { return true; }
+  packed = "";
+  if (r.error) return dispatch("secret-err", r.error);
+  if (!socket || socket.readyState !== 1) return dispatch("secret-err", "Not connected to the hub");
+  socket.send(fromList(App.wire_out(r.rpc)));
+  r = null;
+  return dispatch("secret-sent", "");
+}
+
 function dispatch(action, value, timer) {
+  if (action === "secret-save") return secretSave(value);
   if (["select", "ref-go", "ref-back", "ref-fwd", "bot", "bot-tab", "uber", "uber-bot", "remote"].includes(action)) {
     checkpointFocused();
     const timeline = document.getElementById("timeline");
