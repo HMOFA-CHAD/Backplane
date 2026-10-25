@@ -1055,13 +1055,14 @@ extension KeyedDecodingContainer {
 // costs that field, never the whole screen (a blank app).
 extension Screen {
     private enum K: String, CodingKey {
-        case locale, online, version, error, note, sel, empty, hub, hubs, usageMachines, found, projects, lang, view, making, active, legacy, older, settled,
+        case bubMove, locale, online, version, error, note, sel, empty, hub, hubs, usageMachines, found, projects, lang, view, making, active, legacy, older, settled,
              rowMenu, bots, rooms, uber, plane, newBot, newRoom, bot, deleting, removing, renaming, tour, search,
              folders, settings, find, island, islands, thread, theme, tabs
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: K.self)
+        bubMove = c.lossy(.bubMove)
         locale = c.lossy(.locale)
         online = c.lossy(.online) ?? false
         version = c.lossy(.version) ?? ""
