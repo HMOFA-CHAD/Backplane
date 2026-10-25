@@ -1437,8 +1437,11 @@ function noteOlderGesture(e) {
     older = ["PageUp", "Home", "ArrowUp"].includes(e.key) && !e.target.isContentEditable;
     newer = ["PageDown", "End", "ArrowDown", " "].includes(e.key) && !e.target.isContentEditable;
   }
-  if (older) olderGestureUntil = performance.now() + 1200;
-  if (newer) newerGestureUntil = performance.now() + 1200;
+  // the latest gesture's way wins: a swipe down right after one up must not
+  // still ask for the older page (and the other way round)
+  if (older && !newer) { olderGestureUntil = performance.now() + 1200;newerGestureUntil = 0; }
+  if (newer && !older) { newerGestureUntil = performance.now() + 1200;olderGestureUntil = 0; }
+  if (older && newer) { olderGestureUntil = newerGestureUntil = performance.now() + 1200; }
 }
 for (const event of ["wheel", "touchstart", "touchmove", "pointerdown", "keydown"]) document.addEventListener(event, noteOlderGesture, { capture: true, passive: true });
 

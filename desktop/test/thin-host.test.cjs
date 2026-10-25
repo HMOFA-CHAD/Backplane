@@ -54,6 +54,10 @@ test('a draft typed while first view travels remains local and overtakes its old
  const f=await fixture();f.host.greeting(f.greeting);const old=f.reply();f.host.request('draft','NEW 日本語 👩‍💻');f.host.receive(old);
  assert.equal(f.getSession().drafts.A,'NEW 日本語 👩‍💻');assert.equal(f.disk.get('A'),'NEW 日本語 👩‍💻');assert.equal(f.sent.length,1);
 });
+test('scrolling pages: one page request at a time, and a failed one puts the trail back',async()=>{
+ const f=await fixture();f.open();assert.equal(f.host.page(),true);const req=f.sent.at(-1);assert.equal(f.host.page(),false,'a second older page waits for the first');assert.equal(f.host.newer(),false,'and so does a newer one');
+ f.host.receive({t:'reply',id:req.id,ok:false,error:{code:'STALE_CURSOR',message:'stale'}});assert.equal(f.host.atNewest(),true,'the failed page leaves the trail as it was');assert.equal(f.host.paging,null,'and no page is waited for');
+});
 test('scrolling pages: older pages are retraced back down to the newest, and a send returns there',async()=>{
  const f=await fixture();f.open();assert.equal(f.host.atNewest(),true);assert.equal(f.host.newer(),false);
  f.host.page();assert.equal(f.sent.at(-1).p.cursor,'older-bound-to-A');assert.equal(f.host.atNewest(),false);
