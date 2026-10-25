@@ -15,14 +15,20 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun ViewStartupBanner(m: AppModel) {
     val hub = m.screen?.hub.orEmpty()
-    val key = if (hub.isNotEmpty()) hub.takeIf { m.startup[it] == StartupPolicy.COMPATIBILITY_REQUIRED }
-        else m.startup.keys.sorted().firstOrNull { m.startup[it] == StartupPolicy.COMPATIBILITY_REQUIRED }
+    val parked = setOf(StartupPolicy.COMPATIBILITY_REQUIRED, StartupPolicy.PAIRING_REFUSED)
+    val key = if (hub.isNotEmpty()) hub.takeIf { m.startup[it] in parked }
+        else m.startup.keys.sorted().firstOrNull { m.startup[it] in parked }
     if (key == null) ReconnectLine(m, hub)
     if (key != null) Surface {
-        Column(Modifier.fillMaxWidth().padding(10.dp)) {
+        // below the status bar, as the reconnect line is
+        Column(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).padding(10.dp)) {
             // a hub without views (older than 0.12.0): it needs an update;
-            // the app never downloads a hub's whole history
-            Text("This hub needs an update · $key", style = MaterialTheme.typography.labelSmall)
+            // the app never downloads a hub's whole history. A hub that
+            // refuses the link's token is not old: the phone pairs again.
+            val text = if (m.startup[key] == StartupPolicy.PAIRING_REFUSED)
+                NativeMessages.native_hub_failure(m.screen?.locale ?: "en", "authentication", "")
+                else "This hub needs an update"
+            Text("$text · $key", style = MaterialTheme.typography.labelSmall)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 TextButton(onClick = { m.retryView(key) }) { Text("Retry") }
             }

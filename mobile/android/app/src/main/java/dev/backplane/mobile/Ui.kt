@@ -104,6 +104,10 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -200,9 +204,12 @@ private fun OpeningDestination(m: AppModel, s: Screen, o: Core.Opening) {
 
 @Composable
 fun App(m: AppModel) {
+    // the banner takes the status bar's room: the screen under it then
+    // leaves none of its own (no gap between the two)
+    var bannerUp by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
-        ViewStartupBanner(m)
-        Box(Modifier.weight(1f)) {
+        Box(Modifier.onSizeChanged { bannerUp = it.height > 0 }) { ViewStartupBanner(m) }
+        Box(Modifier.weight(1f).then(if (bannerUp) Modifier.consumeWindowInsets(WindowInsets.statusBars) else Modifier)) {
             AppContent(m)
             BubMoveOverlay(if (m.contentReady) m.screen?.bubMove else null)
         }
