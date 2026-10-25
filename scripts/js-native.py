@@ -60,6 +60,14 @@ Server-only ContentEq.same compares actual JSON constructors and fields, with
 an identity fast path for immutable values. It does not compare dependency
 keys or hashes. The pure wrapper, callee and source hash fence the rewrite.
 
+Server-only `Sec.fine(vs, s)` (src/core/secret.bend, the secret box's
+fine mask, run on every agent line, committed change and MCP answer that
+holds a stored value): the same cover computed with indexOf at code point
+boundaries, O(text + occurrences), where the pure walk re-slices the text
+per character (a 100 KB line with a secret took 2.2 s). Fenced by the pure
+module's hash; test/tools/secret.mjs checks it against the definition.
+Sec.mask's laws hold whatever it answers (the pure check follows it).
+
 Each is found by its shape and must be found exactly once, else the build
 stops (a new Bend that emits them otherwise needs this looked at again).
 With --server (scripts/build-js.sh: one bundle) that holds for every def;
@@ -164,6 +172,19 @@ def byte_loop(kind):
 BYTE_ESC, BYTE_STR = byte_loop("esc"), byte_loop("str")
 JSON_BYTES_SOURCE_SHA256 = "60ea726052fded72970f3be2784d09fbff0baa4a98a47ac82d00a4a311dc242d"
 
+SEC_FINE = re.compile(
+    r'function (' + I + r'\$058Sec\$fine\$)\((' + I + r'),(' + I + r')\)\{return (' + I + r'\$058Sec\$fine\$go\$)\(\3,0,\2,""\)\}'
+)
+SEC_FINE_SOURCE_SHA256 = "2aa67d789bcaf5d4de369af089b533d2a3fdfc423d90e545f5d8a84423159bd6"
+SEC_FINE_HELPER = (
+    "function __bpSecFine(vs,s){const v=[];for(let l=vs;l.$!==\"Nil\";l=l.tail){const t=l.head.text;if(t!==\"\")v.push(t)}"
+    "if(!v.length||s===\"\")return s;const at=new Int32Array(s.length+1).fill(-1),cp=[];let n=0;"
+    "for(let i=0;i<s.length;){const c=s.codePointAt(i)>65535?s.slice(i,i+2):s[i];at[i]=n;cp.push(c);i+=c.length;n++}at[s.length]=n;"
+    "const d=new Int32Array(n+1);let any=!1;for(const t of v){let len=0;for(const _ of t)len++;"
+    "for(let i=s.indexOf(t);i>=0;i=s.indexOf(t,i+1)){const j=at[i];if(j<0||at[i+t.length]<0)continue;d[j]++;d[Math.min(n,j+len)]--;any=!0}}"
+    "if(!any)return s;let out=\"\",run=0;for(let j=0;j<n;j++){run+=d[j];out+=run>0?\"\\u2022\":cp[j]}return out}\n"
+)
+
 args = sys.argv[1:]
 server = "--server" in args
 files = [a for a in args if a != "--server"]
@@ -176,6 +197,15 @@ for name, rx, required in (("String.cmp", CMP, True), ("Map.bit.go", BIT, True),
     if n != 1 and (required or n > 1):
         sys.exit(f"js-native: {name} found {n} times, not once")
     found[name] = n
+found["Sec.fine"] = sum(len(SEC_FINE.findall(s)) for s in srcs.values())
+if found["Sec.fine"] > 1 or (server and found["Sec.fine"] != 1):
+    sys.exit(f"js-native: Sec.fine found {found['Sec.fine']} times, not once")
+if found["Sec.fine"] and hashlib.sha256(Path(__file__).parent.parent.joinpath("src/core/secret.bend").read_bytes()).hexdigest() != SEC_FINE_SOURCE_SHA256:
+    sys.exit("js-native: Sec.fine pure source changed")
+for s in srcs.values():
+    for match in SEC_FINE.finditer(s):
+        if match.group(4) != match.group(1).replace("$058Sec$fine$", "$058Sec$fine$go$"):
+            sys.exit("js-native: Sec.fine needs its exact Sec.fine.go")
 found["Cbor.Enc.text"] = sum(len(CBOR_TEXT.findall(s)) for s in srcs.values()) if server else 0
 found["Json.parse"] = sum(len(PARSE.findall(s)) for s in srcs.values()) if server else 0
 found["Json.show"] = sum(len(SHOW.findall(s)) for s in srcs.values()) if server else 0
@@ -220,7 +250,7 @@ if server:
             if len(re.findall(r"function " + re.escape(head) + r"\(", s)) != 1:
                 sys.exit("js-native: Cbor.Enc.text needs its exact Enc.head once")
 for f, s in srcs.items():
-    hit = CMP.search(s) or BIT.search(s) or SPLIT.search(s) or LEN.search(s) or PRE.search(s) or HAS.search(s)
+    hit = CMP.search(s) or BIT.search(s) or SPLIT.search(s) or LEN.search(s) or PRE.search(s) or HAS.search(s) or SEC_FINE.search(s)
     if not hit:
         continue
     # one pass down the list; nat_chk once (the count only grows)
@@ -249,6 +279,9 @@ for f, s in srcs.items():
         s = BYTE_ESC.sub(lambda m: 'function %s($0,$1){return __bpJsonBytesEsc($0,$1,nat_chk)}' % m.group(1), s)
         s = BYTE_STR.sub(lambda m: 'function %s($0,$1){return __bpJsonBytesStr($0,$1,nat_chk)}' % m.group(1), s)
         s = Path(__file__).with_name("js-json-bytes.js").read_text(encoding="utf-8") + "\n" + s
+    if SEC_FINE.search(s):
+        s = SEC_FINE.sub(lambda m: 'function %s(%s,%s){return __bpSecFine(%s,%s)}' % (m.group(1), m.group(2), m.group(3), m.group(2), m.group(3)), s)
+        s = SEC_FINE_HELPER + s
     # (a module's imports may come after it: they are hoisted)
     s = HELPERS + s
     open(f, "w", encoding="utf-8").write(s)
@@ -260,7 +293,8 @@ for name, call in (("String.cmp", "snd:{$:__bpOrd("), ("Map.bit.go", "snd:__bpBi
                    ("String.starts_with", "return __bpPre("), ("String.contains", "return __bpHas("),
                    ("Cbor.Enc.text", "return __bpCborText("), ("Json.parse", "){return __bpParsed("),
                    ("Json.show", "){return __bpJsonShow("), ("ContentEq.same", "){return __bpContentEq("),
-                   ("Json.bytes.esc", "){return __bpJsonBytesEsc("), ("Json.bytes.str", "){return __bpJsonBytesStr(")):
+                   ("Json.bytes.esc", "){return __bpJsonBytesEsc("), ("Json.bytes.str", "){return __bpJsonBytesStr("),
+                   ("Sec.fine", "){return __bpSecFine(")):
     n = outs.count(call)
     if n != found[name]:
         sys.exit(f"js-native: {name}'s native body is in the output {n} times, not {found[name]}")

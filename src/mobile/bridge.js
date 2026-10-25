@@ -11,6 +11,22 @@
 // wire format; its dictionaries come from there).
 
 import App from "./app.bend";
+import { BubMoveObserver } from "../web/bub-move.js";
+const bubMoves = new BubMoveObserver((before, after) => plain(App.bub_move(JSON.stringify(before), JSON.stringify(after))));
+const bubLive = new Set();
+let bubMove = null;
+function bubMovingScreen() {
+  const screen = JSON.parse(screenText());
+  if (!screen) return null;
+  for (const item of screen.bubHomes || []) {
+    if (!(thin.thin(item.hub) ? thin.state(item.hub).ready : bubLive.has(item.hub))) continue;
+    const move = bubMoves.observe(item.hub, item.home);
+    if (move) bubMove = { ...move, expires: Date.now() + move.duration };
+  }
+  // Retain for its full lifetime even if a native host coalesces a frame.
+  screen.bubMove = bubMove && bubMove.expires > Date.now() ? bubMove : null;
+  return screen;
+}
 import { cbor as decode, is, kind, learnJson } from "../web/wire.js";
 import { Recent, foregroundPending, presentationUpdates } from "./recent.js";
 import { NativeThinHost307265 } from "./thin-native-host-307265.js";
@@ -299,7 +315,7 @@ function direct(cmds, draw, updates = []) {
     else delete kept[c.thread];
   }
   const canDraw = draw && (!thin.thin(foregroundHub()) || thin.views() !== null);
-  return JSON.stringify({ screen: canDraw ? JSON.parse(screenText()) : null, cmds, sync: syncUpdates.splice(0).concat(updates), deadline: currentDeadline() });
+  return JSON.stringify({ screen: canDraw ? bubMovingScreen() : null, cmds, sync: syncUpdates.splice(0).concat(updates), deadline: currentDeadline() });
 }
 
 function expired() {
@@ -650,6 +666,7 @@ globalThis.Backplane = {
       hubs = r.hubs;
       const pending = recent.end(k);
       booting.delete(k);
+      bubLive.add(k);
       syncUpdates.push({ hub: k, phase: "live" });
       if (!waitingForForeground()) owed = false;
       return direct(commandList(r.cmds, JSON.parse(App.alerts(r))).concat(pending), !waitingForForeground());
@@ -713,6 +730,23 @@ globalThis.Backplane = {
     previewCur = key;
     return step(App.act(hubs, action, value));
   },
+  // the secret box's Save: "<name>\u001f<purpose>\u001f<thread>\u001f<value>",
+  // the value from the app's vault field (screen.bend's Mob.sbox), never a
+  // form field. It leaves in one secret.set request to the focused hub that
+  // Bend builds and checks (app.bend's secret_req): not an action, not the
+  // kept state, not a draft.
+  secret(packed) {
+    const key = previewCur || App.current(hubs);
+    let r;
+    try { r = JSON.parse(App.secret_req(packed)); } catch { r = { error: "The secret could not be sent" }; }
+    packed = "";
+    if (r.error) return this.act("secret-err", r.error);
+    const send = { type: "send", hub: key, data: App.wire(r.rpc) };
+    r = null;
+    const after = JSON.parse(this.act("secret-sent", ""));
+    after.cmds = [send].concat(after.cmds || []);
+    return JSON.stringify(after);
+  },
   // an action whose screen the native side already shows (typing a draft),
   // unless it changed what the composer offers (app.bend's offer)
   quiet(action, value) {
@@ -738,6 +772,7 @@ globalThis.Backplane = {
   // (no screen either when the hub already was so: app.bend's online_same)
   online(k, b, quiet, epoch) {
     if (epoch && transportEpoch.get(k) !== epoch) return direct([], false);
+    if (!b) { bubLive.delete(k);bubMoves.disconnect(k); }
     if (thin.thin(k)) {
       if (!b) { thin.disconnect(k); thin.fail(k, "connection closed"); }
       return direct([], false);
@@ -773,6 +808,7 @@ globalThis.Backplane = {
   headerKeys() { return JSON.stringify({ keys: KEYS, words: WORDS }); },
   pulse() { return direct(expired(), false); },
   connection(key, epoch, mode) {
+    bubLive.delete(key);bubMoves.disconnect(key);
     thin.connection(key, String(epoch), mode);
     const previous = recent.links.get(key);
     if (previous) hubs = App.session_adopt(hubs, key, JSON.stringify(previous.session), previewCur || App.current(hubs));

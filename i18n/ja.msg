@@ -1295,3 +1295,26 @@ native.mailroom.open.source = 送信元を開く
 native.mailroom.machine.offline = マシンはオフライン
 native.mailroom.page = {total}件中{first}–{last}件
 native.mailroom.unread.count = 未読{count}件
+
+# secret box
+secret.title = シークレット
+secret.none = エージェント用のキー・トークン・パスワードを、このマシンの保管庫に暗号化して保管します。エージェントには名前だけが渡され、中身を見ずに使えます。まだありません。
+secret.kept = このマシンの保管庫に{n}件。エージェントには名前だけが渡されます。
+secret.asks = {who}が{name}を求めています
+secret.you = あなた
+secret.name.ph = 名前（例: github-token）
+secret.purpose.ph = 用途
+secret.value.ph = シークレットを貼り付け
+secret.save = 保管庫に保存
+secret.notnow = 今はしない
+secret.replace = 置き換え
+secret.delete.ask = {name}を削除しますか？もう一度クリック。
+secret.used = 最終使用 {when}
+secret.unused = 未使用
+secret.requested = 依頼中
+secret.add = シークレットを追加
+secret.note = 値は保管庫に直接送られます。チャット、ログ、エージェントには見えません。
+secret.vault.keyring = このコンピュータのキーチェーンで暗号化。
+secret.vault.file = このマシンの鍵ファイルで暗号化（キーチェーンが応答しませんでした）。
+secret.vault.locked = 保管庫がロックされています: {why}
+secret.open.tip = チャットに貼らずにエージェントへシークレットを渡す

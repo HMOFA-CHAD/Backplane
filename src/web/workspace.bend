@@ -1,4 +1,5 @@
 import Base
+import ../core/presentation.bend as PRESENT
 import ../core/client.bend as U
 import ../core/model.bend as M
 import ../core/json.bend as J
@@ -68,7 +69,9 @@ def WS.term.show(valid: Bool, +u: U.Ui, size: String) -> U.Act:
     case False{}: WS.none(U.Ui.error_set(u, "Select a local project thread before opening a terminal."))
     case True{}:
       +owner = U.Ui.sel(u)
-      +ready = U.Ui.scratch_set(U.Ui.scratch_set(U.Ui.scratch_set(U.Ui.flag_on(u, "term"), "@terminal.owner", owner),
+      +incarnation = M.Switch.num(U.Ui.info(u, "local.terminal.incarnation"), 0n)
+      +fresh = U.Ui.info_set(U.Ui.info_set(u, "local.terminal.pending", ""), "local.terminal.incarnation", Nat.show(Bool.pick(Nat, Nat.is_lt(incarnation, PRESENT.Session.nat.max()), Nat.add(incarnation, 1n), incarnation)))
+      +ready = U.Ui.scratch_set(U.Ui.scratch_set(U.Ui.scratch_set(U.Ui.flag_on(fresh, "term"), "@terminal.owner", owner),
         "@terminal.cwd", U.Ui.root(u)), "@terminal.title", U.Active.title(U.Ui.thread(U.Ui.state(u), owner)))
       U.Ui.also(WS.term.dimensions(U.Term.size.k(String.split(size, 'x')), ready, owner, "term.open"), [U.Focus{"term"}])
 

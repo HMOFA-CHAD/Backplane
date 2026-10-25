@@ -13184,3 +13184,23 @@ def Laws.sidebar_draft_scratch_input(key, value, rest, h):
   SIDEDRAFTPROOF.scratch_keep(key, value, rest, h)
 def Laws.sidebar_draft_settings_separate(u, epoch, view, revision):
   SIDEDRAFTPROOF.settings_separate(u, epoch, view, revision)
+# ---- secret box ----
+import ./test/secret_proof.bend as SECPROOF
+def Laws.sec_mask_total(v, s, h):
+  SECPROOF.secp_mask_total(v, s, h)
+def Laws.sec_vault_valid(ts):
+  SECPROOF.secp_vault_valid(ts)
+def Laws.sec_vault_total(ts, s):
+  SECPROOF.secp_vault_total(ts, s)
+def Laws.sec_mask_idem(v, s, h):
+  SECPROOF.secp_mask_idem(v, s, h)
+def Laws.sec_mask_clean_id(v, s, h):
+  SECPROOF.secp_mask_clean_id(v, s, h)
+def Laws.sec_empty_id(s):
+  SECPROOF.secp_empty_id(s)
+def Laws.sec_json_total(v, j, h):
+  SECPROOF.secp_json_total(v, j, h)
+def Laws.sec_handle_shape(n, b):
+  SECPROOF.secp_handle_shape(n, b)
+def Laws.sec_changes_empty(cs):
+  {==}

@@ -151,7 +151,9 @@ data class Emb(
 data class SetButton(val label: String, val action: String, val value: String, val on: Boolean)
 // a field to type in: each change goes out as "bfield" (name, text); a
 // secret one shows dots
-data class SetField(val name: String, val hint: String, val secret: Boolean, val value: String)
+// vault: the secret box's value field (screen.bend's Mob.sbox), kept by the
+// app and handed over only at Save (Core.vaultText), never sent as typed
+data class SetField(val name: String, val hint: String, val secret: Boolean, val value: String, val vault: Boolean = false)
 // qr: the pairing code's rows ('1' dark) while it is shown
 data class UsageDay(val date: String, val reading: String, val known: Boolean, val fraction: Int)
 data class SetRow(val label: String, val note: String, val buttons: List<SetButton>, val fields: List<SetField> = emptyList(),
@@ -451,6 +453,7 @@ data class Screen(
     val locale: String = "en",
     // Legacy conversations remain selectable outside project sections.
     val legacy: List<Row> = emptyList(),
+    val bubMove: BubMove? = null,
 )
 
 data class Cmd(
@@ -773,6 +776,7 @@ fun parseScreen(o: JSONObject) = Screen(
     plane = o.optJSONObject("plane")?.let(::parsePlane),
     active = o.optJSONArray("active").map(::row),
     legacy = o.optJSONArray("legacy").map(::row),
+    bubMove = o.optJSONObject("bubMove")?.let(::parseBubMove),
     older = o.optJSONObject("older")?.let { Older(it.optInt("count"), it.optBoolean("open")) },
     settled = o.optJSONObject("settled")?.let { Older(it.optInt("count"), it.optBoolean("open")) },
     rowMenu = o.optJSONObject("rowMenu")?.let { mn ->
@@ -793,7 +797,7 @@ fun parseScreen(o: JSONObject) = Screen(
 fun parseSettings(st: JSONObject) = Settings(st.optJSONArray("rows").map { r ->
     SetRow(r.optString("label"), r.optString("note"),
         r.optJSONArray("buttons").map { SetButton(it.optString("label"), it.optString("action"), it.optString("value"), it.optBoolean("on")) },
-        r.optJSONArray("fields").map { SetField(it.optString("name"), it.optString("hint"), it.optBoolean("secret"), it.optString("value")) },
+        r.optJSONArray("fields").map { SetField(it.optString("name"), it.optString("hint"), it.optBoolean("secret"), it.optString("value"), it.optBoolean("vault")) },
         r.optJSONArray("qr")?.let { q -> List(q.length()) { q.optString(it) } } ?: emptyList(), r.optString("qrnote"), r.optBoolean("local"), r.optBoolean("notify"),
         r.optJSONArray("chart").map { UsageDay(it.optString("date"), it.optString("reading"), it.optBoolean("known"), it.optInt("fraction")) })
 })
@@ -802,7 +806,7 @@ fun parseSettings(st: JSONObject) = Settings(st.optJSONArray("rows").map { r ->
 fun settingsJson(st: Settings): JSONObject = JSONObject().put("rows", JSONArray(st.rows.map { r ->
     JSONObject().put("label", r.label).put("note", r.note).put("local", r.local).put("notify", r.notify).put("qrnote", r.qrnote)
         .put("buttons", JSONArray(r.buttons.map { JSONObject().put("label", it.label).put("action", it.action).put("value", it.value).put("on", it.on) }))
-        .put("fields", JSONArray(r.fields.map { JSONObject().put("name", it.name).put("hint", it.hint).put("secret", it.secret).put("value", it.value) }))
+        .put("fields", JSONArray(r.fields.map { JSONObject().put("name", it.name).put("hint", it.hint).put("secret", it.secret).put("value", it.value).put("vault", it.vault) }))
         .put("chart", JSONArray(r.chart.map { JSONObject().put("date", it.date).put("reading", it.reading).put("known", it.known).put("fraction", it.fraction) }))
         .put("qr", JSONArray(r.qr))
 }))

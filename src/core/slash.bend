@@ -12,7 +12,8 @@ type Cmd is Data:
 
 # the commands every thread has
 def Slash.own() -> List<&2, Cmd>:
-  [Cmd{"/btw", "Ask a side question; the thread never sees it"}, Cmd{"/give", "Hand this conversation to a >thread, %project or @bot"}]
+  [Cmd{"/btw", "Ask a side question; the thread never sees it"}, Cmd{"/give", "Hand this conversation to a >thread, %project or @bot"},
+   Cmd{"/secret", "Give an agent a key or token in a masked box, never in the chat"}]
 
 # the commands only a Claude thread has
 def Slash.claude() -> List<&2, Cmd>:

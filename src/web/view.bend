@@ -1,4 +1,5 @@
 import Base
+import ../core/bub-move.bend as HOP
 import ../core/subthreads.bend as ST
 import ../core/textscale.bend as TS
 import ../core/codec.bend as C
@@ -876,7 +877,6 @@ def View.header(+lc: I.Loc, t: M.Thread, +st: M.State, +chip: String, mini: List
               D.Dom.when(U.ThreadTree.can_route(st, id), D.Dom.button("", "thread-child", id, "Create a conversation beneath this thread", "+ New subthread")),
               [D.Dom.span("control-label", View.group.label(lc, True{}))], List.take(&2, D.Node, View.snoozes.loc(lc, True{}), 3n)])}]}])}]])}
 
-
 def View.header.legacy(+lc: I.Loc, t: M.Thread, +st: M.State, +chip: String, mini: List<&2, TO.Tool>, +panel: Bool, snoozed: Bool, picking: Bool, term: Bool, +diff: Bool, del: Bool, +ren: String, +rtext: String) -> D.Node:
   match t:
     case M.Thread{+id, +p, title, _, _, turn, _, archived, override, +sa, +ua, pinned, _, +branch, _, _, model, _, _, _, _}:
@@ -1477,6 +1477,68 @@ def View.keys.set(+lc: I.Loc, +u: U.Ui) -> List<&2, D.Node>:
        D.Dom.button(Bool.pick(String, U.Ui.flag(u, "keys"), "on", ""), "flag", "keys", MSG.T.settings.keys.names(lc), MSG.T.settings.keys.view(lc))])],
     View.keys.form(lc, U.Ui.flag(u, "keyform"), u), View.keys.list.loc(lc, U.Ui.flag(u, "keys"), u)])
 
+def View.sbox.fields(+lc: I.Loc, fresh: Bool, +n: String, +p: String) -> List<&2, D.Node>:
+  match fresh:
+    case True{}:
+      [WB.WB.input("sname", "sname", n, MSG.T.secret.name.ph(lc), ""), WB.WB.input("spurpose", "spurpose", p, MSG.T.secret.purpose.ph(lc), "")]
+    case False{}:
+      Bool.pick(List<&2, D.Node>, String.is_empty(p), Nil{}, [D.Dom.span("sbox-purpose", p)])
+
+# The secret box (client.bend's Sbox.*): a masked field with no binding
+# (the value is never in the client's state); Save carries the name,
+# purpose and thread in data-space and host.js reads the field once, at
+# that click (secretSave), into the request Sbox.req builds
+def View.sbox.k(+lc: I.Loc, b: U.SBox) -> D.Node:
+  match b:
+    case U.SBox{+n, +p, +who, +th, fresh, +err}:
+      D.El{"div", "sbox", [D.At{"class", "sbox"}], List.concat(&2, D.Node, [
+        [D.Dom.span("sbox-head", Bool.pick(String, String.is_empty(who), MSG.T.secret.add(lc), MSG.T.secret.asks(lc, who, n)))],
+        View.sbox.fields(lc, fresh, n, p),
+        [D.El{"input", "sbox-val", [D.At{"id", "sbox-val"}, D.At{"class", "field sbox-val"}, D.At{"type", "password"}, D.At{"autocomplete", "new-password"}, D.At{"spellcheck", "false"},
+          D.At{"placeholder", MSG.T.secret.value.ph(lc)}, D.At{"data-enter", "secret-save"}, D.At{"data-space", n ++ "\u{1f}" ++ p ++ "\u{1f}" ++ th}, D.At{"data-field", "sbox-val"}], Nil{}},
+         D.Dom.span("sbox-note", Bool.pick(String, String.is_empty(err), MSG.T.secret.note(lc), err)),
+         D.El{"div", "", [D.At{"class", "sbox-btns"}], [
+           D.El{"button", "", [D.At{"class", "primary"}, D.At{"data-space", n ++ "\u{1f}" ++ p ++ "\u{1f}" ++ th}, D.At{"data-field", "sbox-val"}, D.On{"click", "secret-save"}], [D.Txt{MSG.T.secret.save(lc)}]},
+           Bool.pick(D.Node, String.is_empty(who), D.Dom.button("", "secret-shut", "", MSG.T.secret.notnow(lc), MSG.T.secret.notnow(lc)), D.Dom.button("", "secret-dismiss", n, MSG.T.secret.notnow(lc), MSG.T.secret.notnow(lc)))]}]])}
+
+def View.sbox(+lc: I.Loc, m: Maybe<&2, U.SBox>) -> List<&2, D.Node>:
+  match m:
+    case Some{b}:
+      [View.sbox.k(lc, b)]
+    case None{}:
+      Nil{}
+
+def View.secrets.asks(xs: List<&2, U.SAsk>, +lc: I.Loc, +st: M.State) -> List<&2, D.Node>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case +a <> t:
+      View.setrow(MSG.T.secret.requested(lc) ++ ": " ++ U.SAsk.name(a), U.Sbox.ask.note(st, a),
+        [D.Dom.button("primary", "secret-open", U.SAsk.name(a), MSG.T.secret.save(lc), MSG.T.common.set(lc)), D.Dom.button("", "secret-dismiss", U.SAsk.name(a), MSG.T.secret.notnow(lc), MSG.T.secret.notnow(lc))])
+        <> View.secrets.asks(t, lc, st)
+
+def View.secrets.row(+lc: I.Loc, r: U.SRowV) -> D.Node:
+  match r:
+    case U.SRowV{+n, +note, +rm}:
+      View.setrow(n, note, [D.Dom.button("", "secret-open", n, MSG.T.secret.replace(lc), MSG.T.secret.replace(lc)),
+        D.Dom.button(Bool.pick(String, rm, "danger on", "danger"), "secret-del", n, MSG.T.common.delete(lc), Bool.pick(String, rm, MSG.T.secret.delete.ask(lc, n), MSG.T.common.delete(lc)))])
+
+def View.secrets.rows(rs: List<&2, U.SRowV>, +lc: I.Loc) -> List<&2, D.Node>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case r <> t:
+      View.secrets.row(lc, r) <> View.secrets.rows(t, lc)
+
+# Settings > Secrets (beside API keys): the vault, an open box, the
+# requests and the secrets kept (names, purposes, last use; never a value)
+def View.secrets.set(+lc: I.Loc, +u: U.Ui) -> List<&2, D.Node>:
+  List.concat(&2, D.Node, [
+    [View.setrow(MSG.T.secret.title(lc), U.Sbox.note(lc, u), [D.Dom.button("", "secret-open", "", MSG.T.secret.open.tip(lc), MSG.T.secret.add(lc))])],
+    View.sbox(lc, U.Sbox.box(u, "")),
+    View.secrets.asks(U.Sbox.asks(U.Ui.state.of(u)), lc, U.Ui.state.of(u)),
+    View.secrets.rows(U.Sbox.rows(lc, u), lc)])
+
 # the pairing code under its row while "pairqr" is on: the code on white
 # with its quiet zone, a click puts it away
 def View.pair.qr.svg(+lc: I.Loc, +rows: List<&2, String>) -> D.Node:
@@ -1589,7 +1651,7 @@ def View.settings.rows.k(i: Nat, +lc: I.Loc, +u: U.Ui, +st: M.State, +nf: Map<&2
       [View.setrow(MSG.T.settings.channel(lc), MSG.T.settings.channel.note(lc), View.chips.loc(lc, ["stable", "nightly"], M.Setting.get(st, "update.channel", "stable"), "update.channel"))],
       [View.setrow("Backplane " ++ v, U.Update.line.w(lc, st, nf, note), View.update.btn.loc(lc, U.Update.btn(st, nf, note)))]])
     case 6n: List.concat(&2, D.Node, [View.voice.set.loc(lc, u, st)])
-    case 7n: List.concat(&2, D.Node, [View.keys.set(lc, u)])
+    case 7n: List.concat(&2, D.Node, [View.keys.set(lc, u), View.secrets.set(lc, u)])
     case 8n: List.concat(&2, D.Node, [View.agy.rows(U.Agv.rows.loc(lc, u))])
     case 9n: List.concat(&2, D.Node, [View.tz.set(lc, u)])
     case 10n: View.tok.set(lc, st) <> View.usage.page(lc, u)
@@ -2551,8 +2613,8 @@ def View.composer.t(+lc: I.Loc, +st: M.State, +sel: String, +drafts: Map<&2, Str
     U.Chip.all(U.Str.get(nf, "models"), pr, mo), U.Effort.of(st, sel), U.Skills.shown(st, sel, drafts, nf), atts, up, vo, mic, U.Str.get(drafts, "@f.mq"), False{},
     View.tok.chip(tok, UZ.Ts.chip(st, sel), U.Flag.get(op, "tokstats")), View.tok.pop(Bool.and(tok, U.Flag.get(op, "tokstats")), st, sel, pr), View.running(turn))
 
-def View.asks.box(+lc: I.Loc, +st: M.State, +id: String, +draft: String, +nf: Map<&2, String>) -> D.Node:
-  D.El{"div", "asks", [D.At{"class", "asks"}, D.At{"id", "asks"}], View.asks(lc, U.Asks.open(st, id), draft, nf)}
+def View.asks.box(+lc: I.Loc, +st: M.State, +id: String, +draft: String, +nf: Map<&2, String>, +dr: Map<&2, String>) -> D.Node:
+  D.El{"div", "asks", [D.At{"class", "asks"}, D.At{"id", "asks"}], List.append(&2, D.Node, View.sbox(lc, U.Sbox.box.d(st, dr, id)), View.asks(lc, U.Asks.open(st, id), draft, nf))}
 
 # the same two from the Ui alone (app.bend's composer and asks)
 def View.composer.k(+lc: I.Loc, u: U.Ui, t: M.Thread, +atts: List<&2, String>, +up: String, vo: List<&2, D.Node>, +mic: String) -> D.Node:
@@ -2569,7 +2631,7 @@ def View.composer.u(+u: U.Ui) -> D.Node:
 def View.asks.u(+lc: I.Loc, u: U.Ui) -> D.Node:
   match u:
     case U.Ui{+st, +sel, +drafts, _, _, _, _, _, _, _, _, _, _, _, +nf, _, _}:
-      View.asks.box(lc, st, sel, U.Str.get(drafts, sel), nf)
+      View.asks.box(lc, st, sel, U.Str.get(drafts, sel), nf, drafts)
 
 # The project card (client.bend's Fab.*, core/order.bend): the intent's
 # goal (a click opens the whole intent), Edit, and Buy it with its price
@@ -2766,7 +2828,7 @@ def View.thread.p(+lc: I.Loc, +u: U.Ui, t: M.Thread, pend: List<&2, String>, +at
           [D.El{"div", "work", [D.At{"class", "work"}], View.pins.loc(lc, U.Ec.pins(U.Ec.make(U.MailvLocal.terms(tr), st, id, now), st, id), U.Ec.make(U.MailvLocal.terms(tr), st, id, now))}],
           View.paged(lc, drafts, M.State.mine(st, id), st, id, nf, View.running(turn), U.Ec.make(U.MailvLocal.terms(tr), st, id, now)),
           View.sending.loc(lc, pend), View.thread.live.loc(lc, st, nf, live, id), View.hold.pill(pill)])},
-         View.asks.box(lc, st, id, U.Str.get(drafts, sel), nf),
+         View.asks.box(lc, st, id, U.Str.get(drafts, sel), nf, drafts),
          View.todos(lc, nf, id, U.Todos.shown(st, id, View.running(turn))),
          View.queued(lc, M.Queue.context(M.Queue.items(st, id)), View.running(turn))],
         rd, [View.composer.t(lc, st, sel, drafts, op, nf, turn, pr, mo, atts, up, vo, mic)]]))
@@ -3763,7 +3825,7 @@ def View.tour.cls(+u: U.Ui) -> String:
 def View.page.b.sidebar(+lc: I.Loc, +bv: BI.View, u: U.Ui, sidebar: D.Node) -> D.Node:
   match u:
     case U.Ui{+st, +sel, +d, +l, +o, +on, +now, +ad, +pa, +v, +r, +w, +e, +note, +nf, +ob, +tr}:
-      D.El{"div", "app", [D.At{"style", "--text-scale:" ++ U32.show(TS.Scale.of(st))}, D.At{"class", Bool.pick(String, pa, "app panel", "app") ++ Bool.pick(String, Bool.or(Bool.or(Bool.not(String.is_empty(sel)), U.Flag.get(o, "settings")), WB.WB.shown(bv)), " picked", "")
+      D.El{"div", "app", [D.At{"data-bub-home", J.Json.show(HOP.Hop.snapshot(U.Ui{st, sel, d, l, o, on, now, ad, pa, v, r, w, e, note, nf, ob, tr}))}, D.At{"style", "--text-scale:" ++ U32.show(TS.Scale.of(st))}, D.At{"class", Bool.pick(String, pa, "app panel", "app") ++ Bool.pick(String, Bool.or(Bool.or(Bool.not(String.is_empty(sel)), U.Flag.get(o, "settings")), WB.WB.shown(bv)), " picked", "")
         ++ Bool.pick(String, String.eq(M.Setting.get(st, "ui.theme", ""), "light"), " light", "") ++ View.tour.cls(U.Ui{st, sel, d, l, o, on, now, ad, pa, v, r, w, e, note, nf, ob, tr})}],
         D.Dom.cat([sidebar,
           View.main.b(lc, U.Flag.get(o, "settings"), bv, U.Ui{st, sel, d, l, o, on, now, ad, pa, v, r, w, e, note, nf, ob, tr}, sel, List.length(&2, M.Project, U.Ui.projects(st)))],

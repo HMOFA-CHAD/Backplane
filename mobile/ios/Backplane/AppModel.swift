@@ -461,7 +461,20 @@ final class AppModel {
         Task { apply(await f(e)) }
     }
 
+    // what was typed in the secret box's value field (SetFieldView, a vault
+    // field): held here only until Save, then handed to the engine once
+    @ObservationIgnored var vaultText = ""
+
     func act(_ action: String, _ value: String = "") {
+        // the secret box's Save: the value joins the box's name, purpose and
+        // thread and leaves in one secret.set request (Engine.secret)
+        if action == "secret-save" {
+            let v = vaultText
+            vaultText = ""
+            guard contentReady else { return }
+            run { await $0.secret(value + "\u{1f}" + v) }
+            return
+        }
         // a web address a settings row offers (Antigravity's sign-in):
         // opened in the browser here, never sent to the engine
         if action == "open-url" {

@@ -11,6 +11,8 @@ import ../core/msgs.bend as MSG
 import ./session.bend as PS
 import ./thin.bend as TH
 
+import ../core/bub-move.bend as HOP
+
 # Resolve the native host's language once when device settings change. This uses
 # the same normalization and preview gate as each hub's Ui, including no hubs.
 def native_locale(setting: String, os: String, preview: String) -> String:
@@ -110,6 +112,12 @@ def cbor_words() -> List<&2, String>:
 
 # a message for the hub (a Send command's JSON text) as the base64 of the
 # CBOR frame the app sends
+# the secret box's Save (bridge.js's Backplane.secret): "<name>\u001f
+# <purpose>\u001f<thread>\u001f<value>" to {"rpc": the secret.set request}
+# or {"error"}
+def secret_req(+packed: String) -> String:
+  U.Sbox.req(packed)
+
 def wire(text: String) -> String:
   SH.B64.encode(CB.Cbor.encode(Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{})))
 
@@ -281,3 +289,7 @@ def thin_partial(shown: J.Json, window: J.Json) -> J.Json:
 
 def thin_search(screenText: String, searchText: String) -> J.Json:
   TH.Search.screen(json_parse(screenText), json_parse(searchText))
+
+# Tiny lease comparison shared by the web and phone presentation hosts.
+def bub_move(before: String, after: String) -> J.Json:
+  HOP.Hop.text(before, after)

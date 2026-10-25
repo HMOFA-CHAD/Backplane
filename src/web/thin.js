@@ -123,7 +123,7 @@ export class ThinViews {
   connect(hub, greeting) {
     if (!bounded(hub, 1024) || !hub || !viewGreeting(greeting)) return { compatibilityRequired: true, cmds: [] };
     const abandoned = this.disconnect(hub, 'connection changed');
-    const link = { hub, greeting: snapshot(greeting), revision: 0, viewId: '', target: null, shown: null, viewRevision: '', updatePending: false, updateId: null, invalidated: false, changedRevision: null, readInvalidated: false };
+    const link = { hub, greeting: snapshot(greeting), revision: 0, pictureRevision: 0, terminalOwner: '', terminalOpen: false, viewId: '', target: null, shown: null, viewRevision: '', updatePending: false, updateId: null, invalidated: false, changedRevision: null, readInvalidated: false };
     this.links.set(hub, link);
     return { connected: true, abandoned, cmds: [] };
   }
@@ -139,7 +139,7 @@ export class ThinViews {
     if (!l || !viewTarget(target)) return { failed: 'invalid view selection', cmds: [] };
     if (session && own(session, 'route') && !compactRoute(session.route, target)) return { failed: 'invalid view route', cmds: [] };
     if (l.revision >= MAX_REVISION) return { failed: 'view revision exhausted', cmds: [] };
-    l.target = snapshot(target); l.viewId = ''; l.viewRevision = ''; l.updatePending = false; l.updateId = null; l.invalidated = false; l.changedRevision = null; l.readInvalidated = false;l.sidebar = null;
+    l.target = snapshot(target); l.viewId = ''; l.viewRevision = ''; l.updatePending = false; l.updateId = null; l.invalidated = false; l.changedRevision = null; l.readInvalidated = false;l.sidebar = null;l.terminalOwner = '';l.terminalOpen = false;
     return this.request(hub, 'view.open', { session, cid });
   }
   request(hub, method, args = {}) {
@@ -150,15 +150,25 @@ export class ThinViews {
     let count = 0;
     for (const c of this.calls.values()) if (c.link === l) count++;
     if (count >= 8 || this.calls.size >= 128) return { failed: 'pending request limit', cmds: [] };
+    const previousPicture = l.pictureRevision;
     if (method !== 'view.cancel') {
       if (l.revision >= MAX_REVISION) return { failed: 'view revision exhausted', cmds: [] };
       l.revision++;
+      l.pictureRevision = l.revision;
     }
     // Callers supply page/search/chunk requests only after a real gesture or
     // explicit query. Invalidations cannot generate those requests.
     let extra;
     try { extra = snapshot(args); } catch { return { failed: 'invalid request', cmds: [] }; }
     if (!record(extra) || utf8Bytes(JSON.stringify(extra)) > VIEW_LIMITS.replyBytes) return { failed: 'request limit', cmds: [] };
+    // Compact input cannot change the selected picture. Keep the wire counter
+    // monotonic without starving a canonical read during continuous typing.
+    // This is an intent only: a validated full fallback becomes a barrier below.
+    const terminalInputIntent = method === 'view.action' && l.greeting.renderer === 'web' && !!l.viewId && !!l.shown &&
+      extra.terminalInput === true && ['term-key','term-paste'].includes(extra.action) &&
+      extra.session?.open?.term === true && l.terminalOpen && bounded(extra.terminalOwner, 1024) &&
+      extra.terminalOwner.length > 0 && extra.terminalOwner === l.terminalOwner;
+    if (terminalInputIntent) l.pictureRevision = previousPicture;
     let id; try { id = this.allocate(); } catch (e) { return { failed: e.message, cmds: [] }; }
     const p = { ...extra, version: 1, hub, generation: l.greeting.generation, epoch: l.greeting.epoch,
       requestRevision: l.revision, target: snapshot(l.target), viewId: l.viewId };
@@ -166,7 +176,7 @@ export class ThinViews {
       && ['view.open','view.page','view.update','view.action'].includes(method);
     if (regionEnabled) p.sidebarRegion = sidebarOffer(l.sidebar);
     const call = { id, link: l, method, target: snapshot(l.target), revision: l.revision, viewId: l.viewId,
-      began: this.api.now(), input: snapshot(p), sidebarBase: regionEnabled ? l.sidebar : null, explicitRead: method === 'view.update' && (l.readInvalidated || l.changedRevision === null) };
+      began: this.api.now(), input: snapshot(p), terminalInputIntent, sidebarBase: regionEnabled ? l.sidebar : null, explicitRead: method === 'view.update' && (l.readInvalidated || l.changedRevision === null) };
     if (method === 'view.update') { l.updatePending = true; l.updateId = id; l.invalidated = false; l.readInvalidated = false; }
     this.calls.set(id, call);
     return { id, cmds: [this.api.send(hub, { id, m: method, p })] };
@@ -187,7 +197,7 @@ export class ThinViews {
     l.updatePending = false; l.updateId = null;
     // A newer auxiliary query can retire display authority without consuming
     // the selected view's invalidation. Preserve that outstanding refresh.
-    if (l.viewId === call.viewId && sameTarget(l.target, call.target) && l.revision !== call.revision) {
+    if (l.viewId === call.viewId && sameTarget(l.target, call.target) && l.pictureRevision !== call.revision) {
       l.invalidated = true;
       if (call.explicitRead) l.readInvalidated = true;
     }
@@ -198,7 +208,7 @@ export class ThinViews {
     const c = this.calls.get(e.id), l = this.links.get(hub);
     if (!c || c.link !== l || c.link.hub !== hub) return null;
     this.calls.delete(e.id);
-    const current = l.revision === c.revision && sameTarget(l.target, c.target);
+    let current = (c.terminalInputIntent || c.method === 'view.cancel' ? l.revision : l.pictureRevision) === c.revision && sameTarget(l.target, c.target);
     this.retireUpdate(c);
     if (e.ok !== true) return { failed: record(e.error) ? e.error.code : 'UNAVAILABLE', id: e.id, method: c.method, retry: false, cmds: [] };
     let r = e.result;
@@ -227,11 +237,21 @@ export class ThinViews {
       } catch { return { failed: 'invalid sidebar region', id: e.id, method: c.method, retry: false, cmds: [] }; }
     }
     if (this.api.validateResult && this.api.validateResult(r, c.input) !== true) return { failed: 'invalid view presentation', id: e.id, method: c.method, retry: false, cmds: [] };
+    if (c.terminalInputIntent && inputOnly) current = current && l.terminalOpen && l.terminalOwner === c.input.terminalOwner;
+    // Only a fully validated, ready full fallback may promote an exempt intent
+    // into picture authority. Its original ordinal cannot overtake navigation.
+    if (c.terminalInputIntent && !inputOnly && record(r.shown) && r.remoteReady === true &&
+        l.viewId === c.viewId && sameTarget(l.target, c.target)) {
+      l.pictureRevision = Math.max(l.pictureRevision, c.revision);
+      current = l.pictureRevision === c.revision;
+    }
     const cmds = c.method === 'view.action' ? r.cmds.map(x => this.api.command(snapshot(x), c.input)) : [];
     const presentation = ['view.open', 'view.page', 'view.update', 'view.action'].includes(c.method);
     const displayed = current && presentation && record(r.shown) && r.remoteReady === true;
     if (displayed) {
       l.viewId = r.viewId; l.viewRevision = r.viewRevision; l.shown = r.shown;
+      l.terminalOpen = r.session?.open?.term === true;
+      l.terminalOwner = bounded(r.session?.drafts?.['@terminal.owner'], 1024) ? r.session.drafts['@terminal.owner'] : '';
       l.sidebar = sidebar?.cache || null;
       // A full matching action picture already includes older canonical
       // invalidations. Compact ACKs and auxiliary replies cover no picture.

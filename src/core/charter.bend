@@ -45,7 +45,7 @@ def Charter.bash_risky(+s: String) -> Bool:
     Charter.any(["bash ", "sh ", "zsh ", "eval ", "exec ", "sudo ", "env ", "python", "node ", "bun ", "ruby ", "perl "], s)))
 
 def Charter.bash(+tool: String) -> Bool:
-  Charter.any(["Bash", "bash", "exec_command", "shell", "work_run", "terminal_open", "terminal_send"], tool)
+  Charter.any(["Bash", "bash", "exec_command", "shell", "work_run", "terminal_open", "terminal_send", "secret_run"], tool)
 
 def Charter.risky(+tool: String, +input: J.Json) -> Bool:
   Bool.or(Charter.any(["gmail_send", "gmail_reply", "send_email", "reply_email", "deploy_restart", "deploy_main", "purchase", "order", "store_", "sandbox_create", "boat_new", "boat_create", "delete", "webhook"], tool),

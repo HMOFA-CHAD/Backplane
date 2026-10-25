@@ -589,6 +589,19 @@ struct SetField: Codable, Hashable {
     let name, hint: String
     let secret: Bool
     let value: String
+    // the secret box's value field (screen.bend's Mob.sbox): kept by the app
+    // and handed over only at Save (AppModel.vaultText), never sent as typed
+    var vault: Bool = false
+
+    enum CodingKeys: String, CodingKey { case name, hint, secret, value, vault }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        name = try c.decode(String.self, forKey: .name)
+        hint = try c.decode(String.self, forKey: .hint)
+        secret = try c.decode(Bool.self, forKey: .secret)
+        value = try c.decode(String.self, forKey: .value)
+        vault = try c.decodeIfPresent(Bool.self, forKey: .vault) ?? false
+    }
 }
 
 struct UsageDay: Codable, Hashable {
@@ -865,6 +878,7 @@ struct HubIsland: Decodable {
 }
 
 struct Screen: Decodable {
+    let bubMove: BubMove?
     let locale: String?
     let online: Bool
     // hub: the one in focus (its thread is shown, its plots are drawn)

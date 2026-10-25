@@ -17,6 +17,7 @@ struct RootView: View {
     var body: some View {
         content
             .safeAreaInset(edge: .top, spacing: 0) { ViewStartupBanner(model: model) }
+            .overlay(alignment: .top) { BubMoveOverlay(move: model.contentReady ? model.screen?.bubMove : nil) }
             .environment(\.backplaneLanguage, model.screen?.locale ?? "en")
             .environment(\.locale, Locale(identifier: model.screen?.locale ?? "en"))
     }
