@@ -12189,3 +12189,56 @@ law sidebar_draft_settings_separate:
   for view: String
   for revision: Nat
   {CHATSIDE.SidebarImage.key.input(True{}, u, epoch, view, revision) == "" : String}
+
+# ---- secret box (src/core/secret.bend, docs/secrets.md) ----
+import ./src/core/secret.bend as SEC
+# A stored value lives only in a SecVal inside a Vault, and only the masks
+# take one apart. No stored value occurs in masked text, masking twice is
+# masking once, clean text is left alone, an empty vault masks nothing, and
+# every string (and key) of a masked JSON tree is clean: the hub masks each
+# committed change's JSON (the log, the store, FTS, mail, every client),
+# each MCP answer, each agent output line as read and each line written to
+# an agent with these defs.
+law sec_mask_total:
+  for +v: SEC.Vault
+  for +s: String
+  for +h: {SEC.Sec.valid(v) == True{} : Bool}
+  {SEC.Sec.clean(v, SEC.Sec.mask(v, s)) == True{} : Bool}
+
+# the vault the hub builds from the effect's values is always valid
+law sec_vault_valid:
+  for ts: List<&2, String>
+  {SEC.Sec.valid(SEC.Sec.vault(ts)) == True{} : Bool}
+
+law sec_vault_total:
+  for +ts: List<&2, String>
+  for +s: String
+  {SEC.Sec.clean(SEC.Sec.vault(ts), SEC.Sec.mask(SEC.Sec.vault(ts), s)) == True{} : Bool}
+
+law sec_mask_idem:
+  for +v: SEC.Vault
+  for +s: String
+  for +h: {SEC.Sec.valid(v) == True{} : Bool}
+  {SEC.Sec.mask(v, SEC.Sec.mask(v, s)) == SEC.Sec.mask(v, s) : String}
+
+law sec_mask_clean_id:
+  for +v: SEC.Vault
+  for +s: String
+  for +h: {SEC.Sec.clean(v, s) == True{} : Bool}
+  {SEC.Sec.mask(v, s) == s : String}
+
+law sec_empty_id:
+  for +s: String
+  {SEC.Sec.mask(SEC.Vault{[]}, s) == s : String}
+
+law sec_json_total:
+  for +v: SEC.Vault
+  for +j: J.Json
+  for +h: {SEC.Sec.valid(v) == True{} : Bool}
+  {SEC.Sec.json.clean(v, SEC.Sec.json(v, j)) == True{} : Bool}
+
+# what an agent gets for a secret is its name and whether it is set
+law sec_handle_shape:
+  for +n: String
+  for b: Bool
+  {SEC.Sec.handle(n, b) == J.Obj{J.Field{"secret", J.Str{n}, J.Field{"set", J.Flag{b}, J.End{}}}} : J.Json}

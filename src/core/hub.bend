@@ -37,6 +37,7 @@ import ./adopt.bend as AD
 import ./cmds.bend as CM
 import ./order.bend as OR
 import ./fallback.bend as FB
+import ./secret.bend as SEC
 
 # The decider. Requests from clients and lines from agents come in; changes
 # (persisted, folded into the read model) and effects (run by the server)
@@ -8678,3 +8679,90 @@ def Operational.pending(+os: List<&2, Out>) -> List<&2, M.Change>:
     case Nil{}: Nil{}
     case MailAppend{_, _, +cs} <> +t: List.append(&2, M.Change, cs, Operational.pending(t))
     case _ <> +t: Operational.pending(t)
+
+# Secrets (core/secret.bend, docs/secrets.md)
+# -------------------------------------------
+# A step's changes with every stored value masked before they are written
+# and folded in: each change's JSON through SEC.Sec.json (law
+# sec_json_total), decoded again only when it held a value. With nothing
+# stored the step's changes go as they are, unencoded (law
+# sec_changes_empty).
+def Secret.decoded(m: Maybe<&2, M.Change>) -> List<&2, M.Change>:
+  match m:
+    case Some{c}:
+      [c]
+    case None{}:
+      Nil{}
+
+def Secret.change.k(dirty: Bool, +v: SEC.Vault, +j: J.Json, c: M.Change) -> List<&2, M.Change>:
+  match dirty:
+    case True{}:
+      Secret.decoded(C.Change.decode(SEC.Sec.json(v, j)))
+    case False{}:
+      [c]
+
+def Secret.change.j(+j: J.Json, +v: SEC.Vault, c: M.Change) -> List<&2, M.Change>:
+  Secret.change.k(SEC.Sec.json.dirty(v, j), v, j, c)
+
+def Secret.change(+v: SEC.Vault, +c: M.Change) -> List<&2, M.Change>:
+  Secret.change.j(C.Change.encode(c), v, c)
+
+def Secret.changes.go(cs: List<&2, M.Change>, +v: SEC.Vault, acc: List<&2, M.Change>) -> List<&2, M.Change>:
+  match cs:
+    case Nil{}:
+      List.reverse(&2, M.Change, acc)
+    case +c <> t:
+      Secret.changes.go(t, v, List.append(&2, M.Change, List.reverse(&2, M.Change, Secret.change(v, c)), acc))
+
+def Secret.changes.k(empty: Bool, +v: SEC.Vault, cs: List<&2, M.Change>) -> List<&2, M.Change>:
+  match empty:
+    case True{}:
+      cs
+    case False{}:
+      Secret.changes.go(cs, v, Nil{})
+
+def Secret.changes(+v: SEC.Vault, cs: List<&2, M.Change>) -> List<&2, M.Change>:
+  Secret.changes.k(SEC.Sec.empty(v), v, cs)
+
+# the thread that asked for a secret (secret_request), or ""
+def Secret.ask.thread(+s: M.State, +name: String) -> String:
+  J.Json.get_str(Maybe.default(&2, J.Json, J.Json.parse(M.Setting.get(s, SEC.Sec.ask.key(name), "")), J.Null{}), "thread", "")
+
+# an agent asks for a secret: the request the clients show (its name and
+# purpose, the thread; never a value)
+def Secret.asked(+name: String, +purpose: String, +thread: String, +by: String, +now: Nat) -> Step:
+  Step{[M.SettingSet{SEC.Sec.ask.key(name), SEC.Sec.ask.body(purpose, thread, by, now), now}], Nil{}}
+
+def Secret.clear.k(none: Bool, +name: String, +now: Nat) -> List<&2, M.Change>:
+  match none:
+    case True{}:
+      Nil{}
+    case False{}:
+      [M.SettingSet{SEC.Sec.ask.key(name), "", now}]
+
+# the person dismissed a request
+def Secret.dismiss(+s: M.State, +name: String, +now: Nat) -> List<&2, M.Change>:
+  Secret.clear.k(String.is_empty(M.Setting.get(s, SEC.Sec.ask.key(name), "")), name, now)
+
+# what the thread is told: the handle, never the value
+def Secret.note(+name: String) -> String:
+  J.Json.show(SEC.Sec.handle(name, True{})) ++ " The person saved this secret in Backplane's vault. Use it by name with secret_run; you will never see its value."
+
+def Secret.tell.k(none: Bool, +s: M.State, +now: Nat, +to: String, +name: String) -> Step:
+  match none:
+    case True{}:
+      Step.none()
+    case False{}:
+      Hub.inbox.id(s, now, "secret", to, M.User{}, Secret.note(name), "t:" ++ to ++ ":sec-" ++ name ++ "-" ++ Nat.show(now))
+
+def Secret.tell(+s: M.State, +now: Nat, +to: String, +name: String) -> Step:
+  Secret.tell.k(Bool.or(String.is_empty(to), Bool.not(Lr.exists(s, to))), s, now, to, name)
+
+# a secret saved: its request closed, and the thread that asked for it and
+# the one it was saved from (/secret in a chat) told its handle
+def Secret.saved.k(+asker: String, +s: M.State, +now: Nat, +name: String, +from: String) -> Step:
+  Step.join(Step{Secret.dismiss(s, name, now), Nil{}},
+    Step.join(Secret.tell(s, now, asker, name), Secret.tell(s, now, Bool.pick(String, String.eq(from, asker), "", from), name)))
+
+def Secret.saved(+s: M.State, +now: Nat, +name: String, +from: String) -> Step:
+  Secret.saved.k(Secret.ask.thread(s, name), s, now, name, from)

@@ -136,6 +136,8 @@ import ../core/usage.bend as UZ
 import ./thinstore.bend as TSTO
 import ../core/copy.bend as CP # BACKPLANE_COPY
 import ../core/copynet.bend as CN
+import ./vault.bend as VX # secret box
+import ../core/secret.bend as SEC
 
 # The server. One hub computation owns the read model and the event log;
 # every connection and agent process is its own computation and talks to
@@ -1289,10 +1291,14 @@ def Agent.wrote(r: Socket & Result<&1, &1, U32 & String, Unit>, k: Socket -> IO(
   (s, _) = r
   k(s)
 
+# each line to an agent's stdin (prompts, turn text, answers) masked
+def Agent.write.m(+line: String, s: Socket, k: Socket -> IO(Unit)) -> IO(Unit):
+  IO.bind(String, Unit, VX.Vx.mask(line), l => IO.bind(Socket & Result<&1, &1, U32 & String, Unit>, Unit, H.Sock.send_text(s, l ++ "\n"), r => Agent.wrote(r, k)))
+
 def Agent.write(m: Maybe<&1, String>, s: Socket, k: Socket -> IO(Unit)) -> IO(Unit):
   match m:
     case Some{line}:
-      IO.bind(Socket & Result<&1, &1, U32 & String, Unit>, Unit, H.Sock.send_text(s, line ++ "\n"), r => Agent.wrote(r, k))
+      Agent.write.m(line, s, k)
     case None{}:
       Socket.close(s)
 
@@ -1711,6 +1717,14 @@ def Mcp.answer(m: Maybe<&1, String>, s: Socket) -> IO(Unit):
     case None{}:
       Conn.finish(s, W.Http.text("503 Service Unavailable", "the hub is gone"))
 
+# every MCP answer masked before the agent reads it (laws sec_mask_*)
+def Mcp.masked(m: Maybe<&1, String>) -> IO(Maybe<&1, String>):
+  match m:
+    case Some{+text}:
+      IO.bind(String, Maybe<&1, String>, VX.Vx.mask(text), t => IO.pure(Maybe<&1, String>, Some{t}))
+    case None{}:
+      IO.pure(Maybe<&1, String>, None{})
+
 # the call counts as in flight (for a safe deploy) from its arrival until
 # its answer is written
 def Mcp.ask.raw(s: Socket, +body: String, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
@@ -1721,7 +1735,8 @@ def Mcp.ask.raw(s: Socket, +body: String, +thread: String, +inbox: Chan(Msg)) ->
     +reply : Chan(String) <- Chan.new(String, 1)
     ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, Mcp{thread, body, reply})
     m : Maybe<&1, String> <- Chan.recv(String, reply)
-    Mcp.answer(m, s)
+    m2 : Maybe<&1, String> <- Mcp.masked(m)
+    Mcp.answer(m2, s)
     ok2 : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, McpShut{thread, call})
     return Unit{}
 
@@ -3508,7 +3523,11 @@ def Hub.prompt.files(+cwd: String, fs: K.Files) -> String:
 
 # one thread's instructions: the shared runtime and skills, then this
 # machine's KiCad, the project's canonical files, and what it may delegate
-# (keys: the API keys' block, server/apikeys.bend's Ak.prompt, "" for none)
+# (keys: the API keys' block, server/apikeys.bend's Ak.prompt, "" for none,
+# then the secret box's, vault.bend's Vx.prompt: names only)
+def Hub.keys.prompt(+home: String) -> IO(String):
+  IO.bind(String, String, AKS.Ak.prompt(home), k => IO.bind(String, String, VX.Vx.prompt(), sp => IO.pure(String, k ++ sp)))
+
 def Cfg.bn(c: Cfg) -> BN.Bn:
   match c:
     case Cfg{_, _, _, _, _, _, _, Net{_, _, _, _, _, _, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc, ksx}, +tcfg, +views}:
@@ -4551,14 +4570,14 @@ def Codex.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: Str
   do IO<Unit>:
     +fs : K.Files <- Files.prepared(thread, cwd, inbox)
     +ss : List<&2, AG.USkill> <- Skills.scan(cwd)
-    +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
+    +keys : String <- Hub.keys.prompt(Cfg.home(cfg))
     Codex.run(Codex.args(cfg, thread, model, session, r, AG.Mention.expand("codex", text, ss), Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss), Hub.effort_of(st, thread), gen, MD.Disposition.launch(st, thread), M.Think.on(st)), cwd, thread, gen, inbox)
 
 def Grok.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +text: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
     +fs : K.Files <- Files.prepared(thread, cwd, inbox)
     +ss : List<&2, AG.USkill> <- Skills.scan(cwd)
-    +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
+    +keys : String <- Hub.keys.prompt(Cfg.home(cfg))
     Grok.run(Grok.args(r, model, Hub.effort_of(st, thread)),
       MS.PAcp{AC.AcpTurn{cwd, Hub.mcp_url.g(cfg, thread, gen), Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss), AG.Mention.expand("grok", text, ss), session, Grok.asks(r)}}, cwd, thread, gen, inbox)
 
@@ -4569,7 +4588,7 @@ def Oc.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: String
   do IO<Unit>:
     +fs : K.Files <- Files.prepared(thread, cwd, inbox)
     +ss : List<&2, AG.USkill> <- Skills.scan(cwd)
-    +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
+    +keys : String <- Hub.keys.prompt(Cfg.home(cfg))
     Grok.run(Oc.args(r, model),
       MS.POc{OCM.OcpTurn{AC.AcpTurn{cwd, Hub.mcp_url.g(cfg, thread, gen), Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss), AG.Mention.expand("opencode", text, ss), session, Grok.asks(r)}, model}}, cwd, thread, gen, inbox)
 
@@ -4613,7 +4632,7 @@ def PiRun.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: Str
   do IO<Unit>:
     +fs : K.Files <- Files.prepared(thread, cwd, inbox)
     +ss : List<&2, AG.USkill> <- Skills.scan(cwd)
-    +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
+    +keys : String <- Hub.keys.prompt(Cfg.home(cfg))
     w : P.Ran <- PiRun.write(Cfg.home(cfg))
     Grok.run(PiRun.args(Hub.mcp_url.g(cfg, thread, gen), PiRun.mode(r), PI.Pi.session(session, thread, gen), PiRun.ext(Cfg.home(cfg)),
         Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss), model, Hub.effort_of(st, thread)),
@@ -4655,7 +4674,7 @@ def OmpRun.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: St
   do IO<Unit>:
     +fs : K.Files <- Files.prepared(thread, cwd, inbox)
     +ss : List<&2, AG.USkill> <- Skills.scan(cwd)
-    +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
+    +keys : String <- Hub.keys.prompt(Cfg.home(cfg))
     w : P.Ran <- OmpRun.write(Cfg.home(cfg))
     Grok.run(OmpRun.args(Hub.mcp_url.g(cfg, thread, gen), OmpRun.mode(r), OP.Omp.dir(Cfg.home(cfg), thread), OmpRun.ext(Cfg.home(cfg)),
         Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss), model, Hub.effort_of(st, thread)),
@@ -4667,7 +4686,7 @@ def Muse.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: Stri
   do IO<Unit>:
     +fs : K.Files <- Files.prepared(thread, cwd, inbox)
     +ss : List<&2, AG.USkill> <- Skills.scan(cwd)
-    +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
+    +keys : String <- Hub.keys.prompt(Cfg.home(cfg))
     Grok.run(Muse.args(r, model),
       MS.PMsp{MS.MspTurn{cwd, Hub.mcp_url.g(cfg, thread, gen), Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss), AG.Mention.expand("muse", text, ss), session,
         Muse.mode(r), AG.Effort.of("muse", Hub.effort_of(st, thread)), gen}}, cwd, thread, gen, inbox)
@@ -4694,7 +4713,7 @@ def Agt.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: Strin
   do IO<Unit>:
     +fs : K.Files <- Files.prepared(thread, cwd, inbox)
     +ss : List<&2, AG.USkill> <- Skills.scan(cwd)
-    +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
+    +keys : String <- Hub.keys.prompt(Cfg.home(cfg))
     w : Bool <- AGX.Agx.write(AGX.Agx.root(Cfg.home(cfg)))
     Grok.run(Agt.args(Cfg.home(cfg), st),
       MS.PAgy{AGY.AgyTurn{AC.AcpTurn{cwd, Hub.mcp_url.g(cfg, thread, gen), Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss), AG.Mention.expand("antigravity", text, ss), session, Grok.asks(r)},
@@ -9029,7 +9048,7 @@ def Claude.job(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: S
   do IO<Unit>:
     +fs : K.Files <- K.Files.read(cwd)
     ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, AutoView{thread, fs})
-    +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
+    +keys : String <- Hub.keys.prompt(Cfg.home(cfg))
     Keyring.gate("claude", IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, H.Proc.spawn("env", "MCP_TOOL_TIMEOUT=86400000" <> "CLAUDE_CODE_ENABLE_TODO_TOOLS=1" <> "claude" <> Hub.agent_args(cfg, thread, model, session, r, i, Hub.prompt(cfg, st, thread, cwd, fs, keys), effort, gen, M.Think.on(st)), cwd, 3),
       res => Claude.started(res, thread, gen, cwd, input, inbox)), Claude.fail(thread, gen, KR.Keyring.refusal("claude"), inbox))
 
@@ -10129,7 +10148,8 @@ def Hub.step.wrote(r: Hub & Wrote, +cs: List<&2, M.Change>, os: List<&2, B.Out>,
 def Hub.step.go(+st: M.State, h: Hub, cs: List<&2, M.Change>, os: List<&2, B.Out>) -> IO(Hub & Bool):
   do IO<Hub & Bool>:
     t0 : U32 <- PS.Perf.us()
-    +cs2 : List<&2, M.Change> = B.Shelve.fix(st, cs)
+    v : SEC.Vault <- VX.Vx.vault()
+    +cs2 : List<&2, M.Change> = B.Secret.changes(v, B.Shelve.fix(st, cs))
     t1 : U32 <- PS.Perf.span("hub.step.pend", t0)
     r : Hub & Wrote <- Hub.commit.w(cs2, h)
     t2 : U32 <- PS.Perf.span("hub.step.commit", t1)
@@ -11602,9 +11622,79 @@ def Hub.rpc.view(+thin: Bool, +o: J.Json, h: Hub, +client: U32, +text: String, +
     case True{}: Hub.thin.rpc(h, client, o, now)
     case False{}: Hub.rpc.mobile.kind(C.Codec.pos(["mobile.screen", "mobile.history", "frontend.screen", "frontend.history"], J.Json.get_str(o, "m", "")), o, h, client, text, now)
 
+# The secret box's requests (docs/secrets.md)
+# --------------------------------------------
+# secret.set's value goes from the parsed request straight to the vault's
+# effect (VaultFx.put): it is in no change, no out, no reply and no log
+# line. Replies carry the vault's status and its metadata, never a value.
+
+def SecRpc.list.json(+status: String, +ms: String) -> J.Json:
+  J.Json.obj([J.KV{"status", Maybe.default(&2, J.Json, J.Json.parse(status), J.Null{})}, J.KV{"items", Maybe.default(&2, J.Json, J.Json.parse(ms), J.Json.arr([]))}])
+
+def SecRpc.list(h: Hub, +client: U32, +id: String) -> IO(Hub):
+  do IO<Hub>:
+    +status : String <- VX.VaultFx.status()
+    +ms : String <- VX.VaultFx.list()
+    Hub.out(h, B.Reply.data(client, id, SecRpc.list.json(status, ms)))
+
+def SecRpc.saved(h: Hub, +client: U32, +id: String, +name: String, +thread: String, +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      IO.bind(Hub, Hub, Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Secret.saved(st, now, name, thread)), h2 => SecRpc.list(h2, client, id))
+
+def SecRpc.done(ok: Bool, +r: String, h: Hub, +client: U32, +id: String, +name: String, +thread: String, +now: Nat) -> IO(Hub):
+  match ok:
+    case True{}:
+      SecRpc.saved(h, client, id, name, thread, now)
+    case False{}:
+      Hub.out(h, B.Reply.err(client, id, String.drop(r, 5n)))
+
+def SecRpc.put(ok: Bool, +bad: String, h: Hub, +client: U32, +id: String, +p: J.Json, +name: String, +now: Nat) -> IO(Hub):
+  match ok:
+    case True{}:
+      IO.bind(String, Hub, VX.VaultFx.put(name, String.trim(J.Json.get_str(p, "value", "")), String.take(J.Json.get_str(p, "purpose", ""), 400n), "person"),
+        +r => SecRpc.done(String.eq(r, "ok"), r, h, client, id, name, J.Json.get_str(p, "thread", ""), now))
+    case False{}:
+      Hub.out(h, B.Reply.err(client, id, bad))
+
+def SecRpc.set.k(+name: String, h: Hub, +client: U32, +id: String, +p: J.Json, +now: Nat) -> IO(Hub):
+  SecRpc.put(String.is_empty(SEC.Sec.bad(name, J.Json.get_str(p, "value", ""))), SEC.Sec.bad(name, J.Json.get_str(p, "value", "")), h, client, id, p, name, now)
+
+def SecRpc.del.k(ok: Bool, +r: String, h: Hub, +client: U32, +id: String) -> IO(Hub):
+  match ok:
+    case True{}:
+      SecRpc.list(h, client, id)
+    case False{}:
+      Hub.out(h, B.Reply.err(client, id, String.drop(r, 5n)))
+
+def SecRpc.dismiss(h: Hub, +client: U32, +id: String, +name: String, +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Step{B.Secret.dismiss(st, name, now), [B.Reply.ok(client, id)]})
+
+def SecRpc.go(i: Nat, h: Hub, +client: U32, +id: String, +p: J.Json, +now: Nat) -> IO(Hub):
+  match i:
+    case 0n:
+      SecRpc.set.k(SEC.Sec.name(J.Json.get_str(p, "name", "")), h, client, id, p, now)
+    case 1n:
+      IO.bind(String, Hub, VX.VaultFx.del(SEC.Sec.name(J.Json.get_str(p, "name", ""))), +r => SecRpc.del.k(String.eq(r, "ok"), r, h, client, id))
+    case 2n:
+      SecRpc.list(h, client, id)
+    case 3n:
+      SecRpc.dismiss(h, client, id, SEC.Sec.name(J.Json.get_str(p, "name", "")), now)
+    case _:
+      Hub.out(h, B.Reply.err(client, id, "unknown secret request"))
+
+def Hub.rpc.sec(sec: Bool, +o: J.Json, h: Hub, +client: U32, +text: String, +now: Nat) -> IO(Hub):
+  match sec:
+    case True{}:
+      SecRpc.go(C.Codec.pos(["secret.set", "secret.del", "secret.list", "secret.dismiss"], J.Json.get_str(o, "m", "")), h, client, J.Json.as_raw(J.Json.get(o, "id"), "0"), J.Json.get_obj(o, "p"), now)
+    case False{}:
+      Hub.rpc.view(String.starts_with(J.Json.get_str(o, "m", ""), "view."), o, h, client, text, now)
+
 def Hub.rpc.parse(h: Hub, +client: U32, +text: String, +now: Nat) -> IO(Hub):
   +o = Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{})
-  Hub.rpc.view(String.starts_with(J.Json.get_str(o, "m", ""), "view."), o, h, client, text, now)
+  Hub.rpc.sec(String.starts_with(J.Json.get_str(o, "m", ""), "secret."), o, h, client, text, now)
 
 # Thin requests are bounded before JSON parsing. Oversized packets close only
 # that captured client; no malformed request can trigger compatibility replay.
@@ -11953,10 +12043,15 @@ def Hub.tagged.k(heard: Bool, h: Hub, +thread: String, line: String, +now: Nat) 
     case False{}:
       IO.pure(Hub, h)
 
-def Hub.tagged(h: Hub, +tag: String, line: String, +now: Nat) -> IO(Hub):
+# each agent output line is masked as it is read (every provider's lines
+# come here): a key the agent printed reaches no change, delta or client
+def Hub.tagged.m(h: Hub, +tag: String, line: String, +now: Nat) -> IO(Hub):
   match h:
     case Hub{st, f, ls, cl, +as, inbox, cfg, note}:
       Hub.tagged.k(B.Tag.heard(B.Tag.pid(tag), Agent.pid_of(Agents.get(as, B.Tag.thread(tag)))), Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Tag.thread(tag), line, now)
+
+def Hub.tagged(h: Hub, +tag: String, line: String, +now: Nat) -> IO(Hub):
+  IO.bind(String, Hub, VX.Vx.mask(line), l => Hub.tagged.m(h, tag, l, now))
 
 # then turns the restart cut short carry on (B.Hub.carry)
 def Hub.recover.carry(h: Hub, +before: M.State, +now: Nat) -> IO(Hub):
@@ -12154,8 +12249,21 @@ def Hub.mail.recover.start(h: Hub) -> IO(Hub):
     case Hub{+st, f, +ls, +cl, +as, +inbox, +cfg, +note}:
       Hub.mail.recover.on(String.eq(M.Setting.get(st, "mail.on", "off"), "on"), Hub{st, f, ls, cl, as, inbox, cfg, note})
 
-def Hub.recover(h: Hub, +now: Nat) -> IO(Hub):
+# the secret box's vault is opened before any turn resumes, so every mask
+# covers what is stored (VaultFx.open: values stay in the effect)
+def Hub.vault.open(h: Hub) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      do IO<Hub>:
+        r : String <- VX.VaultFx.open(Cfg.home(cfg))
+        PS.Log.info("vault", r)
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+
+def Hub.recover.v(h: Hub, +now: Nat) -> IO(Hub):
   IO.bind(Hub, Hub, Hub.mail.recover.start(h), h0 => IO.bind(Hub, Hub, Far.start(h0), h2 => Hub.recover.stale(h2, now)))
+
+def Hub.recover(h: Hub, +now: Nat) -> IO(Hub):
+  IO.bind(Hub, Hub, Hub.vault.open(h), hv => Hub.recover.v(hv, now))
 
 # The minute
 # ----------
@@ -14751,8 +14859,83 @@ def Hub.mcp.context(is_context: Bool, h: Hub, +thread: String, +o: J.Json, body:
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case False{} _: Hub.mcp.p(o, h, thread, body, reply, now)
 
-def Hub.mcp.parsed(+o: J.Json, h: Hub, +thread: String, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+# The secret box's tools (docs/secrets.md): handles only. secret_run's
+# answer comes from vault.bend's Vx.run, masked, and every MCP answer is
+# masked again on its way out (Mcp.masked).
+def SecMcp.say(+reply: Chan(String), +id: J.Json, ok: Bool, body: J.Json) -> IO(Unit):
+  do IO<Unit>:
+    sent : Result<&1, &1, String, Unit> <- Chan.send(String, reply, MC.Mcp.result(id, MC.Mcp.content(ok, body)))
+    return Unit{}
+
+def SecMcp.list(+reply: Chan(String), +id: J.Json) -> IO(Unit):
+  IO.bind(List<&2, SEC.SecMeta>, Unit, VX.Vx.metas(), ms => SecMcp.say(reply, id, True{}, J.Json.arr(SEC.Sec.list.go(ms, Nil{}))))
+
+def SecMcp.request.k(has: Bool, h: Hub, +name: String, +purpose: String, +thread: String, +id: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match has:
+    case True{}:
+      do IO<Hub>:
+        SecMcp.say(reply, id, True{}, SEC.Sec.handle(name, True{}))
+        return h
+    case False{}:
+      do IO<Hub>:
+        h2 : Hub <- Hub.step(h, B.Secret.asked(name, purpose, thread, thread, now))
+        SecMcp.say(reply, id, True{}, J.Json.obj([J.KV{"secret", J.Str{name}}, J.KV{"set", J.Flag{False{}}}, J.KV{"requested", J.Flag{True{}}},
+          J.KV{"note", J.Str{"The person sees a masked box for it in this chat. End your turn; a message tells you when it is set."}}]))
+        return h2
+
+def SecMcp.request.n(empty: Bool, h: Hub, +name: String, +purpose: String, +thread: String, +id: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match empty:
+    case True{}:
+      do IO<Hub>:
+        SecMcp.say(reply, id, False{}, J.Json.obj([J.KV{"error", J.Str{"name is required"}}]))
+        return h
+    case False{}:
+      IO.bind(List<&2, SEC.SecMeta>, Hub, VX.Vx.metas(), ms => SecMcp.request.k(SEC.Sec.has(ms, name), h, name, purpose, thread, id, reply, now))
+
+def SecMcp.ran(+r: J.Json, +id: J.Json, +reply: Chan(String)) -> IO(Unit):
+  SecMcp.say(reply, id, Maybe.is_none(&2, J.Json, J.Json.get(r, "error")), r)
+
+def SecMcp.run.job(+spec: String, +id: J.Json, +reply: Chan(String)) -> IO(Unit):
+  IO.bind(String, Unit, VX.Vx.run(spec), r => SecMcp.ran(Maybe.default(&2, J.Json, J.Json.parse(r), J.Json.obj([J.KV{"error", J.Str{"the run failed"}}])), id, reply))
+
+def SecMcp.run.spec(+a: J.Json, +cwd: String, +thread: String) -> String:
+  J.Json.show(J.Json.obj([J.KV{"command", J.Str{J.Json.get_str(a, "command", "")}}, J.KV{"env", J.Json.get_obj(a, "env")}, J.KV{"files", J.Json.get_obj(a, "files")},
+    J.KV{"cwd", J.Str{Bool.pick(String, String.is_empty(J.Json.get_str(a, "cwd", "")), cwd, J.Json.get_str(a, "cwd", ""))}},
+    J.KV{"timeout", J.Num{J.Json.as_raw(J.Json.get(a, "timeout"), "120")}}, J.KV{"thread", J.Str{thread}}]))
+
+def SecMcp.go(i: Nat, h: Hub, +thread: String, +o: J.Json, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match i h:
+    case 0n _:
+      SecMcp.request.n(String.is_empty(SEC.Sec.name(J.Json.get_str(J.Json.get_obj(J.Json.get_obj(o, "params"), "arguments"), "name", ""))), h,
+        SEC.Sec.name(J.Json.get_str(J.Json.get_obj(J.Json.get_obj(o, "params"), "arguments"), "name", "")), J.Json.get_str(J.Json.get_obj(J.Json.get_obj(o, "params"), "arguments"), "purpose", ""),
+        thread, J.Json.get_obj(o, "id"), reply, now)
+    case 1n _:
+      do IO<Hub>:
+        IO.spawn(Unit, SecMcp.list(reply, J.Json.get_obj(o, "id")))
+        return h
+    case _ Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      do IO<Hub>:
+        IO.spawn(Unit, SecMcp.run.job(SecMcp.run.spec(J.Json.get_obj(J.Json.get_obj(o, "params"), "arguments"), B.Hub.cwd(st, B.Hub.thread(st, thread)), thread), J.Json.get_obj(o, "id"), reply))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+
+def SecMcp.pos(+o: J.Json) -> Nat:
+  Bool.pick(Nat, String.eq(J.Json.get_str(o, "method", ""), "tools/call"), C.Codec.pos(["secret_request", "secret_list", "secret_run"], J.Json.get_str(J.Json.get_obj(o, "params"), "name", "")), 3n)
+
+def Hub.mcp.parsed.k(+o: J.Json, h: Hub, +thread: String, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
   Hub.mcp.context(Bool.and(String.eq(J.Json.get_str(o, "method", ""), "tools/call"), String.eq(J.Json.get_str(J.Json.get_obj(o, "params"), "name", ""), "mail_context")), h, thread, o, body, reply, now)
+
+def Hub.mcp.sec.k(sec: Bool, +i: Nat, +o: J.Json, h: Hub, +thread: String, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match sec:
+    case True{}:
+      SecMcp.go(i, h, thread, o, reply, now)
+    case False{}:
+      Hub.mcp.parsed.k(o, h, thread, body, reply, now)
+
+def Hub.mcp.sec(+i: Nat, +o: J.Json, h: Hub, +thread: String, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  Hub.mcp.sec.k(Nat.is_lt(i, 3n), i, o, h, thread, body, reply, now)
+
+def Hub.mcp.parsed(+o: J.Json, h: Hub, +thread: String, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  Hub.mcp.sec(SecMcp.pos(o), o, h, thread, body, reply, now)
 
 def Hub.mcp(h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
   Hub.mcp.parsed(Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{}), h, thread, body, reply, now)
