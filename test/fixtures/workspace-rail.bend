@@ -34,7 +34,7 @@ def base() -> U.Ui:
 
 def ui(bot: Bool, +kind: String) -> U.Ui:
   +u = Bool.pick(U.Ui, bot, U.Ui.fold([M.BotSet{"b", "Fixture bot", "t", 1n, "", 1n}], base()), base())
-  U.Side.with_signals(Bool.pick(U.Ui, String.is_empty(kind), u, U.Ui.view_put(u, kind, "/tmp/navigation-fixture/boards/main/main.kicad_pcb")))
+  A.stamp(U.Side.with_signals(Bool.pick(U.Ui, String.is_empty(kind), u, U.Ui.view_put(u, kind, "/tmp/navigation-fixture/boards/main/main.kicad_pcb"))))
 
 def thread(+before: Bool, +bot: Bool, +u: U.Ui) -> D.Node:
   Bool.pick(D.Node, before, B.Before.thread.h(I.En{}, u, U.Ui.thread(U.Ui.state(u), "t"),
