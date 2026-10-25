@@ -59,7 +59,8 @@ let service,browser;const result={stage,home,ptyLog,state:'started',limits:['Gen
  await page.keyboard.press('Control+c');expected=Buffer.concat([expected,Buffer.from([3])]);await waitPty(expected.length);
  await page.keyboard.press('ArrowUp');expected=Buffer.concat([expected,Buffer.from([27,91,65])]);await waitPty(expected.length);
  const pasted='line one\ncafé';await page.evaluate(text=>{const transfer=new DataTransfer();transfer.setData('text/plain',text);document.getElementById('term').dispatchEvent(new ClipboardEvent('paste',{clipboardData:transfer,bubbles:true,cancelable:true}))},pasted);
- expected=Buffer.concat([expected,Buffer.from(pasted)]);await waitPty(expected.length);
+ // Existing Vt.paste converts LF/CRLF to the terminal's CR input; UTF-8 stays exact.
+ expected=Buffer.concat([expected,Buffer.from(pasted.replace(/\r?\n/g,'\r'))]);await waitPty(expected.length);
  result.inputOrder=Buffer.from(readPty().map(x=>x.byte)).equals(expected);
  result.termNodeRetained=await termNode.evaluate(e=>e===document.getElementById('term'));
  result.composerNodeRetained=await composerNode.evaluate(e=>e===document.getElementById('composer'));

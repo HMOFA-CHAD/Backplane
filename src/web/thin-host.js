@@ -71,7 +71,8 @@ export class ThinHost {
     if (!result || result.failed) { this.fail(result?.failed || 'View unavailable');return false; }
     if (result.id) {
       const request = result.cmds.find(c => c.type === 'request')?.request;
-      this.pending.set(result.id, { viewerRevision: this.viewerRevision, revision: this.localRevision, target: request?.p.target, wireRevision: request?.p.requestRevision, input: request?.p, acks: [], ...metadata });
+      this.pending.set(result.id, { viewerRevision: this.viewerRevision, revision: this.localRevision, target: request?.p.target, wireRevision: request?.p.requestRevision,
+        pictureAuthority: this.client.calls?.get(result.id)?.terminalInputIntent !== true, input: request?.p, acks: [], ...metadata });
     }
     try {
       for (const item of result.cmds || []) {
@@ -497,7 +498,7 @@ export class ThinHost {
   }
   isCurrent(metadata) {
     const link = this.client.links.get(this.hub);
-    return !!metadata && !!link && metadata.wireRevision === link.revision && metadata.target?.kind === link.target?.kind && metadata.target?.id === link.target?.id;
+    return !!metadata && !!link && metadata.wireRevision === (metadata.pictureAuthority ? link.pictureRevision : link.revision) && metadata.target?.kind === link.target?.kind && metadata.target?.id === link.target?.id;
   }
   fail(reason) {
     this.retireTerminal('Queued terminal input was not sent because the connection failed.');
