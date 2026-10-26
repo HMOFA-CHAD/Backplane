@@ -104,6 +104,10 @@ export class NativeThinHost307265 {
       session.drafts = { ...session.drafts, ...Object.fromEntries([...drafts].map(([thread, d]) => [thread, d.text])) };
       value = { hub, session, target: this.api.target(session), anchor: { id: '', offset: 0 },
         mode: '', epoch: '', greeted: false, ready: false, shown: null, window: null,
+        // history pages (as the web's thin-host): the cursor shown ('' the
+        // newest), the cursors that led here, the one page on its way, and
+        // pages a send overtook (their replies are dropped)
+        cursor: '', back: [], paging: null, overtaken: new Set(),
         revision: 0, drafts, queue: [], active: null, messages: new MessageParts(), findRevision: 0, findCloseOnce: false, registrations: new Map() };
       this.states.set(hub, value);
     }
@@ -246,8 +250,17 @@ export class NativeThinHost307265 {
     return true;
   }
 
+  pageTo(s, cursor, back) {
+    const undo = { cursor: s.cursor, back: s.back };
+    const result = this.client.request(s.hub, 'view.page', { cursor, session: this.requestSession(s.session, 'view.page', s.target) });
+    s.cursor = cursor; s.back = back;
+    if (!this.issue(s, result) || !result?.id) { s.cursor = undo.cursor; s.back = undo.back; return; }
+    s.paging = { id: result.id, undo };
+  }
+
   select(s, target, session) {
     s.target = copy(target); s.session = copy(session); s.window = null;
+    s.cursor = ''; s.back = []; s.paging = null;
     s.queue = []; s.messages.clear();
     return this.issue(s, this.client.select(s.hub, s.target, this.requestSession(s.session, 'view.open', s.target), this.api.cid()));
   }
@@ -290,8 +303,15 @@ export class NativeThinHost307265 {
       return true;
     }
     if (!s.greeted || !s.ready) return true;
+    // One page request at a time, each taken from the page shown. 'later'
+    // retraces the trail back down to the newest: without it a phone that
+    // paged up could never page back down (the list ended on the old page)
     if (intent.kind === 'page') {
-      if (s.window?.hasMore && s.window.older) this.issue(s, this.client.request(hub, 'view.page', { cursor: s.window.older, session: this.requestSession(s.session, 'view.page', s.target) }));
+      if (!s.paging && s.window?.hasMore && s.window.older) this.pageTo(s, s.window.older, [...s.back, s.cursor]);
+      return true;
+    }
+    if (intent.kind === 'later') {
+      if (!s.paging && s.back.length) this.pageTo(s, s.back[s.back.length - 1], s.back.slice(0, -1));
       return true;
     }
     if (intent.kind === 'search') {
@@ -311,6 +331,8 @@ export class NativeThinHost307265 {
     if (intent.kind !== 'action' || s.queue.length >= 7) return true;
     const thread = s.session.sel;
     if (['send', 'send-alt'].includes(action)) {
+      if (s.paging) s.overtaken.add(s.paging.id);
+      s.cursor = ''; s.back = []; s.paging = null;
       const draft = s.drafts.get(thread)?.revision || 0;
       const active = this.pending.get(s.active)?.operation;
       if ([active, ...s.queue].some(op => op && ['send', 'send-alt'].includes(op.action) && op.input.sel === thread && op.revision >= draft)) return true;
@@ -357,6 +379,10 @@ export class NativeThinHost307265 {
     if (!result) return this.ack(hub, envelope);
     this.pending.delete(envelope.id);
     if (s.active === envelope.id) s.active = null;
+    const paged = s.paging?.id === envelope.id ? s.paging : null;
+    if (paged) s.paging = null;
+    if (s.overtaken.delete(envelope.id)) return true;
+    if (paged && result.failed) { s.cursor = paged.undo.cursor; s.back = paged.undo.back; }
     if (!metadata || metadata.epoch !== s.epoch) return true;
     if (result.failed) {
       if (presentation(result.method) && this.isCurrent(metadata)) this.fail(hub, result.failed);
@@ -430,6 +456,7 @@ export class NativeThinHost307265 {
         const old = s.shown?.thread?.entries?.find(e => e.id === entry.id);
         if (old?.partial?.version !== entry.partial?.version) s.messages.reset(entry.id);
       }
+      if (view.shown?.thread) view.shown.thread.later = s.back.length;
       s.shown = view.shown; s.overlay = view.overlay;
       if (!s.flushed) { s.flushed = true; this.outboxFlush(hub); }
       this.sync.push({ hub, phase: 'presented', detail: 'view-v1', mode: 'view-v1', viewId: r.viewId,
