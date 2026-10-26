@@ -435,6 +435,10 @@ let queued = false;
 let scroll = false;
 let focus = null;
 let jump = null;
+// a search result opened: its entry, brought into view and flashed once its
+// thread shows it, paging back through the history while it is not there
+// yet (at most 40 pages)
+let searchJump = null;
 let earlierAsked = false;
 
 // the entry at the top of the timeline's view, and where it is in the
@@ -627,6 +631,18 @@ function render() {
       el.classList.add("jumped");
     }
     jump = null;
+  }
+  if (searchJump && tl2 && searchJump.thread === (thin?.session?.sel ?? App.sel(ui))) {
+    const el = tl2.querySelector(`[data-id="${CSS.escape(searchJump.id)}"]`);
+    if (el) {
+      el.scrollIntoView({ block: "center" });
+      el.classList.remove("jumped");
+      void el.offsetWidth;
+      el.classList.add("jumped");
+      searchJump = null;
+    } else if (thin?.window?.older && searchJump.pages < 40) {
+      if (!searchJump.asked) { searchJump.asked = true; requestAnimationFrame(() => { if (searchJump) { searchJump.asked = false; if (thin.page()) searchJump.pages++; } }); }
+    } else if (thin?.ready) searchJump = null;
   }
   Solid.mount(document.getElementById("solid"));
   Plot2d.mount(document.getElementById("plot"));
@@ -1797,7 +1813,7 @@ function showThinSearch(search) {
   for (const row of search.rows) {
     const button = document.createElement("button");button.type = "button";button.className = "row";
     button.textContent = row.text + (row.partial ? " …" : "");
-    button.addEventListener("click", () => { close();dispatch("select", row.thread); });rows.append(button);
+    button.addEventListener("click", () => { close();searchJump = row.id ? { id: row.id, thread: row.thread, pages: 0, asked: false } : null;dispatch("select", row.thread); });rows.append(button);
   }
   panel.append(rows);
   if (search.hasMore && search.cursor) {
