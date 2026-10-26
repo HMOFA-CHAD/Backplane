@@ -559,6 +559,115 @@ def Card.strs(js: List<&2, J.Json>) -> List<&2, String>:
     case +x <> t:
       J.Json.as_str(Some{x}, "") <> Card.strs(t)
 
+# The boards the viewer's picker offers (test/boards_pick_test.bend). The
+# hub lists every KiCad board and project file in the project (paths from
+# its folder, server orderio.bend's Od.boards); offered are the boards that
+# are a KiCad project's own (<stem>.kicad_pcb beside <stem>.kicad_pro)
+# outside folders that hold copies (archive, build, backups, old, out...),
+# so an agent's snapshots and staging copies stay out. With none such,
+# every board outside those folders; with none, every board. The project's
+# default board (the viewer's own) leads; at most Boards.most() are offered.
+def Boards.most() -> Nat:
+  24n
+
+def Boards.copies.k(+l: String) -> Bool:
+  Bool.or(String.starts_with(l, "archive"), Bool.or(String.starts_with(l, "build"), Bool.or(String.contains(l, "backup"),
+    Bool.or(String.eq(l, "old"), Bool.or(String.eq(l, "out"), Bool.or(String.starts_with(l, "output"),
+      Bool.or(String.eq(l, "tmp"), Bool.or(String.eq(l, "temp"), Bool.or(String.eq(l, "staging"),
+        Bool.or(String.eq(l, "scratch"), Bool.or(String.eq(l, "renders"), String.starts_with(l, "export"))))))))))))
+
+# a folder's name that says it holds copies
+def Boards.copies(+d: String) -> Bool:
+  Boards.copies.k(String.to_lower(d))
+
+# all but the last (a path's folders, its file name left out)
+def Boards.init(ss: List<&2, String>) -> List<&2, String>:
+  match ss:
+    case Nil{}:
+      Nil{}
+    case +s <> +t:
+      Bool.pick(List<&2, String>, List.is_empty(&2, String, t), Nil{}, s <> Boards.init(t))
+
+def Boards.any(ss: List<&2, String>) -> Bool:
+  match ss:
+    case Nil{}:
+      False{}
+    case +s <> t:
+      Bool.or(Boards.copies(s), Boards.any(t))
+
+# the path is inside a folder of copies
+def Boards.copy(+p: String) -> Bool:
+  Boards.any(Boards.init(String.split(p, '/')))
+
+def Boards.pcb(+p: String) -> Bool:
+  String.ends_with(p, ".kicad_pcb")
+
+# the KiCad project file a board would have beside it
+def Boards.pro(+p: String) -> String:
+  String.take(p, Nat.sub(String.length(p), 10n)) ++ ".kicad_pro"
+
+def Boards.has(xs: List<&2, String>, +x: String) -> Bool:
+  match xs:
+    case Nil{}:
+      False{}
+    case +h <> t:
+      Bool.or(String.eq(h, x), Boards.has(t, x))
+
+def Boards.keep(ok: Bool, +p: String, rest: List<&2, String>) -> List<&2, String>:
+  match ok:
+    case True{}:
+      p <> rest
+    case False{}:
+      rest
+
+# a KiCad project's own boards, outside folders of copies
+def Boards.real(ps: List<&2, String>, +all: List<&2, String>) -> List<&2, String>:
+  match ps:
+    case Nil{}:
+      Nil{}
+    case +p <> t:
+      Boards.keep(Bool.and(Boards.pcb(p), Bool.and(Bool.not(Boards.copy(p)), Boards.has(all, Boards.pro(p)))), p, Boards.real(t, all))
+
+# every board outside folders of copies
+def Boards.outside(ps: List<&2, String>) -> List<&2, String>:
+  match ps:
+    case Nil{}:
+      Nil{}
+    case +p <> t:
+      Boards.keep(Bool.and(Boards.pcb(p), Bool.not(Boards.copy(p))), p, Boards.outside(t))
+
+def Boards.pcbs(ps: List<&2, String>) -> List<&2, String>:
+  match ps:
+    case Nil{}:
+      Nil{}
+    case +p <> t:
+      Boards.keep(Boards.pcb(p), p, Boards.pcbs(t))
+
+def Boards.or(+a: List<&2, String>, +b: List<&2, String>) -> List<&2, String>:
+  Bool.pick(List<&2, String>, List.is_empty(&2, String, a), b, a)
+
+def Boards.without(xs: List<&2, String>, +x: String) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case +h <> t:
+      Boards.keep(Bool.not(String.eq(h, x)), h, Boards.without(t, x))
+
+# the default board first (when there is one)
+def Boards.lead(+bd: String, +xs: List<&2, String>) -> List<&2, String>:
+  Bool.pick(List<&2, String>, String.is_empty(bd), xs, bd <> Boards.without(xs, bd))
+
+def Boards.cap(xs: List<&2, String>, +n: Nat) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case +x <> t:
+      Bool.pick(List<&2, String>, Nat.is_eq(n, 0n), Nil{}, x <> Boards.cap(t, Nat.sub(n, 1n)))
+
+# all: the hub's list (boards and project files); bd: the default board
+def Boards.pick(+all: List<&2, String>, +bd: String) -> List<&2, String>:
+  Boards.cap(Boards.lead(bd, Boards.or(Boards.real(all, all), Boards.or(Boards.outside(all), Boards.pcbs(all)))), Boards.most())
+
 # the project's boards, one path a line (from the hub's card)
 def Card.boards.j(+j: J.Json) -> String:
   String.join(Card.strs(J.Json.elems(J.Json.get_obj(j, "board_files"))), "\n")

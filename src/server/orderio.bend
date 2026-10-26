@@ -126,10 +126,12 @@ def Od.pcb(+cwd: String, f: K.Files) -> String:
     case K.Files{_, +pcb, _, _}:
       Bool.pick(String, String.starts_with(pcb, cwd ++ "/"), String.drop(pcb, 1n+String.length(cwd)), "")
 
-# KiCad boards in the project (paths from its folder, in name order): the
-# picker's, and the count a card with no fab files yet goes by
+# KiCad boards and project files in the project (paths from its folder, in
+# name order; hidden folders, extra/, mfg/, node_modules and backups left
+# out): order.bend's Boards.pick keeps the boards the picker offers, and
+# their count is what a card with no fab files yet goes by
 def Od.boards() -> String:
-  "find . -maxdepth 4 -name '*.kicad_pcb' -not -name '_autosave-*' -not -path '*/.*' -not -path './extra/*' -not -path './mfg/*' -not -path '*backup*' -not -path '*/node_modules/*' 2>/dev/null | LC_ALL=C sort | head -n 20 | sed 's|^\\./||'"
+  "find . -maxdepth 5 -type d \\( -name '.?*' -o -name node_modules -o -path ./extra -o -path ./mfg \\) -prune -o -type f \\( -name '*.kicad_pcb' -o -name '*.kicad_pro' \\) -not -name '_autosave-*' -not -name '*backup*' -print 2>/dev/null | LC_ALL=C sort | head -n 2000 | sed 's|^\\./||'"
 
 # with no fab files but a board, the server is only asked whether it is there
 # (curl's files go in the secrets folder: without it, in a fresh home, the
@@ -349,9 +351,10 @@ def Od.look(+home: String, +cwd: String, +thread: String, +opts: String) -> IO(J
     fs : List<&2, OR.FabFile> <- Od.read(Od.lines(String.lines(Od.ran(r))), cwd)
     b : P.Ran <- P.Proc.run("sh", ["-c", Od.boards()], cwd)
     kf : K.Files <- K.Files.read(cwd)
+    +bd : String = Od.pcb(cwd, kf)
     st : String <- Od.order(home, Od.nth(String.lines(opts), 2n))
     Od.look.ps(OR.Order.parts(fs), home, cwd, thread, String.trim(intent), Bool.not(String.starts_with(opts, "off")),
-      Od.nth(String.lines(opts), 1n), Od.lines(String.lines(Od.ran(b))), Od.pcb(cwd, kf), st)
+      Od.nth(String.lines(opts), 1n), OR.Boards.pick(Od.lines(String.lines(Od.ran(b))), bd), bd, st)
 
 # fab.intent: the person's own words for .backplane/intent.md, then the card
 def Od.intent(+home: String, +cwd: String, +thread: String, +opts: String, text: String) -> IO(J.Json):

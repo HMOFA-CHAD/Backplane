@@ -3017,7 +3017,7 @@ def View.board.rows(fs: List<&2, String>, +cur: String, +own: String, +seen: Lis
       List.append(&2, D.Node, D.Dom.when(Bool.not(View.board.has(seen, f)),
         D.El{"button", f, [D.At{"type", "button"}, D.At{"class", Bool.pick(String, String.eq(cur, f), "board-option on", "board-option")},
           D.At{"aria-current", Bool.pick(String, String.eq(cur, f), "true", "false")}, D.On{"click", "board-pick"}, D.At{"data-value", f}, D.At{"data-board-path", f}, D.At{"title", f}], [
-          D.Dom.span("board-name", MC.Mech.last(f)), D.El{"small", "", Nil{}, [D.Txt{f}]},
+          D.Dom.span("board-name", MC.Mech.stem(f)), D.El{"small", "", Nil{}, [D.Txt{f}]},
           D.Dom.span("board-default", Bool.pick(String, String.eq(own, f), "Default board", ""))]}),
       View.board.rows(t, cur, own, f <> seen))
 
@@ -3031,7 +3031,7 @@ def View.boards.selector(fs: List<&2, String>, +path: String, +own: String, +roo
       +cur = View.board.current(f <> t, View.board.relative(path, root))
       [D.El{"details", "board-selector", [D.At{"class", "local-menu board-selector"}], [
         D.El{"summary", "", [D.At{"aria-label", "Select board"}, D.At{"title", cur}], [WI.WIcon.svg("circuit-board", 16),
-          D.El{"span", "", [D.At{"class", "board-current"}], [D.Dom.span("", Bool.pick(String, String.is_empty(cur), "Select board", MC.Mech.last(cur))), D.El{"small", "", Nil{}, [D.Txt{MC.Mech.parent(cur)}]}]}, WI.WIcon.svg("chevron-down", 14)]},
+          D.El{"span", "", [D.At{"class", "board-current"}], [D.Dom.span("", Bool.pick(String, String.is_empty(cur), "Select board", MC.Mech.stem(cur))), D.El{"small", "", Nil{}, [D.Txt{MC.Mech.parent(cur)}]}]}, WI.WIcon.svg("chevron-down", 14)]},
         D.El{"div", "", [D.At{"class", "local-menu-body"}], [
           D.El{"label", "", Nil{}, [D.Txt{"Find a board"}, D.El{"input", "board-search", [D.At{"type", "search"}, D.At{"data-board-filter", ""}, D.At{"aria-label", "Find a board by name or path"}, D.At{"placeholder", "Name or path"}], Nil{}}]},
           D.Dom.span("board-origin", "Folder: " ++ root),

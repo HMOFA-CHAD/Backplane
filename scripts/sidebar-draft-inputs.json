@@ -73,7 +73,7 @@
     "src/core/notice.bend": "ee87318c1f12fc6cfb23bb5e24e90709e1f9a2eadfd2832581d21590f596e5e0",
     "src/core/onboard.bend": "55ccccf20f706a0acad492de20e23aedc751c7e9ce61b6f3430bfd65796e9232",
     "src/core/once.bend": "c12f375e09045a035cfc66c87d73197f3348b2998fa0e0bb6c9876fca870577c",
-    "src/core/order.bend": "e54967d8e865ee87e4ccf75063a2e39b971e39322efe11abaef59ba4a1d7cc71",
+    "src/core/order.bend": "5ab5bb40153398e171c60cbde5f7fc89dfc122e72a06e3923a09760f623bf19e",
     "src/core/outbox.bend": "7e90d003d01434d86c041b83d837f8a85d9f39c7ae380d840e07bb141f3dd677",
     "src/core/plane.bend": "b6a488af9db204ab580d52b3dc438239141722eb955be21a2bf92aceb4ba8702",
     "src/core/presentation.bend": "d45548e844aeb3a3d36e4fda89bb8b8c48c8366c06fcf5114b5b38df548823d9",
@@ -138,7 +138,7 @@
     "src/web/space.bend": "b86a265e41a900498bc33c37c0404c4d6678554efe3d9054f329beb2cf35ee63",
     "src/web/usage-graph.bend": "fa06f7d2bf855a396a5f7a7b4725dfaa990145fbbcefe7ad21ae8f9a698a2679",
     "src/web/usage-page.bend": "706e3f17a4a3e5f159656d47aeb76a940d4825421f5c33228f9aef692ec926e3",
-    "src/web/view.bend": "dec8520fce2e10a49e7d49edfd6202ad5ac6549642237c272632422b339b6eee"
+    "src/web/view.bend": "0584f5af5b6bde5d0763895a3e24b12bcb08b3772603052e5af3d1d937d14a5a"
   },
   "review": {
     "source": "5f19ea0b9dbcff736e51ced0cb79e19bfef5bba6",
@@ -179,6 +179,12 @@
       "base": "064079bd878d513f82f27b53b1760f693678f9cb",
       "queue": "ff921f992a574f62243750f6404fbed5da92f8f6",
       "scope": "Queue dispatch key, server owner-pair listener context and Hop title snapshot; unchanged860 sidebar reachable functions.24 full-output draft/IME/search/info cases passed. Every unknown @ key and full main/picture drafts retained.",
+      "fullOutputCheck": "test/sidebar_draft_image_test.bend",
+      "assertions": 24
+    },
+    "boardPicker": {
+      "scope": "Only order.bend's new Boards.* (which of the hub's board and project files the viewer's board picker offers; read only by server orderio.bend's Od.look) and view.bend's View.board.rows/View.boards.selector labels (the board's name without its extension; viewer pane only) changed. Neither is reached by the sidebar renderer or any draft reader; reviewed sidebar source-reference graph unchanged; 24 full-output draft/IME/search/info fallback cases passed on current source.",
+      "check": "test/boards_pick_test.bend",
       "fullOutputCheck": "test/sidebar_draft_image_test.bend",
       "assertions": 24
     }
