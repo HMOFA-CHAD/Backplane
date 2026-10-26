@@ -110,3 +110,14 @@ test('bare backtick preserves shell/text input, tilde, composition and other mod
   }
   assert.deepEqual(h.actions, []);
 });
+
+test('Ctrl+B (Cmd+B on a Mac) folds the sidebar, from the composer too; Shift or Alt does not', async () => {
+  const { workspaceShortcut: key } = await import('../../src/web/workspace-keys.js');
+  const editor = { closest: () => ({}) };
+  assert.deepEqual(key(event('b', { ctrlKey: true }), 'Linux'), ['side-toggle', '']);
+  assert.deepEqual(key(event('b', { ctrlKey: true, target: editor }), 'Linux'), ['side-toggle', '']);
+  assert.deepEqual(key(event('b', { metaKey: true }), 'MacIntel'), ['side-toggle', '']);
+  assert.equal(key(event('b', { ctrlKey: true }), 'MacIntel'), null);
+  assert.equal(key(event('B', { ctrlKey: true, shiftKey: true }), 'Linux'), null);
+  assert.equal(key(event('b', { ctrlKey: true, altKey: true }), 'Linux'), null);
+});

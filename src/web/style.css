@@ -1271,3 +1271,24 @@ html:lang(ja) :is(.set-text, .set-ctl) { min-width: 0; }
    Do not make the document a second scroller or clip controls to suppress it. */
 .sidebar, .thread-content > .timeline { overscroll-behavior-y: contain; min-height: 0; }
 .thread-content > .composer, .thread-content > .thread-head { flex-shrink: 0; }
+
+/* Folds (host.js's foldToggle): the sidebar to a strip with its toggle and
+   the hub's dot, the rail to its icons. Wide screens only: a phone-sized
+   page has its own layout. */
+.sidebar .side-toggle svg { transform: scaleX(-1); }
+.rail-toggle { margin-top: 6px; min-height: 26px; color: var(--faint); border-color: transparent; background: none; }
+.rail-toggle:hover { color: var(--text); }
+@media (min-width: 761px) {
+  html[data-side="shut"] .app { grid-template-columns: 44px minmax(0, 1fr); }
+  html[data-side="shut"] .app.panel { grid-template-columns: 44px minmax(0, 1fr) var(--viewer-w, minmax(0, 1.1fr)); }
+  html[data-side="shut"] .sidebar { overflow: hidden; padding-bottom: 0; }
+  html[data-side="shut"] .sidebar > :not(.brand) { display: none; }
+  html[data-side="shut"] .sidebar .brand { flex-direction: column; justify-content: flex-start; gap: 10px; padding: 12px 0; border-bottom: 0; }
+  html[data-side="shut"] .sidebar .brand > :not(.brand-mark):not(.side-toggle) { display: none; }
+  html[data-side="shut"] .sidebar .side-toggle svg { transform: none; }
+  html[data-rail="compact"] .workspace-thread > .workspace-bar { width: 44px; padding: 6px 3px; }
+  html[data-rail="compact"] .workspace-rail button, html[data-rail="compact"] .workspace-close .viewer-close { font-size: 0; gap: 0; min-height: 38px; }
+  html[data-rail="compact"] .workspace-feedback { display: none; }
+  html[data-rail="compact"] .rail-toggle svg { transform: scaleX(-1); }
+}
+@media (max-width: 760px) { .rail-toggle, .sidebar .side-toggle { display: none; } }

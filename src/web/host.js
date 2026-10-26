@@ -815,6 +815,7 @@ function secretSave(packed) {
 
 function dispatch(action, value, timer) {
   if (action === "secret-save") return secretSave(value);
+  if (action === "side-toggle" || action === "rail-toggle") return foldToggle(action === "side-toggle" ? "side" : "rail");
   if (["term-toggle", "ws-term-hide", "ws-term-here"].includes(action) || action === "ws-go" && value === "term") terminalOutput.retire();
   else if (["select", "bot", "bot-tab", "uber", "uber-bot", "remote"].includes(action)) terminalOutput.clear();
   if (["select", "ref-go", "ref-back", "ref-fwd", "bot", "bot-tab", "uber", "uber-bot", "remote"].includes(action)) {
@@ -1530,6 +1531,25 @@ document.addEventListener("keydown", (e) => {
 }, true);
 
 window.addEventListener("resize", () => lbDraw());
+
+// The sidebar and the workspace rail fold (a button in each, Ctrl+B for
+// the sidebar): the sidebar to a strip with its button, the rail to its
+// icons. Layout only, like the viewer's width below: kept in this browser,
+// on <html> so a render never undoes it (style.css's html[data-side],
+// html[data-rail]).
+const FOLDS = { side: ["backplane-side", "shut"], rail: ["backplane-rail", "compact"] };
+function foldSet(which, on) {
+  const [, word] = FOLDS[which];
+  if (on) document.documentElement.dataset[which] = word;
+  else delete document.documentElement.dataset[which];
+}
+function foldToggle(which) {
+  const on = !document.documentElement.dataset[which];
+  foldSet(which, on);
+  try { localStorage.setItem(FOLDS[which][0], on ? "1" : "0"); } catch {}
+  return true;
+}
+for (const which of Object.keys(FOLDS)) { try { foldSet(which, localStorage.getItem(FOLDS[which][0]) === "1"); } catch {} }
 
 // The viewer's width: its left edge (view.bend's View.split) drags it, the
 // width is kept in this browser, and a double-click on the edge gives the

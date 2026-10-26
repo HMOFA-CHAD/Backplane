@@ -138,7 +138,7 @@
     "src/web/space.bend": "b86a265e41a900498bc33c37c0404c4d6678554efe3d9054f329beb2cf35ee63",
     "src/web/usage-graph.bend": "fa06f7d2bf855a396a5f7a7b4725dfaa990145fbbcefe7ad21ae8f9a698a2679",
     "src/web/usage-page.bend": "706e3f17a4a3e5f159656d47aeb76a940d4825421f5c33228f9aef692ec926e3",
-    "src/web/view.bend": "0584f5af5b6bde5d0763895a3e24b12bcb08b3772603052e5af3d1d937d14a5a"
+    "src/web/view.bend": "085cff0ad82ed5421043892b95c29f7dbb80410bf2cc4b05fcb8b274effb1b78"
   },
   "review": {
     "source": "5f19ea0b9dbcff736e51ced0cb79e19bfef5bba6",
@@ -185,6 +185,11 @@
     "boardPicker": {
       "scope": "Only order.bend's new Boards.* (which of the hub's board and project files the viewer's board picker offers; read only by server orderio.bend's Od.look) and view.bend's View.board.rows/View.boards.selector labels (the board's name without its extension; viewer pane only) changed. Neither is reached by the sidebar renderer or any draft reader; reviewed sidebar source-reference graph unchanged; 24 full-output draft/IME/search/info fallback cases passed on current source.",
       "check": "test/boards_pick_test.bend",
+      "fullOutputCheck": "test/sidebar_draft_image_test.bend",
+      "assertions": 24
+    },
+    "sideFold": {
+      "scope": "view.bend's sidebar head gains one static button (side-toggle) and the workspace rail one (rail-toggle); both carry fixed attributes and read no Ui, draft or @ field. The fold itself is host.js layout state on <html> (localStorage), outside the sidebar image and its key. Reviewed sidebar draft readers unchanged; 24 full-output draft/IME/search/info fallback cases passed on current source.",
       "fullOutputCheck": "test/sidebar_draft_image_test.bend",
       "assertions": 24
     }

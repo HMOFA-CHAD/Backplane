@@ -557,6 +557,8 @@ def View.machines.loc(+lc: I.Loc, many: Bool, +open: Bool, +rs: List<&2, U.MRow>
 def View.machines(many: Bool, +open: Bool, +rs: List<&2, U.MRow>) -> List<&2, D.Node>:
   View.machines.loc(I.En{}, many, open, rs)
 
+# the head's last button folds the sidebar to a strip (host.js, kept in
+# this browser; Ctrl+B too)
 def View.sidebar.body(+lc: I.Loc, +ms: List<&2, U.MRow>, +ix: U.SIx, +st: M.State, +sel: String, +open: Map<&2, Bool>, +on: Bool, +now: Nat, adding: Bool, v: String, +look: String, +rm: String, +q: String, mi: List<&2, U.MItem>, bots: List<&2, D.Node>, uber: List<&2, D.Node>, items: List<&2, D.Node>) -> D.Node:
   D.El{"aside", "sidebar", [D.At{"class", "sidebar"}],
         D.Dom.cat([D.El{"div", "", [D.At{"class", "brand"}], [
@@ -565,7 +567,8 @@ def View.sidebar.body(+lc: I.Loc, +ms: List<&2, U.MRow>, +ix: U.SIx, +st: M.Stat
               D.At{"aria-label", MSG.T.native.hub.state(lc, Bool.pick(String, on, "online", "offline"))}], Nil{}}]},
             D.Dom.span("name", "Backplane"), D.Dom.span("ver", v),
             WI.WIcon.button("icon", "thin-search-open", "", "Search conversations", "search", 16, ""),
-            WI.WIcon.button("icon", "proj-open", "", MSG.T.sidebar.add.project(lc), "plus", 16, "")]},
+            WI.WIcon.button("icon", "proj-open", "", MSG.T.sidebar.add.project(lc), "plus", 16, ""),
+            WI.WIcon.button("icon side-toggle", "side-toggle", "", "Hide or show the sidebar · Ctrl+B", "panel-right", 16, "")]},
           D.El{"div", "", [D.At{"class", "sidebar-tools"}], WI.WIcon.button("settings-link", "flag", "settings", MSG.T.palette.settings(lc), "settings", 16, MSG.T.palette.settings(lc))
               <> View.machines.loc(lc, Nat.is_gt(List.length(&2, U.MRow, ms), 1n), U.Flag.get(open, "machines"), ms)}],
           D.Dom.cat(uber, D.Dom.cat(View.add.loc(lc, adding), D.Dom.cat(View.find.loc(lc, String.eq(U.Side.view(st), "active"), q),
@@ -2750,11 +2753,14 @@ def View.workspace.menu(+lc: I.Loc, +cur: String, term: Bool) -> D.Node:
       D.Dom.span("workspace-current", Bool.pick(String, String.is_empty(cur), MSG.T.bots.tab.chat(lc), View.workspace.label(lc, cur))), WI.WIcon.svg("chevron-down", 14)]},
     D.El{"div", "", [D.At{"class", "local-menu-body"}], View.workspace.choices(lc, cur, term)}]}
 
+# the rail's foot: a toggle host.js answers, its buttons icons only (their
+# names as tooltips), kept in this browser
 def View.workspace(+lc: I.Loc, +cur: String, +panel: Bool, +term: Bool) -> D.Node:
   D.El{"nav", "workspace", [D.At{"class", "workspace-bar"}, D.At{"data-loading", MSG.T.viewer.loading(lc)}, D.At{"aria-label", MSG.T.thread.viewer(lc)}], [
     D.El{"div", "", [D.At{"class", "workspace-rail"}], View.workspace.choices(lc, Bool.pick(String, panel, cur, ""), term)},
     View.workspace.menu(lc, Bool.pick(String, panel, cur, ""), term),
     D.El{"div", "", [D.At{"class", "workspace-close"}], D.Dom.when(panel, WI.WIcon.button("viewer-close", "panel", "", MSG.T.viewer.close(lc), "panel-right", 18, MSG.T.viewer.close(lc)))},
+    WI.WIcon.button("rail-toggle", "rail-toggle", "", "Compact or full rail", "chevron-left", 14, ""),
     D.El{"span", "viewer-feedback", [D.At{"class", "workspace-feedback"}, D.At{"role", "status"}], Nil{}}]}
 
 def View.tabs.loc(+lc: I.Loc, +cur: String) -> D.Node:
