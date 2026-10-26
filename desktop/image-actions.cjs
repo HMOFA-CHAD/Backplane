@@ -29,7 +29,7 @@ function localImagePath(source, origin, home = os.homedir()) {
 function createImageActions({ electron, origin, runFile = run, platform = process.platform }) {
   return {
     local(source) { return localImagePath(source, origin()) !== null; },
-    copy(png) {
+    async copy(png) {
       if (typeof png !== 'string' || png.length > 18 * 1024 * 1024 || !/^data:image\/png;base64,[A-Za-z0-9+/]+=*$/.test(png)) throw Error('Image is too large or unavailable');
       const bytes = Buffer.from(png.slice(22), 'base64');
       if (bytes.length < 24 || !bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex')) || bytes.toString('ascii', 12, 16) !== 'IHDR') throw Error('Invalid image');
@@ -37,9 +37,15 @@ function createImageActions({ electron, origin, runFile = run, platform = proces
       if (!width || !height || width * height > MAX_PIXELS) throw Error('Image is too large');
       const image = electron.nativeImage.createFromBuffer(bytes);
       if (image.isEmpty()) throw Error('Image could not be decoded');
-      electron.clipboard.writeImage(image);
+      await electron.clipboard.write([new electron.ClipboardItem({
+        'image/png': new Blob([new Uint8Array(image.toPNG())], { type: 'image/png' }),
+      })]);
       // Report success only after the platform clipboard contains the bitmap.
-      const copied = electron.clipboard.readImage();
+      const items = await electron.clipboard.read();
+      const item = items.find(value => value.types.includes('image/png'));
+      if (!item) throw Error('Clipboard did not accept the image');
+      const blob = await item.getType('image/png');
+      const copied = electron.nativeImage.createFromBuffer(Buffer.from(await blob.arrayBuffer()));
       if (copied.isEmpty() || !copied.toBitmap().equals(image.toBitmap())) throw Error('Clipboard did not accept the image');
       return { copied: true };
     },
@@ -84,7 +90,7 @@ function installImageMenu(window, { electron, trusted, actions }) {
         canvas.width = image.naturalWidth;canvas.height = image.naturalHeight;
         canvas.getContext('2d').drawImage(image, 0, 0);
         return canvas.toDataURL('image/png');
-      })()`).then(png => { if (!wc.isDestroyed() && trusted(params)) actions.copy(png); })
+      })()`).then(png => { if (!wc.isDestroyed() && trusted(params)) return actions.copy(png); })
         .catch(() => electron.dialog.showErrorBox('Copy image', 'Image could not be copied. Try Save in the image viewer.'));
     } }];
     if (actions.local(params.srcURL)) items.push({ label: 'Show file', click: () => {

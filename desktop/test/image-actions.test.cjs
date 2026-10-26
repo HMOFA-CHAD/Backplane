@@ -26,12 +26,25 @@ test('reveal requires a file and the exact encoded FileManager1 acknowledgement'
   const refused = createImageActions({ electron:{}, origin:()=>origin, platform:'linux', runFile: async () => { throw Error('service unknown'); } });
   await assert.rejects(refused.reveal(source), /did not accept/);
 });
-test('bitmap bridge rejects URLs and oversized decode dimensions before native decoding', () => {
+test('bitmap bridge rejects URLs and oversized decode dimensions before native decoding', async () => {
   let decoded = 0;
   const actions = createImageActions({ electron:{nativeImage:{createFromBuffer(){decoded++;}}}, origin:()=>origin });
-  for (const bad of ['https://hub/img?path=/tmp/a.png&token=secret','data:text/html;base64,abcd','data:image/png;base64,abcd']) assert.throws(()=>actions.copy(bad));
+  for (const bad of ['https://hub/img?path=/tmp/a.png&token=secret','data:text/html;base64,abcd','data:image/png;base64,abcd']) await assert.rejects(actions.copy(bad));
   const header=Buffer.alloc(24);Buffer.from('89504e470d0a1a0a','hex').copy(header);header.write('IHDR',12);header.writeUInt32BE(100000,16);header.writeUInt32BE(100000,20);
-  assert.throws(()=>actions.copy('data:image/png;base64,'+header.toString('base64')), /too large/);assert.equal(decoded,0);
+  await assert.rejects(actions.copy('data:image/png;base64,'+header.toString('base64')), /too large/);assert.equal(decoded,0);
+});
+test('Electron 44 bitmap write awaits MIME payload and verifies clipboard acknowledgement', async () => {
+  const bytes=fs.readFileSync(path.join(__dirname,'../../assets/icon/backplane-64.png')),events=[];
+  const image={isEmpty:()=>false,toPNG:()=>bytes,toBitmap:()=>Buffer.from('pixels')};
+  class ClipboardItem { constructor(data){this.data=data;} }
+  const electron={ClipboardItem,nativeImage:{createFromBuffer:()=>image},clipboard:{
+    async write(items){assert(items[0] instanceof ClipboardItem);assert.deepEqual(Object.keys(items[0].data),['image/png']);assert(items[0].data['image/png'] instanceof Blob);events.push('write');},
+    async read(){events.push('read');return[{types:['image/png'],getType:async()=>new Blob([bytes],{type:'image/png'})}];},
+  }};
+  const actions=createImageActions({electron,origin:()=>origin});
+  assert.deepEqual(await actions.copy('data:image/png;base64,'+bytes.toString('base64')),{copied:true});assert.deepEqual(events,['write','read']);
+  electron.clipboard.read=async()=>[];await assert.rejects(actions.copy('data:image/png;base64,'+bytes.toString('base64')),/did not accept/);
+  electron.clipboard.write=async()=>{throw Error('permission denied');};await assert.rejects(actions.copy('data:image/png;base64,'+bytes.toString('base64')),/permission denied/);
 });
 test('native menu leaves non-image and untrusted-frame menus alone', () => {
   let listener, menus=0;
