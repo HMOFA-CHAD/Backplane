@@ -28,7 +28,7 @@
     "src/core/cat.bend": "0130231a18e515a94d40d7584d19a9b5a2d1663f9601fbff944bf97e37f9fd6b",
     "src/core/cef.bend": "f2d3fa4c991d0e341620fe634ddb4e08da97f8e471ec46afac0b3de471cc69fb",
     "src/core/charter.bend": "7f906bdea712f6ff6162735c8cc133767ec0f9289c3d0bee6dfedbd4d75ad981",
-    "src/core/client.bend": "d6a33169ff4e405c4a3e98b0897de64cb4bb65ecada3bee4d0e21dada0f32e05",
+    "src/core/client.bend": "d60808cbcf6912ab62301f09321bdf2ead2e85a5121e090985a1d542e555f121",
     "src/core/codec.bend": "33cb35c55f3712a18734e76e1149763001a9388af27948f0da4ead2c13d48b6f",
     "src/core/cron.bend": "6f89a001df0261a25c878616ea66c235e169f7fc1c726d39e695fce8adb57332",
     "src/core/deploy.bend": "ebee4e63a52cf41ae001bebcdbb7fb010ad71c1e04e481292585740d88a39cc4",
@@ -103,7 +103,7 @@
     "src/core/store.bend": "037f48017d9b9c1b6ed24d750bc898dc62200635d95fecc627f2196fd79d89d5",
     "src/core/strokefont.bend": "a5d15a2a0c28e9b24673d41bd31a283b8b9df71b1d40524b4bfb689b3ff964bb",
     "src/core/subs.bend": "695a9eedce4bbc7eafd13a9435c77d33a3066f8a2d961086200ca08f91a37a0f",
-    "src/core/subthreads.bend": "cfe0b6f88ea531df432f58a4940ca85be5c1133557759efe2b45cde5360e42bd",
+    "src/core/subthreads.bend": "13e42cf12eee61526c333a91d15e18c29319906c6c486b9e4c06bf81d379b046",
     "src/core/svg.bend": "dc334fd62bc35e0fa3c9cdac414ee563a31f99a3fd538810d42d35c148c30c14",
     "src/core/task.bend": "8280585ed265c028ae6fa6bc72be4b56e527e4f162262e1a4a61401d693457b2",
     "src/core/telemetry.bend": "459638fea434c79b7965a9947ca6e9554208fc7c63c7cadb7f2a22b2e5ce6187",
@@ -140,7 +140,7 @@
     "src/web/space.bend": "b86a265e41a900498bc33c37c0404c4d6678554efe3d9054f329beb2cf35ee63",
     "src/web/usage-graph.bend": "fa06f7d2bf855a396a5f7a7b4725dfaa990145fbbcefe7ad21ae8f9a698a2679",
     "src/web/usage-page.bend": "706e3f17a4a3e5f159656d47aeb76a940d4825421f5c33228f9aef692ec926e3",
-    "src/web/view.bend": "3f4739e6ba62cc5bcf4485e4f50ffa8ff78d217e4cfd4c685f201ffaca7b5c06"
+    "src/web/view.bend": "d6dff90380bf3cf909efea54201b313d54f8be2ba2a1410ac905b682b90c6ffe"
   },
   "review": {
     "source": "5f19ea0b9dbcff736e51ced0cb79e19bfef5bba6",
@@ -201,7 +201,13 @@
       "fullOutputCheck": "test/sidebar_draft_image_test.bend",
       "assertions": 24,
       "mainAdvance": "Latest main preserved; affected24 full-output rerun only. Prior42 mirror cases/laws retained."
+    },
+    "scratchVisibility": {
+      "base": "792f3b570618c7b358db2c72eaa28577c0661dc6",
+      "scope": "New legacy live/history projection reads canonical state, selected id, existing conversation-history flag and retained @f.pq. No non-@ draft body reads.24 full-output and12 projection cases passed; all unknown @ keys and main/full-picture freshness retained.",
+      "fullOutputCheck": "test/sidebar_draft_image_test.bend",
+      "assertions": 24
     }
   },
-  "reviewNote": "Selected mirrored thread reads:128 conservative dependency files, unchanged860 sidebar functions,24 full-output cases. New projection bridge pinned fail-closed; unknown @ keys and full main/picture drafts retained."
+  "reviewNote": "Retired Scratch launch + existing legacy work visibility. New sidebar call graph reviewed for state/selection/@search only; no non-@ body dependency.24fulloutput/12projection passed. Fail-closed source guard retained."
 }
