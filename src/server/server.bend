@@ -136,6 +136,7 @@ import ../core/task.bend as TKS
 import ../core/teach.bend as TE
 import ../core/usage.bend as UZ
 import ./thinstore.bend as TSTO
+import ./thin-mirror.bend as TMIR
 import ../core/copy.bend as CP # BACKPLANE_COPY
 import ../core/copynet.bend as CN
 import ./vault.bend as VX # secret box
@@ -8819,7 +8820,7 @@ def Far.in.put(h: Hub, i: FR.In) -> Hub:
 def Far.tell(h: Hub, +text: String) -> IO(Hub):
   match h:
     case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
-      Hub.broadcast(Hub{st, f, ls, cl, as, inbox, cfg, note}, FR.Fr.with.epoch(text,
+      Hub.broadcast(Hub{st, f, ls, cl, as, inbox, Cfg.thin.bump(cfg), note}, FR.Fr.with.epoch(text,
         FR.In.epoch(FR.Fh.in(BN.Bn.far(Cfg.bn(cfg)), J.Json.get_str(Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{}), "link", ""), ""))))
 
 def Far.pull.go(busy: Bool, +fh: FR.Fh, h: Hub, +link: String, +since: Nat) -> IO(Hub):
@@ -11680,23 +11681,51 @@ def Hub.thin.rendered(rendered: TA.Rendered, h: Hub, +client: U32, +o: J.Json, +
   match rendered:
     case TA.Rendered{+actor, result}: Hub.thin.rendered_valid(TA.Actor.capacity(actor), actor, result, h, client, o, c, now, context)
 
+# Read only the selected, owner-linked mirror. Keep the canonical local
+# state/store as the authority for actions and its own history.
+def Hub.thin.mirror(+st: M.State, +cfg: Cfg, +thread: String) -> Maybe<&2, FR.In>:
+  TMIR.Mirror.get(Bool.and(FR.Fr.is(thread), Far.kept.id(st, FR.Fr.link(thread))), Far.mirrors(cfg), thread)
+
+def Hub.thin.view_state(+st: M.State, +cfg: Cfg, +thread: String) -> M.State:
+  TMIR.Mirror.state(st, Hub.thin.mirror(st, cfg, thread), thread)
+
+def Hub.thin.view_epoch(+st: M.State, +cfg: Cfg, +thread: String) -> String:
+  TMIR.Mirror.epoch(Cfg.thin.epoch(cfg), Hub.thin.mirror(st, cfg, thread))
+
+def Hub.thin.view_revision(+cfg: Cfg, thread: String) -> Nat:
+  Bool.pick(Nat, FR.Fr.is(thread), Cfg.thin.revision(cfg), Cfg.thin.signal_seq(cfg))
+
+def Hub.thin.view_key(+st: M.State, +cfg: Cfg, +thread: String) -> String:
+  Hub.info.key(cfg) ++ TMIR.Mirror.key(Hub.thin.mirror(st, cfg, thread))
+
 # A thread's page and the index the renderers read it from: the whole
 # index's, or (with a store) a page index of just its rows (TSTO.Ts.page)
-def Hub.thin.fetch(memory: Bool, +cfg: Cfg, +hide: Bool, +thread: String, +anchor: Nat) -> IO(TSTO.Page):
+def Hub.thin.fetch.local(memory: Bool, +cfg: Cfg, +hide: Bool, +thread: String, +anchor: Nat) -> IO(TSTO.Page):
   match memory:
     case True{}:
       +i = TCHAT.Chat.index(hide, Cfg.thin(cfg), thread, anchor, 32n)
       IO.pure(TSTO.Page, TSTO.Page{i, THIN.Index.page(i, thread, anchor, 32n)})
     case False{}: TSTO.Ts.page.chat(hide, Cfg.thin.store(cfg), thread, anchor, 32n, Cfg.thin(cfg))
 
+def Hub.thin.fetch.source(far: Bool, memory: Bool, +cfg: Cfg, +st: M.State, +hide: Bool, +thread: String, +anchor: Nat) -> IO(TSTO.Page):
+  match far:
+    case False{}: Hub.thin.fetch.local(memory, cfg, hide, thread, anchor)
+    case True{}: IO.pure(TSTO.Page, TMIR.Mirror.page(Hub.thin.mirror(st, cfg, thread), thread, hide, anchor, Cfg.thin(cfg)))
+
+def Hub.thin.fetch(memory: Bool, +cfg: Cfg, +st: M.State, +hide: Bool, +thread: String, +anchor: Nat) -> IO(TSTO.Page):
+  Hub.thin.fetch.source(FR.Fr.is(thread), memory, cfg, st, hide, thread, anchor)
+
 def Hub.thin.render.page.v(+v: SEC.Vault, +pg: TSTO.Page, h: Hub, +client: U32, +o: J.Json, +c: Client, +now: Nat, +context: ThinContext, +p: J.Json, +key: String, +ms: Nat) -> IO(Hub):
   match h:
     case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
       +web = String.eq(Client.thin.mode(c), "view-web")
+      +thread = TV.Target.thread(st, J.Json.get_obj(p, "target"))
+      +shown = Hub.thin.view_state(st, cfg, thread)
+      +epoch = Hub.thin.view_epoch(st, cfg, thread)
       +stream = TLIVE.Stream.get(Cfg.thin.streams(cfg), TV.Target.thread(st, J.Json.get_obj(p, "target")))
-      +actor = TA.Actor.mail_cache(TA.Actor.refresh(ThinContext.actors(context), web, st, SEC.Sec.json(v, Hub.info(cfg)),
+      +actor = TA.Actor.mail_cache(TA.Actor.refresh(ThinContext.actors(context), web, shown, SEC.Sec.json(v, Hub.info(cfg)),
         J.Json.obj([J.KV{"t", J.Str{"live"}}, J.KV{"items", J.Json.arr(Nil{})}]), now, p, ThinContext.view(context)), ThinContext.actors(context), Cfg.thin.mail(cfg))
-      Hub.thin.rendered(TA.Rendered.remember.clock(TA.Actor.render.revision(actor, web, st, TSTO.Page.index(pg), p, Cfg.thin.epoch(cfg), now, TSTO.Page.ids(pg), stream, Cfg.thin.signal_seq(cfg)), key, ms, now, stream, web, p),
+      Hub.thin.rendered(TA.Rendered.remember.clock(TA.Actor.render.revision(actor, web, shown, TSTO.Page.index(pg), p, epoch, now, TSTO.Page.ids(pg), stream, Hub.thin.view_revision(cfg, thread)), key, ms, now, stream, web, p),
         Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, c, now, context)
 
 # (the info the view is made from, masked with the vault as it is now)
@@ -11707,7 +11736,7 @@ def Hub.thin.render.full(h: Hub, +client: U32, +o: J.Json, +c: Client, +now: Nat
   match h:
     case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
       do IO<Hub>:
-        +pg : TSTO.Page <- Hub.thin.fetch(String.is_empty(Cfg.thin.store(cfg)), cfg, TCHAT.Chat.enabled(st, TV.Target.thread(st, J.Json.get_obj(p, "target"))), TV.Target.thread(st, J.Json.get_obj(p, "target")), anchor)
+        +pg : TSTO.Page <- Hub.thin.fetch(String.is_empty(Cfg.thin.store(cfg)), cfg, st, TCHAT.Chat.enabled(st, TV.Target.thread(st, J.Json.get_obj(p, "target"))), TV.Target.thread(st, J.Json.get_obj(p, "target")), anchor)
         Hub.thin.render.page(pg, Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, c, now, context, p, key, ms)
 
 # a view.update whose render memo still holds (thin-actor.bend's
@@ -11724,26 +11753,50 @@ def Hub.thin.render.memo(+m: Maybe<&2, J.Json>, h: Hub, +client: U32, +o: J.Json
     case None{}:
       Hub.thin.render.full(h, client, o, c, now, context, anchor, p, key, ms)
 
-def Hub.thin.render.at(h: Hub, +client: U32, +o: J.Json, +c: Client, +now: Nat, +context: ThinContext, +anchor: Nat, +ms: Nat) -> IO(Hub):
+def Hub.thin.render.current(h: Hub, +client: U32, +o: J.Json, +c: Client, +now: Nat, +context: ThinContext, +anchor: Nat, +ms: Nat) -> IO(Hub):
   match h:
     case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
       +p = Hub.thin.input(String.eq(J.Json.get_str(o, "m", ""), "view.action"), J.Json.get_obj(o, "p"), ThinContext.cid(context))
       +web = String.eq(Client.thin.mode(c), "view-web")
       +thread = TV.Target.thread(st, J.Json.get_obj(p, "target"))
-      +key = TA.Memo.key(M.State.seq(st), Hub.info.key(cfg), p, anchor, ThinContext.view(context), web, thread)
+      +key = TA.Memo.key(M.State.seq(st), Hub.thin.view_key(st, cfg, thread), p, anchor, ThinContext.view(context), web, thread)
       Hub.thin.render.memo(TA.Memo.reply.clock(TA.Actor.memos(ThinContext.actors(context)), String.eq(J.Json.get_str(o, "m", ""), "view.update"), key, ms, now, web,
-        TLIVE.Stream.get(Cfg.thin.streams(cfg), thread), thread, Cfg.thin.epoch(cfg), J.Json.get_obj(p, "target"), TA.Actor.loc(ThinContext.actors(context))),
+        TLIVE.Stream.get(Cfg.thin.streams(cfg), thread), thread, Hub.thin.view_epoch(st, cfg, thread), J.Json.get_obj(p, "target"), TA.Actor.loc(ThinContext.actors(context))),
         Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, c, now, context, anchor, p, key, ms)
+
+def ThinContext.with_anchor(c: ThinContext, anchor: Nat) -> ThinContext:
+  match c:
+    case ThinContext{hub, cid, target, view, revision, _, actors, control}: ThinContext{hub, cid, target, view, revision, anchor, actors, control}
+
+def Hub.thin.previous_origin(xs: List<&2, TA.Actor>) -> String:
+  match xs:
+    case Nil{}: ""
+    case a <> _: UC.Ui.info(TA.Actor.ui(a), "origin")
+
+def Hub.thin.render.at(h: Hub, +client: U32, +o: J.Json, +c: Client, +now: Nat, +context: ThinContext, +anchor: Nat, +ms: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
+      +thread = TV.Target.thread(st, J.Json.get_obj(J.Json.get_obj(o, "p"), "target"))
+      +at = Bool.pick(Nat, FR.Fr.is(thread), TMIR.Mirror.anchor(Hub.thin.previous_origin(ThinContext.actors(context)), Hub.thin.view_epoch(st, cfg, thread), anchor), anchor)
+      Hub.thin.render.current(Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, c, now, ThinContext.with_anchor(context, at), at, ms)
 
 def Hub.thin.render(h: Hub, +client: U32, +o: J.Json, +c: Client, +now: Nat, +context: ThinContext, +anchor: Nat) -> IO(Hub):
   IO.bind(Nat, Hub, IO.now(), +ms => Hub.thin.render.at(h, client, o, c, now, context, anchor, ms))
 
 # a search page: over the whole index, or (with a store) over the
 # candidates it fetched (TSTO.Ts.search); the same rows either way
-def Hub.thin.find(memory: Bool, +cfg: Cfg, +q: String, +thread: String, +before: Nat) -> IO(TSTO.Found):
+def Hub.thin.find.local(memory: Bool, +cfg: Cfg, +q: String, +thread: String, +before: Nat) -> IO(TSTO.Found):
   match memory:
     case True{}: IO.pure(TSTO.Found, TSTO.Found{THIN.Index.search(Cfg.thin(cfg), q, thread, before), Cfg.thin(cfg)})
     case False{}: TSTO.Ts.search(Cfg.thin.store(cfg), q, thread, before)
+
+def Hub.thin.find.source(far: Bool, memory: Bool, +cfg: Cfg, +st: M.State, +q: String, +thread: String, +before: Nat) -> IO(TSTO.Found):
+  match far:
+    case False{}: Hub.thin.find.local(memory, cfg, q, thread, before)
+    case True{}: IO.pure(TSTO.Found, TMIR.Mirror.search(Hub.thin.mirror(st, cfg, thread), q, thread, before, Cfg.thin(cfg)))
+
+def Hub.thin.find(memory: Bool, +cfg: Cfg, +st: M.State, +q: String, +thread: String, +before: Nat) -> IO(TSTO.Found):
+  Hub.thin.find.source(FR.Fr.is(thread), memory, cfg, st, q, thread, before)
 
 def Hub.thin.search.valid(+valid: Bool, h: Hub, +client: U32, +o: J.Json, +c: Client, +now: Nat, +context: ThinContext, +cursor: Maybe<&2, Nat>) -> IO(Hub):
   match valid h cursor:
@@ -11752,8 +11805,8 @@ def Hub.thin.search.valid(+valid: Bool, h: Hub, +client: U32, +o: J.Json, +c: Cl
     case True{} Hub{+st, f, ls, cl, as, inbox, +cfg, note} Some{+before}:
       +p = J.Json.get_obj(o, "p")
       do IO<Hub>:
-        +found : TSTO.Found <- Hub.thin.find(String.is_empty(Cfg.thin.store(cfg)), cfg, J.Json.get_str(p, "query", ""), TV.Target.thread(st, J.Json.get_obj(p, "target")), before)
-        Hub.thin.respond(Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, TV.Search.result(TSTO.Found.page(found), TSTO.Found.index(found), p, Cfg.thin.epoch(cfg)), c, context, now)
+        +found : TSTO.Found <- Hub.thin.find(String.is_empty(Cfg.thin.store(cfg)), cfg, st, J.Json.get_str(p, "query", ""), TV.Target.thread(st, J.Json.get_obj(p, "target")), before)
+        Hub.thin.respond(Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, TV.Search.result(TSTO.Found.page(found), TSTO.Found.index(found), p, Hub.thin.view_epoch(st, cfg, TV.Target.thread(st, J.Json.get_obj(p, "target")))), c, context, now)
 
 def Hub.thin.page(+cursor: Maybe<&2, Nat>, h: Hub, +client: U32, +o: J.Json, +c: Client, +now: Nat) -> IO(Hub):
   match cursor:
@@ -11762,16 +11815,16 @@ def Hub.thin.page(+cursor: Maybe<&2, Nat>, h: Hub, +client: U32, +o: J.Json, +c:
 
 def Hub.thin.message_read(+read: TV.MessageRead, h: Hub, +client: U32, +o: J.Json, +c: Client, +now: Nat) -> IO(Hub):
   match read h:
-    case TV.MessageRead{"", row, start} Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+    case TV.MessageRead{"", row, start} Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
       Hub.thin.respond(Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o,
-        TV.Message.result(row, start, J.Json.get_obj(o, "p"), Cfg.thin.epoch(cfg)), c, Client.thin.context(c), now)
+        TV.Message.result(row, start, J.Json.get_obj(o, "p"), Hub.thin.view_epoch(st, cfg, TV.Target.thread(st, J.Json.get_obj(J.Json.get_obj(o, "p"), "target")))), c, Client.thin.context(c), now)
     case TV.MessageRead{code, _, _} _: Hub.thin.error(h, client, o, code)
 
 def Hub.thin.live_message_result(valid: Bool, h: Hub, +client: U32, +o: J.Json, +c: Client, +now: Nat, +stream: TLIVE.Stream, +start: Nat, +thread: String) -> IO(Hub):
   match valid h:
     case False{} _: Hub.thin.error(h, client, o, "STALE_CURSOR")
-    case True{} Hub{st, f, ls, cl, as, inbox, +cfg, note}:
-      Hub.thin.respond(Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, TV.LiveMessage.result(stream, start, thread, J.Json.get_obj(o, "p"), Cfg.thin.epoch(cfg)), c, Client.thin.context(c), now)
+    case True{} Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
+      Hub.thin.respond(Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, TV.LiveMessage.result(stream, start, thread, J.Json.get_obj(o, "p"), Hub.thin.view_epoch(st, cfg, thread)), c, Client.thin.context(c), now)
 
 def Hub.thin.live_message_cursor(cursor: Maybe<&2, Nat>, h: Hub, client: U32, o: J.Json, c: Client, now: Nat, +stream: TLIVE.Stream, thread: String) -> IO(Hub):
   match cursor:
@@ -11780,23 +11833,31 @@ def Hub.thin.live_message_cursor(cursor: Maybe<&2, Nat>, h: Hub, client: U32, o:
 
 # the rows a message read may name, whole (TSTO.Ts.whole); the whole
 # index has them already
-def Hub.thin.whole(memory: Bool, +cfg: Cfg, +thread: String, +p: J.Json, +pg: TSTO.Page) -> IO(TSTO.Page):
+def Hub.thin.whole.local(memory: Bool, +cfg: Cfg, +thread: String, +p: J.Json, +pg: TSTO.Page) -> IO(TSTO.Page):
   match memory:
     case True{}: IO.pure(TSTO.Page, pg)
     case False{}: TSTO.Ts.whole(Cfg.thin.store(cfg), thread, TSTO.Ts.cursor.ord(p), J.Json.get_str(p, "entryId", ""), pg)
 
+def Hub.thin.whole.source(far: Bool, memory: Bool, +cfg: Cfg, +st: M.State, +thread: String, +p: J.Json, +pg: TSTO.Page) -> IO(TSTO.Page):
+  match far:
+    case False{}: Hub.thin.whole.local(memory, cfg, thread, p, pg)
+    case True{}: IO.pure(TSTO.Page, TMIR.Mirror.whole(Hub.thin.mirror(st, cfg, thread), thread, TSTO.Ts.cursor.ord(p), pg))
+
+def Hub.thin.whole(memory: Bool, +cfg: Cfg, +st: M.State, +thread: String, +p: J.Json, +pg: TSTO.Page) -> IO(TSTO.Page):
+  Hub.thin.whole.source(FR.Fr.is(thread), memory, cfg, st, thread, p, pg)
+
 def Hub.thin.message_kind(live: Bool, h: Hub, +client: U32, +o: J.Json, +c: Client, +now: Nat, +thread: String) -> IO(Hub):
   match live h:
-    case True{} Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+    case True{} Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
       +stream = TLIVE.Stream.get(Cfg.thin.streams(cfg), thread)
-      Hub.thin.live_message_cursor(TV.LiveMessage.start(stream, J.Json.get_obj(o, "p"), Cfg.thin.epoch(cfg)), Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, c, now, stream, thread)
+      Hub.thin.live_message_cursor(TV.LiveMessage.start(stream, J.Json.get_obj(o, "p"), Hub.thin.view_epoch(st, cfg, thread)), Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, c, now, stream, thread)
     case False{} Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
       +p = J.Json.get_obj(o, "p")
       do IO<Hub>:
         # A direct source read keeps operational receipts accessible.
-        +pg : TSTO.Page <- Hub.thin.fetch(String.is_empty(Cfg.thin.store(cfg)), cfg, False{}, thread, ThinContext.anchor(Client.thin.context(c)))
-        +whole : TSTO.Page <- Hub.thin.whole(String.is_empty(Cfg.thin.store(cfg)), cfg, thread, p, pg)
-        Hub.thin.message_read(TV.Message.read(TSTO.Page.index(whole), thread, p, Cfg.thin.epoch(cfg), TSTO.Page.ids(pg), st), Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, c, now)
+        +pg : TSTO.Page <- Hub.thin.fetch(String.is_empty(Cfg.thin.store(cfg)), cfg, st, False{}, thread, ThinContext.anchor(Client.thin.context(c)))
+        +whole : TSTO.Page <- Hub.thin.whole(String.is_empty(Cfg.thin.store(cfg)), cfg, st, thread, p, pg)
+        Hub.thin.message_read(TV.Message.read(TSTO.Page.index(whole), thread, p, Hub.thin.view_epoch(st, cfg, thread), TSTO.Page.ids(pg), st), Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, c, now)
 
 def Hub.thin.message(h: Hub, +client: U32, +o: J.Json, +c: Client, +now: Nat) -> IO(Hub):
   match h:
@@ -11817,8 +11878,8 @@ def Hub.thin.act(send: Bool, h: Hub, +client: U32, +o: J.Json, +c: Client, +now:
 def Hub.thin.dispatch(+kind: Nat, h: Hub, +client: U32, +o: J.Json, +c: Client, +now: Nat) -> IO(Hub):
   match kind h:
     case 0n _: Hub.thin.render(h, client, o, c, now, Hub.thin.context.for(True{}, J.Json.get_obj(o, "p"), c, J.Json.as_raw(J.Json.get(o, "id"), "0"), 0n), 0n)
-    case 1n Hub{st, f, ls, cl, as, inbox, +cfg, note}: Hub.thin.page(Hub.thin.cursor(J.Json.get_obj(o, "p"), Cfg.thin.epoch(cfg), ""), Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, c, now)
-    case 2n Hub{st, f, ls, cl, as, inbox, +cfg, note}: Hub.thin.search.valid(Hub.thin.query.valid(J.Json.get_obj(o, "p")), Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, c, now, Client.thin.context(c), Hub.thin.cursor(J.Json.get_obj(o, "p"), Cfg.thin.epoch(cfg), J.Json.get_str(J.Json.get_obj(o, "p"), "query", "")))
+    case 1n Hub{+st, f, ls, cl, as, inbox, +cfg, note}: Hub.thin.page(Hub.thin.cursor(J.Json.get_obj(o, "p"), Hub.thin.view_epoch(st, cfg, TV.Target.thread(st, J.Json.get_obj(J.Json.get_obj(o, "p"), "target"))), ""), Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, c, now)
+    case 2n Hub{+st, f, ls, cl, as, inbox, +cfg, note}: Hub.thin.search.valid(Hub.thin.query.valid(J.Json.get_obj(o, "p")), Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, c, now, Client.thin.context(c), Hub.thin.cursor(J.Json.get_obj(o, "p"), Hub.thin.view_epoch(st, cfg, TV.Target.thread(st, J.Json.get_obj(J.Json.get_obj(o, "p"), "target"))), J.Json.get_str(J.Json.get_obj(o, "p"), "query", "")))
     case 3n _: Hub.thin.render(h, client, TV.Obj.put(o, "p", TV.Obj.put(J.Json.get_obj(o, "p"), "action", J.Str{""})), c, now, Client.thin.context(c), ThinContext.anchor(Client.thin.context(c)))
     case 4n _: Hub.thin.act(Hub.thin.sends(J.Json.get_str(J.Json.get_obj(o, "p"), "action", "")), h, client, o, c, now)
     case 5n _: Hub.thin.message(h, client, o, c, now)
@@ -11833,9 +11894,9 @@ def Hub.thin.authorized(+valid: Bool, h: Hub, +client: U32, +o: J.Json, +c: Clie
 def Hub.thin.request(+valid: Bool, h: Hub, +client: U32, +o: J.Json, +c: Client, +now: Nat) -> IO(Hub):
   match valid h:
     case False{} _: Hub.thin.error(h, client, o, "STALE_CONNECTION")
-    case True{} Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+    case True{} Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
       +kind = C.Codec.pos(["view.open", "view.page", "view.search", "view.update", "view.action", "view.message", "view.cancel"], J.Json.get_str(o, "m", ""))
-      Hub.thin.authorized(Bool.and(TV.Target.exists(st, J.Json.get_obj(J.Json.get_obj(o, "p"), "target")), Bool.and(
+      Hub.thin.authorized(Bool.and(TV.Target.exists(Hub.thin.view_state(st, cfg, TV.Target.thread(st, J.Json.get_obj(J.Json.get_obj(o, "p"), "target"))), J.Json.get_obj(J.Json.get_obj(o, "p"), "target")), Bool.and(
         Bool.or(Nat.is_eq(kind, 0n), Hub.thin.current(J.Json.get_obj(o, "p"), Client.thin.context(c))),
         Bool.or(Bool.not(Bool.or(Nat.is_eq(kind, 0n), Bool.or(Nat.is_eq(kind, 1n), Bool.or(Nat.is_eq(kind, 3n), Nat.is_eq(kind, 4n))))), TVW.Wire.ordinary.rid(TVW.Wire.nat(J.Json.get_obj(J.Json.get_obj(o, "p"), "session"), "rid", PRESENT.Session.nat.max()))))), Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, c, now, kind)
 

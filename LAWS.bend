@@ -12433,3 +12433,24 @@ law fq_room_keyed:
 # A copied home never drains queued calls to real machines.
 law queue_copy_refuses_network:
   {JCOPY.Copy.outs(True{}, [H.FarQueued{}]) == [] : List<&2, H.Out>}
+
+import ./src/server/thin-mirror.bend as TMR
+
+# ---- selected mirrored thin conversation ----
+law mirror_no_authority:
+  for mirrors: List<&2, FR.In>
+  for thread: String
+  {TMR.Mirror.get(False{}, mirrors, thread) == None{} : Maybe<&2, FR.In>}
+
+law mirror_no_source_state:
+  for st: M.State
+  for thread: String
+  {TMR.Mirror.state(st, None{}, thread) == st : M.State}
+
+law mirror_local_epoch:
+  for epoch: String
+  {TMR.Mirror.epoch(epoch, None{}) == epoch : String}
+
+law mirror_changed_basis_anchor:
+  {TMR.Mirror.anchor("old", "new", 37n) == 0n : Nat}
+# ---- end selected mirrored thin conversation ----

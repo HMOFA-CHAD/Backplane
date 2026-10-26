@@ -2850,7 +2850,7 @@ def View.thread(+lc: I.Loc, +u: U.Ui, t: M.Thread) -> D.Node:
 def View.bot.k(+lc: I.Loc, chat: Bool, +u: U.Ui, +b: BT.Bot, +hd: BI.Head) -> D.Node:
   match chat:
     case True{}:
-      View.thread.h(lc, u, U.Ui.thread(U.Ui.state(u), BT.Bot.thread(b)), [WB.WB.head.loc(lc, u, b, hd), WB.WB.tabs(lc, hd)])
+      View.thread.h(lc, u, U.Ui.thread(U.Ui.state(u), U.Bots.chat.of(U.Ui.state(u), BT.Bot.id(b), BT.Bot.thread(b))), [WB.WB.head.loc(lc, u, b, hd), WB.WB.tabs(lc, hd)])
     case False{}:
       D.El{"main", "bot", [D.At{"class", "thread-view bot-view"}], [WB.WB.head.loc(lc, u, b, hd), WB.WB.tabs(lc, hd), WB.WB.main(lc, u, b, BI.Head.tab(hd))]}
 
