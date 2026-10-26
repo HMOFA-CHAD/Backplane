@@ -3398,8 +3398,22 @@ def Codex.todo(todo: Bool, +thread: String, +now: Nat, +it: J.Json) -> Step:
 # there; "notice" is a provider's word to the person, neither the agent's
 # reply nor a failure (opencode's renewed session, opencode.bend)
 def Codex.kind(+t: String) -> Nat:
-  Bool.pick(Nat, String.eq(t, "context.usage"), 8n, Bool.pick(Nat, String.eq(t, "notice"), 7n, Bool.pick(Nat, String.eq(t, "tool.done"), 6n, Bool.pick(Nat, Bool.or(String.eq(t, "item.started"), String.eq(t, "item.updated")), 5n,
-    C.Codec.pos(["thread.started", "item.completed", "turn.completed", "turn.failed", "item.delta"], t)))))
+  Bool.pick(Nat, String.eq(t, "error"), 9n, Bool.pick(Nat, String.eq(t, "context.usage"), 8n, Bool.pick(Nat, String.eq(t, "notice"), 7n, Bool.pick(Nat, String.eq(t, "tool.done"), 6n, Bool.pick(Nat, Bool.or(String.eq(t, "item.started"), String.eq(t, "item.updated")), 5n,
+    C.Codec.pos(["thread.started", "item.completed", "turn.completed", "turn.failed", "item.delta"], t))))))
+
+# Codex emits recoverable transport/rate-limit errors while it retries.
+# Keep the running turn and input intact, but do not hide the wait. Use a
+# bounded public notice rather than raw transport headers or request text.
+def Codex.error.rate(+message: String) -> Bool:
+  Bool.or(String.contains(message, "too many requests"), Bool.or(String.contains(message, "http 429"), String.contains(message, "status: 429")))
+
+def Codex.error.text(+o: J.Json) -> String:
+  +message : String = String.to_lower(J.Json.get_str(o, "message", J.Json.get_str(J.Json.get_obj(o, "error"), "message", "")))
+  Bool.pick(String, Codex.error.rate(message), "Provider is rate limited (HTTP 429). Waiting for the provider to retry; your message is kept.",
+    Bool.pick(String, String.contains(message, "reconnecting"), "Provider connection interrupted. The provider is retrying; your message is kept.", "Provider reported an error. Your message is kept; waiting for the provider's next result."))
+
+def Codex.error.step(+s: M.State, +thread: String, +now: Nat, o: J.Json) -> Step:
+  Step{[M.ActivityLogged{thread, Hub.id("n", now, Hub.seq(s)), "info", "provider", Codex.error.text(o), now}], Nil{}}
 
 def Codex.line.k(i: Nat, +s: M.State, +thread: String, +now: Nat, +o: J.Json) -> Step:
   match i:
@@ -3418,6 +3432,8 @@ def Codex.line.k(i: Nat, +s: M.State, +thread: String, +now: Nat, +o: J.Json) ->
       Step.outs([Steps.out(thread, Hub.cwd(s, Hub.thread(s, thread)), "")])
     case 7n:
       Step{[M.ActivityLogged{thread, Hub.id("n", now, Hub.seq(s)), "info", "session", J.Json.get_str(o, "message", ""), now}], Nil{}}
+    case 9n:
+      Codex.error.step(s, thread, now, o)
     case 8n:
       Step{Usage.set(Nat.is_gt(J.Json.get_nat(o, "used", 0n), 0n), thread, J.Json.get_nat(o, "used", 0n), J.Json.get_nat(o, "window", 0n), now), Nil{}}
     case 3n:

@@ -12511,3 +12511,14 @@ law mail_silent_bot_envelope:
   for th: String
   for text: String
   {H.Triage.bot.file(False{}, s, now, th, text) == H.Step.none() : H.Step}
+
+# Provider retry visibility; never a new turn/action.
+
+law codex_error_notice_kind:
+  {H.Codex.kind("error") == 9n : Nat}
+law codex_error_notice_no_effects:
+  for s: M.State
+  for th: String
+  for now: Nat
+  for o: J.Json
+  {H.Step.outs_of(H.Codex.error.step(s, th, now, o)) == [] : List<&2, H.Out>}
