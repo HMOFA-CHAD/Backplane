@@ -78,7 +78,7 @@
     "src/core/outbox.bend": "7e90d003d01434d86c041b83d837f8a85d9f39c7ae380d840e07bb141f3dd677",
     "src/core/plane.bend": "b6a488af9db204ab580d52b3dc438239141722eb955be21a2bf92aceb4ba8702",
     "src/core/presentation.bend": "d45548e844aeb3a3d36e4fda89bb8b8c48c8366c06fcf5114b5b38df548823d9",
-    "src/core/prompt.bend": "2c313b35a6ed46d1c7a4ea11be1e2eb4d3d56b6e104e9a88a176793d43c3404a",
+    "src/core/prompt.bend": "6ecdb20260b8d54caeb63233b7c5568eddbe827cbca74fff54d2ed6dcfb78774",
     "src/core/qr.bend": "42aae4f454bbf55b201e8913e517b6dec531424b6cace582a4726e189636fbcc",
     "src/core/ref-origin.bend": "933dae7741d19f4c68b3d34de827fe42f490deb222282e4e185640a0eb4677fa",
     "src/core/ref.bend": "fa2dd3c0a4e9865ac9b185680361c681ce187f625a315e560f3a289e651e90f7",
@@ -219,7 +219,14 @@
       "base": "41d19f90eac37a58285dd8dbad95cc98faa87db6",
       "scope": "Only liveownertriage namedtoolflags and privateprompt, no873sidebarreader changes;24affected full-output freshnesscases passed; unknown @ retained",
       "assertions": 24
+    },
+    "canonicalSaveGuidance": {
+      "base": "38ac5c463fc32504a4f4b60e4915664f60b5140f",
+      "scope": "Only Prompt.board constant guidance string changed; no argument/import/reader/key change. Not reachable from sidebar roots. Conservative reference comparison is not a compiler AST proof.",
+      "reachableFunctions": 873,
+      "fullOutputCheck": "test/sidebar_draft_image_test.bend",
+      "assertions": 24
     }
   },
-  "reviewNote": "Origin-aware explicit URI mirror text read projection:129conservative dependencies,unchanged873sidebar functions,24fulloutput cases. No new body reader. Failclosedguard retained."
+  "reviewNote": "Canonical save guidance only; unchanged sidebar readers/reachable functions and24 affected full-output freshness cases. Unknown @ and full main/picture inputs retained; fail-closed guard unchanged."
 }
