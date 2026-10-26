@@ -12454,3 +12454,19 @@ law mirror_local_epoch:
 law mirror_changed_basis_anchor:
   {TMR.Mirror.anchor("old", "new", 37n) == 0n : Nat}
 # ---- end selected mirrored thin conversation ----
+
+import ./src/core/subthreads.bend as LEG
+
+law retired_scratch_launch_refused:
+  for s: M.State
+  for now: Nat
+  for thread: String
+  for by: String
+  for p: J.Json
+  {MC.Mcp.launch.retired_guard(True{}, s, now, thread, by, p) == MC.Res.fail(MC.Mcp.launch.retired_message()) : MC.Res}
+
+law retired_scratch_id:
+  {MC.Mcp.launch.retired_id("scratch") == True{} : Bool}
+
+law legacy_active_visible:
+  {LEG.Legacy.unsettled(M.Active{}) == True{} : Bool}

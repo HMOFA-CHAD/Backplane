@@ -486,8 +486,16 @@ def View.history.k(ts: List<&2, M.Thread>, +lc: I.Loc, +q: String, +open: Map<&2
         WI.WIcon.button("shelf", "thread-history", "", "Previous conversations", Bool.pick(String, U.Flag.get(open, "conversation-history"), "chevron-down", "chevron-right"), 14, "Conversation history") <>
           View.history.open(Bool.or(U.Flag.get(open, "conversation-history"), Bool.not(String.is_empty(q))), lc, t <> rest, q, ix, st, sel, now)}]
 
+def View.history.live(ts: List<&2, M.Thread>, +lc: I.Loc, +q: String, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat) -> List<&2, D.Node>:
+  match ts:
+    case Nil{}: Nil{}
+    case t <> rest:
+      [D.El{"section", "legacy-live", [D.At{"class", "conversation-history legacy-live"}],
+        D.Dom.span("shelf-label", "Conversations in progress") <> View.history.rows(lc, t <> rest, q, ix, st, sel, now)}]
+
 def View.history(+lc: I.Loc, +q: String, +open: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat) -> List<&2, D.Node>:
-  View.history.k(ST.Legacy.threads(st), lc, q, open, ix, st, sel, now)
+  List.append(&2, D.Node, View.history.live(U.Side.legacy.filtered(ST.Legacy.live(st, sel), q), lc, q, ix, st, sel, now),
+    View.history.k(ST.Legacy.history(st, sel), lc, q, open, ix, st, sel, now))
 
 def View.list(+lc: I.Loc, active: Bool, +q: String, +open: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String) -> List<&2, D.Node>:
   List.append(&2, D.Node, View.list.k(lc, active, q, open, ix, st, sel, now, look, rm), View.history(lc, q, open, ix, st, sel, now))
@@ -622,8 +630,7 @@ def View.sidebar.threads.kind(active: Bool, +u: U.Ui, ix: U.SIx, rows: List<&2, 
 
 def View.sidebar.threads(+u: U.Ui, ix: U.SIx, rows: List<&2, U.SRow>, raw: List<&2, U.SRow>) -> List<&2, String>:
   List.append(&2, String, View.sidebar.threads.kind(String.eq(U.Side.view(U.Ui.state(u)), "active"), u, ix, rows, raw),
-    U.Side.in_project(U.Side.when(Bool.or(U.Ui.flag(u, "conversation-history"), Bool.not(String.is_empty(U.Ui.scratch(u, "@f.pq")))),
-      U.Side.legacy.ids(ST.Legacy.threads(U.Ui.state(u)), U.Ui.scratch(u, "@f.pq"))), U.Ui.state(u), U.Side.cur(u)))
+    U.Side.in_project(U.Side.legacy.shown(u), U.Ui.state(u), U.Side.cur(u)))
 
 def View.sidebar.frame.rows(+lc: I.Loc, bots: List<&2, D.Node>, +u: U.Ui, +plain: U.SIx, +signals: U.SIx, +rows: List<&2, U.SRow>, +unfolded: List<&2, U.SRow>, +raw: List<&2, U.SRow>) -> D.Node:
   View.sidebar.keys(View.sidebar.projected(lc, bots, WB.WB.uber(lc, u, signals), U.Machines.rows.loc(lc, u), U.Menu.items.loc(lc, u, True{}), signals, u, rows, raw),

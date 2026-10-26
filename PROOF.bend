@@ -13271,3 +13271,7 @@ def Laws.mirror_no_authority(mirrors, thread): {==}
 def Laws.mirror_no_source_state(st, thread): {==}
 def Laws.mirror_local_epoch(epoch): {==}
 def Laws.mirror_changed_basis_anchor(): {==}
+
+def Laws.retired_scratch_launch_refused(s, now, thread, by, p): {==}
+def Laws.retired_scratch_id(): {==}
+def Laws.legacy_active_visible(): {==}
