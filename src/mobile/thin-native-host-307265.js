@@ -34,7 +34,12 @@ export function validateNativeResult307265(result, input) {
     if (result.cmds.some(c => (c.type === 'keep' && rawThread(input.hub, c.thread) === null) ||
         (c.type === 'later' && rawThread(input.hub, c.value) === null))) return false;
     if (result.session.route !== undefined && !compactRoute(result.session.route, result.nextTarget || input.target)) return false;
-    if (result.nextTarget) return viewTarget(result.nextTarget) && !same(result.nextTarget, input.target) && typeof input.action === 'string' &&
+    // A navigation answers the person's action, or the update that follows
+    // its ordinary request (a new thread or fork: thread.create's answer,
+    // then view.update names the thread). Refusing the second failed the
+    // view: "New thread" waited for good and nothing applied after it.
+    if (result.nextTarget) return viewTarget(result.nextTarget) && !same(result.nextTarget, input.target) &&
+      (typeof input.action === 'string' || typeof input.viewRevision === 'string') &&
       result.remoteReady === false && !Object.prototype.hasOwnProperty.call(result, 'shown');
     const w = result.window, str = (s, limit = 1024) => typeof s === 'string' && utf8Bytes(s) <= limit;
     if (!object(w) || !Array.isArray(w.ids) || w.ids.length > 32 || w.ids.some(id => !str(id) || !id) || new Set(w.ids).size !== w.ids.length ||
@@ -481,6 +486,18 @@ export class NativeThinHost307265 {
       s.session.drafts = { ...s.session.drafts, [original.thread]: text };
       s.drafts.set(original.thread, { revision: original.revision, text });
     }
+    // As the web's thin-host: the answer applies to the session as it is now
+    // (a new thread or fork's answer selects it and ends the wait). Taking
+    // only its drafts left wantNew set: a "New thread" page that waited for
+    // good, and every view after it asked for that wait again.
+    const before = s.session, next = this.api.ack(s.session, envelope);
+    // the client's own state ('@' keys: the wait is "@want.new") from the
+    // answer, the person's thread drafts as they are now
+    const drafts = Object.fromEntries([...Object.entries(before.drafts || {}).filter(([k]) => !k.startsWith('@')),
+      ...Object.entries(next.drafts || {}).filter(([k]) => k.startsWith('@'))]);
+    s.session = { ...next, rid: Math.max(before.rid, next.rid || 0), drafts };
+    if (next.sel && next.sel !== before.sel) this.select(s, this.api.target(s.session), s.session);
+    else if (next.wantNew !== before.wantNew) this.update(s);
     for (const call of this.ordinary.values()) if (call.hub === hub) call.session = this.api.ack(call.session, envelope);
     for (const call of this.pending.values()) if (call.hub === hub) {
       if (call.acks.length >= 128) { this.fail(hub, 'Ordinary reply backlog limit'); break; }
