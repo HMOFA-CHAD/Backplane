@@ -1320,3 +1320,7 @@ secret.vault.keyring = このコンピュータのキーチェーンで暗号化
 secret.vault.file = このマシンの鍵ファイルで暗号化（キーチェーンが応答しませんでした）。
 secret.vault.locked = 保管庫がロックされています: {why}
 secret.open.tip = チャットに貼らずにエージェントへシークレットを渡す
+
+image.copy = 画像をコピー
+image.show = ファイルを表示
+image.share = 画像を共有
