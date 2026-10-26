@@ -1305,8 +1305,16 @@ def Agent.wrote(r: Socket & Result<&1, &1, U32 & String, Unit>, k: Socket -> IO(
 # every agent process starts here: its arguments masked first (vault.bend's
 # Vx.args), so no stored value reaches a provider's command line, whatever
 # out or step carried the text (a Codex turn, an ACP runner, the writer)
+def Spawn.agent.with_env(env: List<&2, String>, cmd: String, args: List<&2, String>, cwd: String, err: U32) -> IO(Result<&1, &1, U32 & String, U32 & Socket>):
+  match env:
+    case Nil{}: H.Proc.spawn(cmd, args, cwd, err)
+    case h <> t: H.Proc.spawn("env", h <> List.append(&2, String, t, cmd <> args), cwd, err)
+
 def Spawn.agent(+cmd: String, args: List<&2, String>, +cwd: String, +err: U32) -> IO(Result<&1, &1, U32 & String, U32 & Socket>):
-  IO.bind(List<&2, String>, Result<&1, &1, U32 & String, U32 & Socket>, VX.Vx.args(args), xs => H.Proc.spawn(cmd, xs, cwd, err))
+  do IO<Result<&1, &1, U32 & String, U32 & Socket>>:
+    xs : List<&2, String> <- VX.Vx.args(args)
+    env : List<&2, String> <- K.KiCad.agent_env()
+    Spawn.agent.with_env(env, cmd, xs, cwd, err)
 
 # each line to an agent's stdin (prompts, turn text, answers) masked
 def Agent.write.m(+line: String, s: Socket, k: Socket -> IO(Unit)) -> IO(Unit):
@@ -4586,11 +4594,22 @@ def Claude.prep(on: Bool, h: Hub, +thread: String, +u: String) -> Hub:
     case False{} _:
       h
 
+# Library setup happens in the turn's background preparation, before the
+# provider process starts, including a turn resumed ahead of the health job.
+# A library failure is surfaced by runtime health; general agent access stays
+# available so the person can repair a custom profile conflict.
+def Files.library.warn(fine: Bool, why: String) -> IO(Unit):
+  match fine:
+    case True{}: IO.pure(Unit, Unit{})
+    case False{}: PS.Log.warn("kicad-library", why)
+
 # a Codex or Grok turn's KiCad files, read in its own job (the hub's loop
 # never waits on the walk); the hub is told to open the panel
-def Files.prepared(+thread: String, +cwd: String, +inbox: Chan(Msg)) -> IO(K.Files):
+def Files.prepared(+thread: String, +cwd: String, +inbox: Chan(Msg), cli: String) -> IO(K.Files):
   do IO<K.Files>:
     +fs : K.Files <- K.Files.read(cwd)
+    +why : String <- K.KiCad.prepare(cli)
+    Files.library.warn(String.is_empty(why), why)
     ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, AutoView{thread, fs})
     return fs
 
@@ -4619,14 +4638,14 @@ def Oc.args(r: M.RuntimeMode, +model: String) -> List<&2, String>:
 # `$skill` mentions become instructions to read them
 def Codex.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: String, +session: String, r: M.RuntimeMode, +text: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
-    +fs : K.Files <- Files.prepared(thread, cwd, inbox)
+    +fs : K.Files <- Files.prepared(thread, cwd, inbox, K.Rt.cli(Cfg.rt(cfg)))
     +ss : List<&2, AG.USkill> <- Skills.scan(cwd)
     +keys : String <- Hub.keys.prompt(Cfg.home(cfg))
     Codex.run(Codex.args(cfg, thread, model, session, r, AG.Mention.expand("codex", text, ss), Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss), Hub.effort_of(st, thread), gen, MD.Disposition.launch(st, thread), MD.Disposition.triage.launch(st, thread), M.Think.on(st)), cwd, thread, gen, inbox)
 
 def Grok.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +text: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
-    +fs : K.Files <- Files.prepared(thread, cwd, inbox)
+    +fs : K.Files <- Files.prepared(thread, cwd, inbox, K.Rt.cli(Cfg.rt(cfg)))
     +ss : List<&2, AG.USkill> <- Skills.scan(cwd)
     +keys : String <- Hub.keys.prompt(Cfg.home(cfg))
     Grok.run(Grok.args(r, model, Hub.effort_of(st, thread)),
@@ -4637,7 +4656,7 @@ def Grok.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: Stri
 # model outranks the config's)
 def Oc.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +text: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
-    +fs : K.Files <- Files.prepared(thread, cwd, inbox)
+    +fs : K.Files <- Files.prepared(thread, cwd, inbox, K.Rt.cli(Cfg.rt(cfg)))
     +ss : List<&2, AG.USkill> <- Skills.scan(cwd)
     +keys : String <- Hub.keys.prompt(Cfg.home(cfg))
     Grok.run(Oc.args(r, model),
@@ -4681,7 +4700,7 @@ def PiRun.args(+mcp: String, +mode: String, +sid: String, +ext: String, +prompt:
 # one Pi turn: Grok's runner over Pi's RPC (core/pi.bend)
 def PiRun.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +text: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
-    +fs : K.Files <- Files.prepared(thread, cwd, inbox)
+    +fs : K.Files <- Files.prepared(thread, cwd, inbox, K.Rt.cli(Cfg.rt(cfg)))
     +ss : List<&2, AG.USkill> <- Skills.scan(cwd)
     +keys : String <- Hub.keys.prompt(Cfg.home(cfg))
     w : P.Ran <- PiRun.write(Cfg.home(cfg))
@@ -4723,7 +4742,7 @@ def OmpRun.args(+mcp: String, +mode: String, +dir: String, +ext: String, +prompt
 # one Oh My Pi turn: Grok's runner over omp's RPC (core/omp.bend)
 def OmpRun.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +text: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
-    +fs : K.Files <- Files.prepared(thread, cwd, inbox)
+    +fs : K.Files <- Files.prepared(thread, cwd, inbox, K.Rt.cli(Cfg.rt(cfg)))
     +ss : List<&2, AG.USkill> <- Skills.scan(cwd)
     +keys : String <- Hub.keys.prompt(Cfg.home(cfg))
     w : P.Ran <- OmpRun.write(Cfg.home(cfg))
@@ -4735,7 +4754,7 @@ def OmpRun.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: St
 # ids (Muse refuses one it has seen)
 def Muse.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +text: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
-    +fs : K.Files <- Files.prepared(thread, cwd, inbox)
+    +fs : K.Files <- Files.prepared(thread, cwd, inbox, K.Rt.cli(Cfg.rt(cfg)))
     +ss : List<&2, AG.USkill> <- Skills.scan(cwd)
     +keys : String <- Hub.keys.prompt(Cfg.home(cfg))
     Grok.run(Muse.args(r, model),
@@ -4762,7 +4781,7 @@ def Agt.args(+home: String, +st: M.State) -> List<&2, String>:
 
 def Agt.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +text: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
-    +fs : K.Files <- Files.prepared(thread, cwd, inbox)
+    +fs : K.Files <- Files.prepared(thread, cwd, inbox, K.Rt.cli(Cfg.rt(cfg)))
     +ss : List<&2, AG.USkill> <- Skills.scan(cwd)
     +keys : String <- Hub.keys.prompt(Cfg.home(cfg))
     w : Bool <- AGX.Agx.write(AGX.Agx.root(Cfg.home(cfg)))
@@ -9245,8 +9264,7 @@ def Claude.started(r: Result<&1, &1, U32 & String, U32 & Socket>, +thread: Strin
 
 def Claude.job(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +i: M.InteractionMode, +effort: String, +gen: String, +input: Chan(String), +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
-    +fs : K.Files <- K.Files.read(cwd)
-    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, AutoView{thread, fs})
+    +fs : K.Files <- Files.prepared(thread, cwd, inbox, K.Rt.cli(Cfg.rt(cfg)))
     +keys : String <- Hub.keys.prompt(Cfg.home(cfg))
     Keyring.gate("claude", IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, Spawn.agent("env", "MCP_TOOL_TIMEOUT=86400000" <> "CLAUDE_CODE_ENABLE_TODO_TOOLS=1" <> "claude" <> Hub.agent_args(cfg, thread, model, session, r, i, Hub.prompt(cfg, st, thread, cwd, fs, keys), effort, gen, M.Think.on(st)), cwd, 3),
       res => Claude.started(res, thread, gen, cwd, input, inbox)), Claude.fail(thread, gen, KR.Keyring.refusal("claude"), inbox))
