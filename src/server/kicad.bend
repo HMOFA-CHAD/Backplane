@@ -160,8 +160,13 @@ def Rt.root.normal(+cli: String) -> String:
 def Rt.root(cli: String) -> String:
   Rt.root.normal(String.join(String.split(cli, '\\'), "/"))
 
-def KiCad.prepare(cli: String) -> IO(String):
-  KL.Library.prepare(Rt.root(cli))
+def KiCad.prepare.found(found: Bool, cli: String) -> IO(String):
+  match found:
+    case True{}: KL.Library.prepare(Rt.root(cli))
+    case False{}: IO.pure(String, "")
+
+def KiCad.prepare(+cli: String) -> IO(String):
+  IO.bind(Bool, String, Io.is_file(cli), found => KiCad.prepare.found(found, cli))
 
 def KiCad.agent_env() -> IO(List<&2, String>):
   KL.Library.child_env()
@@ -178,7 +183,7 @@ def KiCad.run.k(empty: Bool, +cli: String, args: List<&2, String>) -> IO(P.Ran):
   match empty:
     case True{}: IO.pure(P.Ran, P.Ran{127, KiCad.missing()})
     case False{}:
-      IO.bind(String, P.Ran, KL.Library.prepare(Rt.root(cli)), +why => KiCad.run.prepared(String.is_empty(why), why, cli, args))
+      IO.bind(String, P.Ran, KiCad.prepare(cli), +why => KiCad.run.prepared(String.is_empty(why), why, cli, args))
 
 # CLI exports in the hub and plot/review children get the real process env.
 def KiCad.run(+cli: String, args: List<&2, String>) -> IO(P.Ran):
@@ -603,7 +608,7 @@ def KiCad.open.prepared(fine: Bool, why: String, fork: Bool, cli: String, fs: Fi
 
 def KiCad.open.k(fork: Bool, +cli: String, fs: Files) -> IO(String):
   match fork:
-    case True{}: IO.bind(String, String, KL.Library.prepare(Rt.root(cli)), +why => KiCad.open.prepared(String.is_empty(why), why, True{}, cli, fs))
+    case True{}: IO.bind(String, String, KiCad.prepare(cli), +why => KiCad.open.prepared(String.is_empty(why), why, True{}, cli, fs))
     case False{}: KiCad.open.ready(False{}, cli, fs)
 
 # open a project's .kicad_pro in the bundled KiCad (its board or schematic
