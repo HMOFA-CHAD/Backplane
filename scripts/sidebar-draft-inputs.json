@@ -70,7 +70,7 @@
     "src/core/mech.bend": "79fb3307d0d6868a777924d4b934ac8a1671937e265942467f6c60cc4db82efb",
     "src/core/menu.bend": "807668923de70eaabb72ddb760f808cbf6d786b70822ba6a1180776758af7eee",
     "src/core/model.bend": "5a67e9bdca81f35c2f151c541277b117600eaf352b38e0b99ccea3f6abe9eadf",
-    "src/core/msgs.bend": "241850824d1c247fd4ee5b3b593a8731f6dac1280842e8c7c4d74e6ea831a0ce",
+    "src/core/msgs.bend": "fe7f8b155aebf57daea02c4db8e322bbb6ff79526ae192f4c8d6f2d50934d316",
     "src/core/notice.bend": "ee87318c1f12fc6cfb23bb5e24e90709e1f9a2eadfd2832581d21590f596e5e0",
     "src/core/onboard.bend": "55ccccf20f706a0acad492de20e23aedc751c7e9ce61b6f3430bfd65796e9232",
     "src/core/once.bend": "c12f375e09045a035cfc66c87d73197f3348b2998fa0e0bb6c9876fca870577c",
@@ -99,7 +99,7 @@
     "src/core/signal.bend": "b0c3979e7eaad7dc5c7a052027ea44b03af3d125d45e4a837fed5ec7b4e4db07",
     "src/core/slash.bend": "4b88f73566a9b3694a888ede21f2117157df9449c50c52806648e4795d298932",
     "src/core/space.bend": "0caea2f71303b476291b0e9570459ce12c8fe58b81aefccb2bd935fe4bd56c3a",
-    "src/core/stamp.bend": "020fec0e5b194f586158b422bfe796338209dc7171f69a9cf08ed951f5c8780a",
+    "src/core/stamp.bend": "c1646ac6e545888f378e531b2e731acb4a6a49cb902283c5a101371ee7a6ad73",
     "src/core/store.bend": "037f48017d9b9c1b6ed24d750bc898dc62200635d95fecc627f2196fd79d89d5",
     "src/core/strokefont.bend": "a5d15a2a0c28e9b24673d41bd31a283b8b9df71b1d40524b4bfb689b3ff964bb",
     "src/core/subs.bend": "695a9eedce4bbc7eafd13a9435c77d33a3066f8a2d961086200ca08f91a37a0f",
@@ -140,7 +140,7 @@
     "src/web/space.bend": "b86a265e41a900498bc33c37c0404c4d6678554efe3d9054f329beb2cf35ee63",
     "src/web/usage-graph.bend": "fa06f7d2bf855a396a5f7a7b4725dfaa990145fbbcefe7ad21ae8f9a698a2679",
     "src/web/usage-page.bend": "706e3f17a4a3e5f159656d47aeb76a940d4825421f5c33228f9aef692ec926e3",
-    "src/web/view.bend": "7739c56b8462210dcfbccb94f55d4f308377b88db52746b76c3b9da014b4dfc7"
+    "src/web/view.bend": "3f4739e6ba62cc5bcf4485e4f50ffa8ff78d217e4cfd4c685f201ffaca7b5c06"
   },
   "review": {
     "source": "5f19ea0b9dbcff736e51ced0cb79e19bfef5bba6",
@@ -196,10 +196,11 @@
       "assertions": 24
     },
     "selectedMirrorRead": {
-      "base": "cf5d472185f2b342ac5210e6e80486d5f768baa0",
+      "base": "8b90004bc1d9134e95f43b8c1c350a462dfdffdf",
       "scope": "Selected mirror metadata and bounded read rows; unchanged860 sidebar functions.24 full-output draft/IME/search/info cases passed. Unknown @ and full picture/main freshness retained.",
       "fullOutputCheck": "test/sidebar_draft_image_test.bend",
-      "assertions": 24
+      "assertions": 24,
+      "mainAdvance": "Latest main preserved; affected24 full-output rerun only. Prior42 mirror cases/laws retained."
     }
   },
   "reviewNote": "Selected mirrored thread reads:128 conservative dependency files, unchanged860 sidebar functions,24 full-output cases. New projection bridge pinned fail-closed; unknown @ keys and full main/picture drafts retained."

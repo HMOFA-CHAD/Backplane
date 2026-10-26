@@ -435,6 +435,10 @@ let queued = false;
 let scroll = false;
 let focus = null;
 let jump = null;
+// a search result opened: its entry, brought into view and flashed once its
+// thread shows it, paging back through the history while it is not there
+// yet (at most 40 pages)
+let searchJump = null;
 let earlierAsked = false;
 
 // the entry at the top of the timeline's view, and where it is in the
@@ -458,6 +462,8 @@ function anchorOf(tl) {
 let held = null;
 // until when an upward gesture keeps the end from catching the view (leaveEnd)
 let leavingEndUntil = 0;
+// until when a downward gesture lets the end catch the view from near it
+let towardEndUntil = 0;
 let away = "";
 // where the last of our own corrections left the timeline: its scroll
 // event is ours, not the person's, and keeps the offset held (no drift)
@@ -509,7 +515,11 @@ function holdRead(tl) {
   // thread's: it holds like anywhere else, and newer rows come by scrolling
   // while an upward gesture lasts the end does not catch the view again:
   // a smooth scroll's first frames are still within the end's few px
-  held = holdEnd(tl) && performance.now() > leavingEndUntil && !(thin && thin.atNewest?.() === false) ? null : anchorOf(tl);
+  // and a downward gesture that brings it within a third of a screen of the
+  // end catches up: a reply streaming faster than the wheel moves left the
+  // view a few lines short of the end for good
+  const nearEnd = holdEnd(tl) || (performance.now() < towardEndUntil && tl.scrollHeight - tl.scrollTop - tl.clientHeight <= tl.clientHeight / 3);
+  held = nearEnd && performance.now() > leavingEndUntil && !(thin && thin.atNewest?.() === false) ? null : anchorOf(tl);
   holdSay(held ? App.sel(ui) : "");
 }
 const holdSizes = typeof ResizeObserver === "function" ? new ResizeObserver(() => holdFix(document.getElementById("timeline"))) : null;
@@ -593,6 +603,8 @@ function render() {
   // another timeline (or a send, a new thread: ScrollEnd) starts at its end
   if (scroll || tl !== tl2) {
     held = null;
+    // a send ends any gesture away from the end: the view follows its reply
+    leavingEndUntil = 0;
     holdSay("");
   }
   if (transitionPosition && tl2) {
@@ -619,6 +631,18 @@ function render() {
       el.classList.add("jumped");
     }
     jump = null;
+  }
+  if (searchJump && tl2 && searchJump.thread === (thin?.session?.sel ?? App.sel(ui))) {
+    const el = tl2.querySelector(`[data-id="${CSS.escape(searchJump.id)}"]`);
+    if (el) {
+      el.scrollIntoView({ block: "center" });
+      el.classList.remove("jumped");
+      void el.offsetWidth;
+      el.classList.add("jumped");
+      searchJump = null;
+    } else if (thin?.window?.older && searchJump.pages < 40) {
+      if (!searchJump.asked) { searchJump.asked = true; requestAnimationFrame(() => { if (searchJump) { searchJump.asked = false; if (thin.page()) searchJump.pages++; } }); }
+    } else if (thin?.ready) searchJump = null;
   }
   Solid.mount(document.getElementById("solid"));
   Plot2d.mount(document.getElementById("plot"));
@@ -1498,7 +1522,8 @@ function noteOlderGesture(e) {
   // the latest gesture's way wins: a swipe down right after one up must not
   // still ask for the older page (and the other way round)
   if (older && !newer) { olderGestureUntil = performance.now() + 1200;newerGestureUntil = 0; }
-  if (newer && !older) { newerGestureUntil = performance.now() + 1200;olderGestureUntil = 0;leavingEndUntil = 0; }
+  if (newer && !older) { newerGestureUntil = performance.now() + 1200;olderGestureUntil = 0;leavingEndUntil = 0;towardEndUntil = performance.now() + 700; }
+  if (older && !newer) towardEndUntil = 0;
   if (older && !newer && e.type !== "pointerdown") leaveEnd(tl || document.getElementById("timeline"));
   if (older && newer) { olderGestureUntil = newerGestureUntil = performance.now() + 1200; }
   // A timeline already at its top or bottom does not scroll, so no scroll
@@ -1788,7 +1813,7 @@ function showThinSearch(search) {
   for (const row of search.rows) {
     const button = document.createElement("button");button.type = "button";button.className = "row";
     button.textContent = row.text + (row.partial ? " …" : "");
-    button.addEventListener("click", () => { close();dispatch("select", row.thread); });rows.append(button);
+    button.addEventListener("click", () => { close();searchJump = row.id ? { id: row.id, thread: row.thread, pages: 0, asked: false } : null;dispatch("select", row.thread); });rows.append(button);
   }
   panel.append(rows);
   if (search.hasMore && search.cursor) {

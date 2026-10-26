@@ -2175,7 +2175,7 @@ def View.entries.r(+lc: I.Loc, es: List<&2, M.Entry>, rs: List<&2, FO.Role>, +st
 # a thread's entries, its runs of tool calls folded (the last stays open
 # while its turn runs)
 def View.entries.shown(+lc: I.Loc, +es: List<&2, M.Entry>, +st: M.State, +sel: String, +info: Map<&2, String>, +running: Bool, +ec: U.Ec) -> List<&2, D.Node>:
-  View.entries.r(lc, es, FO.Fold.roles.loc(lc, es, info, running), st, sel, ec, STP.Stamps.of(es, st, FO.Fold.now(info), running))
+  View.entries.r(lc, es, FO.Fold.roles.loc(lc, es, info, running), st, sel, ec, STP.Stamps.of.s(es, st, FO.Fold.now(info), running, STP.Stamp.stopped(U.Ui.thread(st, sel))))
 
 # Project both loaded and newly received activity at render time; no empty
 # DOM row or timestamp survives an internal delivery receipt.

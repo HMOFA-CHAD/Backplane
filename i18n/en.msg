@@ -365,6 +365,8 @@ sched.weekdays = weekdays at {time}
 # message times
 stamp.finished = Finished {clock}
 stamp.finished.took = Finished {clock} · {took}
+stamp.stopped = Stopped {clock}
+stamp.stopped.took = Stopped {clock} · {took}
 
 # subagent states
 state.running = running
