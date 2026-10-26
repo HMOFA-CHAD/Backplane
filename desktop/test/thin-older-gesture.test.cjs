@@ -3,16 +3,22 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),fs=requir
 function fixture(){
  const source=fs.readFileSync(path.resolve(__dirname,'../../src/web/host.js'),'utf8'),a=source.indexOf('function earlierCheck('),b=source.indexOf('document.addEventListener("click",',a),sent=[];
  class Element{constructor(){this.id='timeline';this.scrollTop=0;this.clientHeight=800;this.scrollHeight=2000;}closest(){return this;}querySelector(){return{getAttribute:()=> 'own-thread'};}getBoundingClientRect(){return{right:390};}}
- const frames=[],tl0={v:null},ctx={Element,viewMode:'view-v1',earlierAsked:false,performance:{now:()=>1},document:{addEventListener(){},body:{},getElementById:()=>tl0.v},dispatch:(a,v)=>{sent.push({a,v});return ctx.refuse?false:true;},requestAnimationFrame:f=>frames.push(f),leavingEndUntil:0,towardEndUntil:0,held:null,heldSize:null,focusedNode:null,frontendNode:null,anchorOf:()=>({id:'top',off:0}),holdSize:()=>({}),holdSay:v=>ctx.said.push(v),said:[],App:{sel:()=>'A'},ui:null,thin:null};vm.createContext(ctx);vm.runInContext(source.slice(a,b),ctx);const tl=new Element();tl0.v=tl;return{ctx,tl,sent,frames,run:()=>{while(frames.length)frames.shift()();},event:(type,extra)=>ctx.noteOlderGesture({type,target:tl,isTrusted:true,...extra})};
+ const frames=[],tl0={v:null},ctx={Element,viewMode:'view-v1',earlierAsked:false,historyBase:null,performance:{now:()=>1},document:{addEventListener(){},body:{},getElementById:()=>tl0.v},dispatch:(a,v)=>{sent.push({a,v});return ctx.refuse?false:true;},requestAnimationFrame:f=>frames.push(f),leavingEndUntil:0,towardEndUntil:0,held:null,heldSize:null,focusedNode:null,frontendNode:null,anchorOf:()=>({id:'top',off:0}),holdSize:()=>({}),holdSay:v=>ctx.said.push(v),said:[],App:{sel:()=>'A'},ui:null,thin:null};vm.createContext(ctx);vm.runInContext(source.slice(a,b),ctx);const tl=new Element();tl0.v=tl;return{ctx,tl,sent,frames,run:()=>{while(frames.length)frames.shift()();},event:(type,extra)=>ctx.noteOlderGesture({type,target:tl,isTrusted:true,...extra})};
 }
 test('render/initial scroll alone cannot start automatic older paging',()=>{
  const f=fixture();f.ctx.earlierCheck(f.tl);assert.equal(f.sent.length,0);
 });
-test('one real upward wheel gesture permits at most one older page',()=>{
- const f=fixture();f.event('wheel',{deltaY:-40});f.ctx.earlierCheck(f.tl);f.ctx.earlierAsked=false;f.ctx.earlierCheck(f.tl);assert.equal(f.sent.length,1);
+test('one upward gesture continues across short pages, with a bounded stationary burst',()=>{
+ const f=fixture();f.event('wheel',{deltaY:-40});for(let i=0;i<12;i++){f.ctx.earlierCheck(f.tl);f.ctx.earlierAsked=false;}assert.equal(f.sent.length,4);
+ f.event('wheel',{deltaY:-40});f.ctx.earlierCheck(f.tl);assert.equal(f.sent.length,5,'continued input resumes paging');
 });
 test('downward scrolling and ordinary text clicks do not trigger older download',()=>{
  const f=fixture();f.event('wheel',{deltaY:40});f.ctx.earlierCheck(f.tl);f.event('pointerdown',{button:0,clientX:50});f.ctx.earlierCheck(f.tl);assert.equal(f.sent.length,0);
+});
+test('reversing into newer spare rows permits paging down, while further upward eviction stays blocked',()=>{
+ const f=fixture();f.ctx.historyBase=[{id:'canonical'}];f.ctx.historySpare=[{id:'top'}];f.ctx.historySpare.direction='older';f.ctx.historyRow=n=>n.id;
+ assert.equal(f.ctx.historyCanPage(f.tl,'newer'),true);assert.equal(f.ctx.historyCanPage(f.tl,'older'),false);
+ f.ctx.historySpare.direction='newer';assert.equal(f.ctx.historyCanPage(f.tl,'older'),true);assert.equal(f.ctx.historyCanPage(f.tl,'newer'),false);
 });
 test('a finger movement toward older messages qualifies; a downward-reading gesture does not',()=>{
  const f=fixture();f.event('touchstart',{touches:[{clientY:100}]});f.event('touchmove',{touches:[{clientY:80}]});f.ctx.earlierCheck(f.tl);assert.equal(f.sent.length,0);f.event('touchmove',{touches:[{clientY:120}]});f.ctx.earlierCheck(f.tl);assert.equal(f.sent.length,1);
