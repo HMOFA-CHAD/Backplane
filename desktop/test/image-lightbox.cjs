@@ -8,7 +8,7 @@ assert(process.env.DBUS_SESSION_BUS_ADDRESS&&!process.env.DBUS_SESSION_BUS_ADDRE
 assert(!fs.existsSync(out),'Evidence directory must be new');fs.mkdirSync(out,{recursive:true});
 const baseline=process.argv.includes('--baseline'), info=JSON.parse(fs.readFileSync(path.join(stage,'LOCAL.json')));
 const home=fs.mkdtempSync(path.join(os.tmpdir(),'backplane-image-')),project=path.join(home,'project'),agents=path.join(home,'agents');
-for(const p of [project,agents])fs.mkdirSync(p);
+for(const p of [project,agents])fs.mkdirSync(p);fs.mkdirSync(path.join(home,'runtime'),{mode:0o700});
 for(const name of ['claude','codex','grok','muse','agy','opencode','pi','omp'])fs.writeFileSync(path.join(agents,name),'#!/bin/sh\nexit 127\n',{mode:0o755});
 const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
 function crc(bytes){let c=0xffffffff;for(const b of bytes){c^=b;for(let i=0;i<8;i++)c=(c>>>1)^((c&1)?0xedb88320:0);}return(c^0xffffffff)>>>0;}
@@ -29,7 +29,7 @@ function nativeKey(name,env){execFileSync('/usr/bin/python3',['-c',`import ctype
  xvfb=spawn(process.env.BACKPLANE_XVFB||'/home/h/.local/xvfb-root/usr/bin/Xvfb',['-displayfd','3','-screen','0','1280x960x24','-nolisten','tcp','-ac'],{stdio:['ignore','pipe','pipe','pipe']});
  fs.writeFileSync(path.join(out,'xvfb.pid'),String(xvfb.pid));
  const display=await Promise.race([once(xvfb.stdio[3],'data').then(([b])=>':'+b.toString().trim()),new Promise((_,reject)=>setTimeout(()=>reject(Error('Private display did not start')),10000).unref())]);
- const env={...process.env,DISPLAY:display,BACKPLANE_HOME:home,BACKPLANE_AGENTS:agents,BACKPLANE_COPY:'1',BACKPLANE_NO_UPDATE:'1',BACKPLANE_TELEMETRY:'off',BACKPLANE_PEERS:'',BACKPLANE_LOCK_DIR:path.join(home,'locks'),BACKPLANE_SERVICE:path.join(stage,'payload/backplane-serve'),BACKPLANE_WEB:path.join(stage,'payload/web'),BACKPLANE_SERVICE_VERSION:info.version};
+ const env={...process.env,DISPLAY:display,HOME:home,XDG_RUNTIME_DIR:path.join(home,'runtime'),XDG_CONFIG_HOME:path.join(home,'config'),XDG_CACHE_HOME:path.join(home,'cache'),XDG_DATA_HOME:path.join(home,'data'),NO_AT_BRIDGE:'1',BACKPLANE_HOME:home,BACKPLANE_AGENTS:agents,BACKPLANE_COPY:'1',BACKPLANE_NO_UPDATE:'1',BACKPLANE_TELEMETRY:'off',BACKPLANE_PEERS:'',BACKPLANE_LOCK_DIR:path.join(home,'locks'),BACKPLANE_SERVICE:path.join(stage,'payload/backplane-serve'),BACKPLANE_WEB:path.join(stage,'payload/web'),BACKPLANE_SERVICE_VERSION:info.version};
  Object.assign(process.env,env);service=new Service({home,binary:env.BACKPLANE_SERVICE,web:env.BACKPLANE_WEB,expectedVersion:info.version});const connection=await service.start();
  app=await _electron.launch({executablePath:path.join(stage,'desktop/runtime/backplane-desktop'),args:[],env,timeout:60000});page=await app.firstWindow();page.on('pageerror',error=>errors.push(error.message));
  await page.waitForFunction(()=>document.documentElement.dataset.backplaneRemoteReady==='true');
