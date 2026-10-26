@@ -13290,3 +13290,7 @@ def mail_empty_success_quiet(): {==}
 def mail_failed_empty_preserved(): {==}
 def mail_no_triage_grants_outside_run(): {==}
 def mail_silent_bot_envelope(s, now, th, text): {==}
+
+
+def codex_error_notice_kind(): {==}
+def codex_error_notice_no_effects(s, th, now, o): {==}
