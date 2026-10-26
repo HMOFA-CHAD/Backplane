@@ -13275,3 +13275,8 @@ def Laws.mirror_changed_basis_anchor(): {==}
 def Laws.retired_scratch_launch_refused(s, now, thread, by, p): {==}
 def Laws.retired_scratch_id(): {==}
 def Laws.legacy_active_visible(): {==}
+
+def Laws.ref_origin_no_link(s): {==}
+def Laws.ref_origin_return_local(): {==}
+def Laws.ref_origin_owner_remote(): {==}
+def Laws.ref_origin_foreign_untouched(): {==}

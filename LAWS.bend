@@ -12470,3 +12470,18 @@ law retired_scratch_id:
 
 law legacy_active_visible:
   {LEG.Legacy.unsettled(M.Active{}) == True{} : Bool}
+
+import ./src/core/ref-origin.bend as O
+
+law ref_origin_no_link:
+  for s: String
+  {O.Origin.text_links(False{}, s, "") == s : String}
+
+law ref_origin_return_local:
+  {O.Origin.id("peer~t", "peer") == "t" : String}
+
+law ref_origin_owner_remote:
+  {O.Origin.id("t", "peer") == "peer~t" : String}
+
+law ref_origin_foreign_untouched:
+  {O.Origin.id("other~t", "peer") == "other~t" : String}
