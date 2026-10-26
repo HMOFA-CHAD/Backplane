@@ -783,6 +783,10 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
             (next.hub.isEmpty() || links.any { link -> Pairing.key(link) == next.hub }) && (!cachedPresentation || fresh) && thinFresh
         }?.let { next ->
             cachedPresentation = false
+            // the screen went where the hub went: the ready mark follows it
+            // (else contentReady stayed false and every action was dropped)
+            if (startup[next.hub] == StartupPolicy.THIN && pendingNav == null && opening == null)
+                thinReady[next.hub]?.let { if (it.first == epochs[next.hub] && it.second != nav(next)) thinReady[next.hub] = it.first to nav(next) }
             if (pendingNav == nav(next)) pendingNav = null
             out.screenJSON?.takeIf { !cleared && (opening == null || opening?.nav == nav(next)) }?.let { raw ->
                 lastScreenJSON = raw

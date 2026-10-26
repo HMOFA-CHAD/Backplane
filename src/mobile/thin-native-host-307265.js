@@ -19,6 +19,11 @@ export function inertAncillary307265(envelope) {
   if (!plainObject(envelope)) return false;
   const keys = Reflect.ownKeys(envelope);
   if (envelope.t === 'hb') return keys.length === 1 && keys[0] === 't';
+  // a 3D model's note (server plot.bend's Pv.note: parts with no model) to
+  // the phones watching it: not a view frame. Taken for a stray frame it
+  // failed the view once a model loaded, and every tap after was dropped.
+  if (envelope.t === 'plotnote') return keys.every(k => k === 't' || k === 'key' || k === 'text') &&
+    typeof envelope.key === 'string' && typeof envelope.text === 'string' && utf8Bytes(JSON.stringify(envelope)) <= 65536;
   if (envelope.t !== 'info' || keys.length !== 2 || !keys.includes('t') || !keys.includes('info') || !plainObject(envelope.info)) return false;
   const info = Reflect.ownKeys(envelope.info);
   return info.length === 2 && info.includes('pair') && info.includes('pair.qr') &&
