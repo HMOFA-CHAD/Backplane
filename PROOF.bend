@@ -13285,3 +13285,8 @@ def startup_warm_accepted(w, rows):
   {==}
 def startup_warm_fallback(w, rows):
   {==}
+
+def mail_empty_success_quiet(): {==}
+def mail_failed_empty_preserved(): {==}
+def mail_no_triage_grants_outside_run(): {==}
+def mail_silent_bot_envelope(s, now, th, text): {==}

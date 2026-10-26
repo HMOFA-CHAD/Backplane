@@ -12497,3 +12497,17 @@ law startup_warm_fallback:
   for +w: BOOTWARM.Warm
   for +rows: List<&2, List<&2, String>>
   {BOOTWARM.Warm.choose(False{}, w, rows) == BOOTSNAP.Fill.threads(rows, Map.new(&2, M.Thread)) : Map<&2, M.Thread>}
+
+# Empty successful reports carry no outcome; real failures remain assessable.
+law mail_empty_success_quiet:
+  {H.Triage.bot.report(M.Completed{}, "") == False{} : Bool}
+law mail_failed_empty_preserved:
+  {H.Triage.bot.report(M.Failed{}, "") == True{} : Bool}
+law mail_no_triage_grants_outside_run:
+  {MDSP.Disposition.codex.triage(False{}) == [] : List<&2, String>}
+law mail_silent_bot_envelope:
+  for s: M.State
+  for now: Nat
+  for th: String
+  for text: String
+  {H.Triage.bot.file(False{}, s, now, th, text) == H.Step.none() : H.Step}

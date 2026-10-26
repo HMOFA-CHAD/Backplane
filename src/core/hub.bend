@@ -7302,10 +7302,23 @@ def Triage.ask(managed: Bool, +s: M.State, +now: Nat, +th: String, +ask: String,
 
 # Other bots' final reports also enter the one pipeline. Launched workers
 # already report through Lr, and private runs never report themselves.
+# A successful empty bot turn carries no report to assess. Do not create
+# an actionable envelope from its wrapper alone. Failed turns and source
+# asks still follow their existing paths; reminders are not bot reports.
+def Triage.bot.report(turn: M.TurnState, text: String) -> Bool:
+  match turn:
+    case M.Completed{}: Bool.not(String.is_empty(String.trim(text)))
+    case _: True{}
+
+def Triage.bot.file(report: Bool, +s: M.State, +now: Nat, +th: String, text: String) -> Step:
+  match report:
+    case False{}: Step.none()
+    case True{}: Operational.file(s, now, ML.Origin{Mail.addr(s, th), "bot", ""}, TRI.Triage.thread(s), "Bot report from " ++ REF.Ref.uri(REF.Ref.thread(th)) ++ ":\n" ++ text, "triage-bot:" ++ th ++ ":" ++ Nat.show(now), Nil{})
+
 def Triage.bot.end(report: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
   match report:
     case False{}: Step.none()
-    case True{}: Operational.file(s, now, ML.Origin{Mail.addr(s, th), "bot", ""}, TRI.Triage.thread(s), "Bot report from " ++ REF.Ref.uri(REF.Ref.thread(th)) ++ ":\n" ++ Task.last(s, th), "triage-bot:" ++ th ++ ":" ++ Nat.show(now), Nil{})
+    case True{}: Triage.bot.file(Triage.bot.report(M.Thread.turn(Hub.thread(s, th)), Task.last(s, th)), s, now, th, Task.last(s, th))
 
 def Triage.ended(+before: M.State, +now: Nat, +th: String, +st: Step) -> Step:
   +s = M.State.replay(Queue.changes(st), before)
