@@ -458,6 +458,8 @@ function anchorOf(tl) {
 let held = null;
 // until when an upward gesture keeps the end from catching the view (leaveEnd)
 let leavingEndUntil = 0;
+// until when a downward gesture lets the end catch the view from near it
+let towardEndUntil = 0;
 let away = "";
 // where the last of our own corrections left the timeline: its scroll
 // event is ours, not the person's, and keeps the offset held (no drift)
@@ -509,7 +511,11 @@ function holdRead(tl) {
   // thread's: it holds like anywhere else, and newer rows come by scrolling
   // while an upward gesture lasts the end does not catch the view again:
   // a smooth scroll's first frames are still within the end's few px
-  held = holdEnd(tl) && performance.now() > leavingEndUntil && !(thin && thin.atNewest?.() === false) ? null : anchorOf(tl);
+  // and a downward gesture that brings it within a third of a screen of the
+  // end catches up: a reply streaming faster than the wheel moves left the
+  // view a few lines short of the end for good
+  const nearEnd = holdEnd(tl) || (performance.now() < towardEndUntil && tl.scrollHeight - tl.scrollTop - tl.clientHeight <= tl.clientHeight / 3);
+  held = nearEnd && performance.now() > leavingEndUntil && !(thin && thin.atNewest?.() === false) ? null : anchorOf(tl);
   holdSay(held ? App.sel(ui) : "");
 }
 const holdSizes = typeof ResizeObserver === "function" ? new ResizeObserver(() => holdFix(document.getElementById("timeline"))) : null;
@@ -593,6 +599,8 @@ function render() {
   // another timeline (or a send, a new thread: ScrollEnd) starts at its end
   if (scroll || tl !== tl2) {
     held = null;
+    // a send ends any gesture away from the end: the view follows its reply
+    leavingEndUntil = 0;
     holdSay("");
   }
   if (transitionPosition && tl2) {
@@ -1498,7 +1506,8 @@ function noteOlderGesture(e) {
   // the latest gesture's way wins: a swipe down right after one up must not
   // still ask for the older page (and the other way round)
   if (older && !newer) { olderGestureUntil = performance.now() + 1200;newerGestureUntil = 0; }
-  if (newer && !older) { newerGestureUntil = performance.now() + 1200;olderGestureUntil = 0;leavingEndUntil = 0; }
+  if (newer && !older) { newerGestureUntil = performance.now() + 1200;olderGestureUntil = 0;leavingEndUntil = 0;towardEndUntil = performance.now() + 700; }
+  if (older && !newer) towardEndUntil = 0;
   if (older && !newer && e.type !== "pointerdown") leaveEnd(tl || document.getElementById("timeline"));
   if (older && newer) { olderGestureUntil = newerGestureUntil = performance.now() + 1200; }
   // A timeline already at its top or bottom does not scroll, so no scroll
