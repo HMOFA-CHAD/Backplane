@@ -13266,3 +13266,8 @@ def Laws.fq_room_keyed(): {==}
 # ---- end far queue ----
 
 def Laws.queue_copy_refuses_network(): {==}
+
+def Laws.mirror_no_authority(mirrors, thread): {==}
+def Laws.mirror_no_source_state(st, thread): {==}
+def Laws.mirror_local_epoch(epoch): {==}
+def Laws.mirror_changed_basis_anchor(): {==}
