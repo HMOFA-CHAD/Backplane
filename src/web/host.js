@@ -6,6 +6,7 @@
 // is dumb).
 
 import App from "./app.bend";
+import { installImageActions } from "./image-actions.js";
 import { BubMoveObserver, showBubMove } from "./bub-move.js";
 const bubMoves = new BubMoveObserver((before, after) => Wire.plain(App.bub_move(JSON.stringify(before), JSON.stringify(after))));
 function bubMoveSync() {
@@ -1507,8 +1508,10 @@ function lbLater() {
 
 function lbClose() {
   if (!lb) return;
+  const focus = lb.focus;
   lb.el.remove();
   lb = null;
+  if (focus?.isConnected) focus.focus({ preventScroll: true });
   desktopBrowser.sync();
 }
 
@@ -1521,7 +1524,8 @@ function lbOpen(url) {
   lbClose();
   const el = create(App.lb_node_in(App.lang(ui), url));
   const img = el.querySelector("img");
-  lb = { el, img, v: App.lb_open(), drawing: false, pointers: new Map(), pinch: null };
+  lb = { el, img, v: App.lb_open(), drawing: false, pointers: new Map(), pinch: null, focus: document.activeElement };
+  installImageActions(el, img, url);
   img.style.visibility = "hidden"; // until loaded; lb_css then sets the whole style
   img.addEventListener("load", lbDraw);
   el.addEventListener("wheel", (e) => {
@@ -1533,7 +1537,7 @@ function lbOpen(url) {
     lbDraw();
   }, { passive: false });
   el.addEventListener("pointerdown", (e) => {
-    if (e.target.closest("[data-lb-close]")) return;
+    if (e.button !== 0 || e.target.closest("button,[role=status]")) return;
     e.preventDefault();
     el.setPointerCapture(e.pointerId);
     lb.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -1575,7 +1579,7 @@ function lbOpen(url) {
   });
   document.body.appendChild(el);
   desktopBrowser.sync();
-  document.activeElement?.blur?.();
+  el.querySelector('[data-lb-close]').focus({ preventScroll: true });
   if (img.complete) lbDraw();
 }
 
@@ -1697,6 +1701,12 @@ document.addEventListener("click", (e) => {
 document.addEventListener("keydown", (e) => {
   if (!lb) return;
   e.stopImmediatePropagation();
+  if (e.key === 'Tab') {
+    const controls = [...lb.el.querySelectorAll('button:not([hidden]):not(:disabled)')];
+    const at = controls.indexOf(document.activeElement);
+    e.preventDefault();
+    controls[(at + (e.shiftKey ? controls.length - 1 : 1)) % controls.length]?.focus();
+  }
   if (App.lb_key(e.key)) {
     e.preventDefault();
     lbClose();
