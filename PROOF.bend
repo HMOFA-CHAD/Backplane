@@ -13280,3 +13280,8 @@ def Laws.ref_origin_no_link(s): {==}
 def Laws.ref_origin_return_local(): {==}
 def Laws.ref_origin_owner_remote(): {==}
 def Laws.ref_origin_foreign_untouched(): {==}
+
+def startup_warm_accepted(w, rows):
+  {==}
+def startup_warm_fallback(w, rows):
+  {==}

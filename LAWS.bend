@@ -12485,3 +12485,15 @@ law ref_origin_owner_remote:
 
 law ref_origin_foreign_untouched:
   {O.Origin.id("other~t", "peer") == "other~t" : String}
+
+# Boot-only decoded threads never cross a checkpoint mismatch.
+import ./src/server/hotboot.bend as BOOTWARM
+import ./src/core/snapshot.bend as BOOTSNAP
+law startup_warm_accepted:
+  for +w: BOOTWARM.Warm
+  for +rows: List<&2, List<&2, String>>
+  {BOOTWARM.Warm.choose(True{}, w, rows) == BOOTWARM.Warm.threads(w) : Map<&2, M.Thread>}
+law startup_warm_fallback:
+  for +w: BOOTWARM.Warm
+  for +rows: List<&2, List<&2, String>>
+  {BOOTWARM.Warm.choose(False{}, w, rows) == BOOTSNAP.Fill.threads(rows, Map.new(&2, M.Thread)) : Map<&2, M.Thread>}
