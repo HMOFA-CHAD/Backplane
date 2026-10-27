@@ -13294,3 +13294,15 @@ def mail_silent_bot_envelope(s, now, th, text): {==}
 
 def codex_error_notice_kind(): {==}
 def codex_error_notice_no_effects(s, th, now, o): {==}
+
+def Laws.life_fresh_owned_wakes():
+  {==}
+
+def Laws.life_owned_progress_held():
+  {==}
+
+def Laws.life_fresh_child_wakes():
+  {==}
+
+def Laws.life_later_manual_settle_held():
+  {==}
