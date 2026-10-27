@@ -12522,3 +12522,18 @@ law codex_error_notice_no_effects:
   for now: Nat
   for o: J.Json
   {H.Step.outs_of(H.Codex.error.step(s, th, now, o)) == [] : List<&2, H.Out>}
+
+# A distinct owned identity starts new work even while the turn runs.
+law life_fresh_owned_wakes:
+  {H.Shelve.step(H.Shelve.demo([M.ThreadSettled{"t1", True{}, 3n}]), [M.WorkSet{"t1", "bg", "new\tx", 4n}]) == [M.ThreadWoke{"t1", 4n}] : List<&2, M.Change>}
+
+# Updating that same job is progress, not a new start.
+law life_owned_progress_held:
+  {H.Shelve.step(H.Shelve.demo([M.WorkSet{"t1", "bg", "old\tx", 2n}, M.ThreadSettled{"t1", True{}, 3n}]), [M.WorkSet{"t1", "bg", "old\tmore", 4n}]) == [] : List<&2, M.Change>}
+
+law life_fresh_child_wakes:
+  {H.Shelve.step(H.Shelve.demo([M.ThreadSettled{"t1", True{}, 3n}]), [M.TaskDelegated{"k1", "t1", "child", 1n, "codex", "", 4n}]) == [M.ThreadWoke{"t1", 4n}] : List<&2, M.Change>}
+
+# The person's later settle is authoritative within a transaction too.
+law life_later_manual_settle_held:
+  {H.Shelve.step(H.Shelve.demo([]), [M.WorkSet{"t1", "bg", "new\tx", 4n}, M.ThreadSettled{"t1", True{}, 4n}]) == [] : List<&2, M.Change>}

@@ -69,7 +69,7 @@
     "src/core/mailview.bend": "e1cac757c5f34457a745f095642f6675befed68d5b87aae30f14b706dff015b1",
     "src/core/mech.bend": "79fb3307d0d6868a777924d4b934ac8a1671937e265942467f6c60cc4db82efb",
     "src/core/menu.bend": "807668923de70eaabb72ddb760f808cbf6d786b70822ba6a1180776758af7eee",
-    "src/core/model.bend": "5a67e9bdca81f35c2f151c541277b117600eaf352b38e0b99ccea3f6abe9eadf",
+    "src/core/model.bend": "3d66f2339799f2dc8c5353f9e45066b79fc5a401cc59a9f6fdf6dfd7916c8c71",
     "src/core/msgs.bend": "dfc361d44ee34a12f8ba8628498032f6943668c3428c00db25ef9cb7477f4f3c",
     "src/core/notice.bend": "ee87318c1f12fc6cfb23bb5e24e90709e1f9a2eadfd2832581d21590f596e5e0",
     "src/core/onboard.bend": "55ccccf20f706a0acad492de20e23aedc751c7e9ce61b6f3430bfd65796e9232",
@@ -239,7 +239,17 @@
       "scope": "Only three added catalog keys and deterministic generated lookup-tree repartition. Existing catalog text and named sidebar labels, draft readers, keys and unknown@ retention are unchanged. Conservative source-reference graph is not a compiler AST proof.",
       "fullOutputCheck": "test/sidebar_draft_image_test.bend",
       "assertions": 24
+    },
+    "freshOwnedSettlement": {
+      "changedClosureFiles": [
+        "src/core/model.bend"
+      ],
+      "reachableFunctions": 873,
+      "changedReachableBodies": [],
+      "kind": "Conservative source reference graph, not compiler AST proof. New Shelve helpers are outside sidebar projection; model change is comment-only; draft readers/unknown@ policy unchanged.",
+      "fullOutputAssertions": 24,
+      "sourceSnapshot": "/home/h/Documents/i2cjak/bp-coord/settle-fresh-work/SOURCE-structural-correction.json"
     }
   },
-  "reviewNote": "Image lightbox labels: three catalog additions; unchanged873 sidebar reachable bodies/readers.24 affected full-output checks passed; unknown@ and full-main/picture freshness preserved; fail-closed guard unchanged."
+  "reviewNote": "Fresh owned-work settlement: new Shelve helpers outside unchanged sidebar projection; model comment only. Conservative graph and24 full-output checks retain draft/unknown@/picture semantics."
 }

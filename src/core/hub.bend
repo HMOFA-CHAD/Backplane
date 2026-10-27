@@ -6493,18 +6493,148 @@ def Shelve.fresh.u(r: M.Role, +t: String, +th: String) -> Bool:
     case _:
       False{}
 
-# whether the step brings the thread new input: a message for it (not the
-# agent's own) or one queued for it (Lifecycle.wake.fresh)
-def Shelve.fresh(cs: List<&2, M.Change>, +th: String) -> Bool:
-  match cs:
-    case Nil{}:
-      False{}
-    case M.MessagePosted{+t, _, r, _, _} <> rest:
-      Bool.or(Shelve.fresh.u(r, t, th), Shelve.fresh(rest, th))
-    case M.TurnQueued{+t, _, _, _} <> rest:
-      Bool.or(String.eq(t, th), Shelve.fresh(rest, th))
+# These local identity scans return at the first match. The tail calls
+# stay bounded in stack even when a manually settled thread has a long log.
+def Shelve.rows.has.go(xs: List<&2, String>, +id: String, found: Bool) -> Bool:
+  match xs:
+    case Nil{}: found
+    case +l <> rest:
+      match found:
+        case True{}: True{}
+        case False{}: Shelve.rows.has.go(rest, id, M.Bg.is(l, id))
+
+def Shelve.rows.has(xs: List<&2, String>, +id: String) -> Bool:
+  Shelve.rows.has.go(xs, id, False{})
+
+# Snapshot updates count as fresh work only when they introduce a live
+# identity. Progress, launch acknowledgments and completions keep the same
+# identity and do not undo a manual settle, even if the busy count changes.
+def Shelve.rows.fresh.go(xs: List<&2, String>, +old: List<&2, String>, found: Bool) -> Bool:
+  match xs:
+    case Nil{}: found
+    case +l <> rest:
+      match found:
+        case True{}: True{}
+        case False{}:
+          Shelve.rows.fresh.go(rest, old, Bool.and(Bool.not(M.Bg.ended(l)), Bool.and(Bool.not(String.is_empty(M.Bg.field(l, 0n))), Bool.not(Shelve.rows.has(old, M.Bg.field(l, 0n))))))
+
+def Shelve.rows.fresh(xs: List<&2, String>, +old: List<&2, String>) -> Bool:
+  Shelve.rows.fresh.go(xs, old, False{})
+
+def Shelve.queue.has.go(qs: List<&2, M.QItem>, +msg: String, found: Bool) -> Bool:
+  match qs:
+    case Nil{}: found
+    case M.QItem{+id, _} <> rest:
+      match found:
+        case True{}: True{}
+        case False{}: Shelve.queue.has.go(rest, msg, String.eq(id, msg))
+
+def Shelve.queue.has(qs: List<&2, M.QItem>, +msg: String) -> Bool:
+  Shelve.queue.has.go(qs, msg, False{})
+
+def Shelve.input.seen.go(es: List<&2, M.Entry>, +msg: String, found: Bool) -> Bool:
+  match es:
+    case Nil{}: found
+    case M.Msg{+id, _, _, _, _} <> rest:
+      match found:
+        case True{}: True{}
+        case False{}: Shelve.input.seen.go(rest, msg, String.eq(id, msg))
     case _ <> rest:
-      Shelve.fresh(rest, th)
+      match found:
+        case True{}: True{}
+        case False{}: Shelve.input.seen.go(rest, msg, False{})
+
+def Shelve.input.seen(es: List<&2, M.Entry>, +msg: String) -> Bool:
+  Shelve.input.seen.go(es, msg, False{})
+
+# Check the small queue before consulting the thread's history.
+def Shelve.input.new.k(queued: Bool, +s: M.State, +th: String, +msg: String) -> Bool:
+  match queued:
+    case True{}: False{}
+    case False{}: Bool.not(Shelve.input.seen(M.State.mine(s, th), msg))
+
+def Shelve.input.new(+s: M.State, +th: String, +msg: String) -> Bool:
+  Shelve.input.new.k(Shelve.queue.has(M.Queue.items(s, th), msg), s, th, msg)
+
+# Real activity is accepted at its event boundary, against the state just
+# before it. Older callbacks cannot supersede a later manual settlement.
+def Shelve.recent.k(o: M.Override, +sa: Nat, +at: Nat) -> Bool:
+  match o:
+    case M.ForcedSettled{}: Nat.is_ge(at, sa)
+    case _: True{}
+
+def Shelve.recent(+s: M.State, +th: String, +at: Nat) -> Bool:
+  Shelve.recent.k(M.Lifecycle.override(M.State.thread.get(s, th)), M.Lifecycle.settled_at(M.State.thread.get(s, th)), at)
+
+# Only a recent user message for this thread may read its history.
+def Shelve.input.recent(recent: Bool, +s: M.State, +th: String, +msg: String) -> Bool:
+  match recent:
+    case False{}: False{}
+    case True{}: Shelve.input.new(s, th, msg)
+
+def Shelve.input.for(hit: Bool, +s: M.State, +th: String, +msg: String, +at: Nat) -> Bool:
+  match hit:
+    case False{}: False{}
+    case True{}: Shelve.input.recent(Shelve.recent(s, th, at), s, th, msg)
+
+def Shelve.input.role(r: M.Role, +s: M.State, +t: String, +th: String, +msg: String, +at: Nat) -> Bool:
+  match r:
+    case M.User{}: Shelve.input.for(String.eq(t, th), s, th, msg, at)
+    case _: False{}
+
+def Shelve.fresh.event(+s: M.State, c: M.Change, +th: String) -> Bool:
+  match c:
+    case M.MessagePosted{+t, +msg, r, _, +at}:
+      Shelve.input.role(r, s, t, th, msg, at)
+    case M.TurnQueued{+t, +msg, _, +at}:
+      Bool.and(String.eq(t, th), Bool.and(Shelve.recent(s, th, at), Bool.not(Shelve.queue.has(M.Queue.items(s, th), msg))))
+    case M.WorkSet{+t, +kind, rows, +at}:
+      Bool.and(String.eq(t, th), Bool.and(Shelve.recent(s, th, at), Bool.and(Bool.or(String.eq(kind, "bg"), String.eq(kind, "watch")),
+        Shelve.rows.fresh(M.Bg.lines(rows), M.Bg.lines(M.Setting.get(s, kind ++ "." ++ th, ""))))))
+    case M.TaskDelegated{+id, +parent, _, _, _, _, +at}:
+      Bool.and(String.eq(parent, th), Bool.and(Shelve.recent(s, th, at), String.is_empty(M.Lifecycle.task.parent(s, id))))
+    case M.TurnChanged{+t, M.Running{}, +at}:
+      Bool.and(String.eq(t, th), Bool.and(Shelve.recent(s, th, at), Bool.not(M.State.running.k(M.State.thread.get(s, th)))))
+    case _: False{}
+
+# A settle later in the same transaction wins over the work before it;
+# work accepted after that settle can wake it, including in the same second.
+def Shelve.hold(c: M.Change, +th: String) -> Bool:
+  match c:
+    case M.ThreadSettled{+t, _, _}: String.eq(t, th)
+    case M.ThreadMerged{+t, _, _}: String.eq(t, th)
+    case _: False{}
+
+def Shelve.held.go(cs: List<&2, M.Change>, +th: String, found: Bool) -> Bool:
+  match cs:
+    case Nil{}: found
+    case +c <> rest:
+      match found:
+        case True{}: True{}
+        case False{}: Shelve.held.go(rest, th, Shelve.hold(c, th))
+
+def Shelve.held(cs: List<&2, M.Change>, +th: String) -> Bool:
+  Shelve.held.go(cs, th, False{})
+
+def Shelve.fresh.next(hold: Bool, fresh: Bool, +s: M.State, c: M.Change, +th: String) -> Bool:
+  match hold:
+    case True{}: False{}
+    case False{}:
+      match fresh:
+        case True{}: True{}
+        case False{}: Shelve.fresh.event(s, c, th)
+
+def Shelve.fresh.go(cs: List<&2, M.Change>, +s: M.State, +th: String, fresh: Bool) -> Bool:
+  match cs:
+    case Nil{}: fresh
+    case +c <> rest:
+      Shelve.fresh.go(rest, M.State.apply.go(s, c), th, Shelve.fresh.next(Shelve.hold(c, th), fresh, s, c, th))
+
+# Active streaming threads skip the event scan entirely.
+def Shelve.fresh.on(sh: M.Shelf, cs: List<&2, M.Change>, +pre: M.State, +th: String) -> Bool:
+  match sh:
+    case M.Settled{}: Shelve.fresh.go(cs, pre, th, False{})
+    case _: False{}
 
 def Shelve.one.k(wake: Bool, done: Bool, +th: String, +at: Nat, +t: M.Thread, rest: List<&2, M.Change>) -> List<&2, M.Change>:
   match wake done:
@@ -6524,7 +6654,8 @@ def Shelve.wake(+pre: M.State, +post: M.State, +k0: Map<&2, Nat>, +k1: Map<&2, N
   Shelve.wake.k(M.Lifecycle.working(k0, pre, M.State.thread.get(pre, th)), M.Lifecycle.working(k1, post, M.State.thread.get(post, th)), fresh, post, th)
 
 def Shelve.one(+cs: List<&2, M.Change>, +pre: M.State, +post: M.State, +k0: Map<&2, Nat>, +k1: Map<&2, Nat>, +navs: Map<&2, M.Nav>, +th: String, +at: Nat, rest: List<&2, M.Change>) -> List<&2, M.Change>:
-  Shelve.one.k(Shelve.wake(pre, post, k0, k1, th, Shelve.fresh(cs, th)), M.Lifecycle.done(k1, post, M.State.thread.get(post, th), M.Snooze.on(at, M.Nav.until(M.Nav.get(navs, th)))),
+  Shelve.one.k(Bool.or(Bool.and(Bool.and(Bool.not(Shelve.held(cs, th)), Shelve.recent(pre, th, at)), Shelve.wake(pre, post, k0, k1, th, False{})),
+      M.Lifecycle.wake.fresh(Shelve.fresh.on(M.Shelf.of(M.State.thread.get(post, th)), cs, pre, th), M.Lifecycle.working(k1, post, M.State.thread.get(post, th)), M.Shelf.of(M.State.thread.get(post, th)))), M.Lifecycle.done(k1, post, M.State.thread.get(post, th), M.Snooze.on(at, M.Nav.until(M.Nav.get(navs, th)))),
     th, at, M.State.thread.get(post, th), rest)
 
 def Shelve.go(xs: List<&2, SvAt>, +cs: List<&2, M.Change>, +pre: M.State, +post: M.State, +k0: Map<&2, Nat>, +k1: Map<&2, Nat>, +navs: Map<&2, M.Nav>) -> List<&2, M.Change>:
