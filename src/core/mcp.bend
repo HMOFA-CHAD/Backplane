@@ -593,7 +593,7 @@ def Mcp.config.live(t: M.Thread) -> Bool:
     case M.Thread{_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, deleted}: Bool.not(deleted)
 
 def Mcp.config.same(+s: M.State, +now: Nat, +target: String, +model: String) -> List<&2, M.Change>:
-  Bool.pick(List<&2, M.Change>, String.eq(B.Turn.model(B.Hub.thread(s, target)), model), Nil{},
+  Bool.pick(List<&2, M.Change>, String.eq(B.Turn.model(B.Hub.thread(s, target)), model), B.Config.hold(s, now, target),
     B.Queue.changes(B.Hub.modes(s, now, 0, "", J.Json.obj([J.KV{"model", J.Str{model}}]), B.Hub.thread(s, target))))
 
 def Mcp.config.changes(same: Bool, +s: M.State, +now: Nat, +target: String, +provider: String, +model: String) -> List<&2, M.Change>:
@@ -975,7 +975,7 @@ def Mcp.tools() -> J.Json:
        Tool.prop("provider", "string", "claude, codex, grok, muse, antigravity, opencode, pi or omp (default: the user's default)."), Tool.prop("model", "string", "Model (default: the provider's default)."),
        Tool.prop("project", "string", "The project's name or id (default: this thread's; bots must give one); on another machine its <link>~<id> from machine_list."),
        Tool.prop("machine", "string", "Start it on another machine of the person's, in its project of that name (machine_list).")], ["prompt"]),
-    Tool.def("thread_update", "Configure a thread's provider/model between turns without sending a message or starting an agent; answers the saved status. Running turns are rejected. Fresh choices are silent; established history is kept for the next real prompt. With no provider/model: rename with title, regenerate the title with no title, or change a launched thread's reports with report. Configuration cannot be combined with title/report.",
+    Tool.def("thread_update", "Configure a thread's provider/model between turns without sending a message or starting an agent; answers the saved status. Running turns are rejected. Stopped queued work stays held until a new request or explicit resume. Fresh choices are silent; established history is kept for the next real prompt. With no provider/model: rename with title, regenerate the title with no title, or change a launched thread's reports with report. Configuration cannot be combined with title/report.",
       [Tool.prop("threadId", "string", "The thread (default: this one), or its <link>~<id> on another machine."), Tool.prop("provider", "string", "claude, codex, grok, muse, antigravity, opencode, pi or omp. A different provider uses its default model unless model is given; accounts are unchanged."),
        Tool.prop("model", "string", "Set the selected provider's model; empty selects its default. May be used alone."), Tool.prop("title", "string", "The new title; empty to regenerate it."), Tool.prop("report", "boolean", "For a thread you launched: whether its reports come to you.")], Nil{}),
     Tool.def("thread_wait", "Wait until a thread in this project has finished its turn, or until timeoutMs passes. Answers its state, whether it is done, and its last reply. For anything longer than a few minutes use wake_on instead and end your turn.",

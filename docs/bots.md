@@ -36,6 +36,9 @@ change. Choices before the first conversation are silent; an established
 conversation keeps its sessions, account bindings and necessary history
 handoff for the next real prompt. Use configuration separately from
 `title` or `report`; leaving all of these out still regenerates the title.
+Configuring a stopped thread keeps its saved queue and recovery work held,
+including after quota reset, worktree readiness or restart. A new request
+or explicit resume releases that hold; configuration alone never does.
 
 New work gets a visible thread. A bot starts it with `thread_launch` and
 its `project`, and `delegate_task` from a bot needs a `project` too (law
