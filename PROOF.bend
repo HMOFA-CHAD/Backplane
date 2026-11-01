@@ -5044,6 +5044,9 @@ def Laws.switch_between_turns():
 def Laws.switch_same_nothing():
   {==}
 
+def Laws.switch_initial_choice_quiet():
+  {==}
+
 def Laws.switch_new_session():
   {==}
 

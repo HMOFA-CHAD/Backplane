@@ -3345,12 +3345,20 @@ def Switch.effort.of(m: Maybe<&2, J.Json>) -> List<&2, String>:
     case None{}:
       Nil{}
 
-def Switch.go(+s: M.State, +now: Nat, +client: U32, +id: String, +th: String, +from: String, +to: String, +model: String, es: List<&2, String>) -> Step:
+# The initial selection is configuration: a notice would itself become
+# history and make the next pre-conversation selection queue a handoff.
+# Harness configuration uses the same session/context changes silently.
+def Switch.changes(+s: M.State, +now: Nat, +th: String, +from: String, +to: String, +model: String, es: List<&2, String>, announce: Bool) -> List<&2, M.Change>:
   +seen = M.Switch.seen(s, th, to)
-  +missed = Nat.sub(M.Switch.count(s, th), seen)
-  Step{List.concat(&2, M.Change, [Switch.old(M.Queue.items(s, th), th, now), [M.ProviderSet{th, to, model, now}], Switch.effort(es, th, to, now),
+  +count = M.Switch.count(s, th)
+  +missed = Nat.sub(count, seen)
+  List.concat(&2, M.Change, [Switch.old(M.Queue.items(s, th), th, now), [M.ProviderSet{th, to, model, now}], Switch.effort(es, th, to, now),
       Switch.ctx(Nat.is_eq(missed, 0n), th, HD.Hand.prefix() ++ "switch:" ++ Nat.show(Hub.seq(s)), HD.Hand.switch(Hub.entries(s), th, from, to, seen), now),
-      [M.ActivityLogged{th, Hub.id("p", now, Hub.seq(s)), "info", "provider", "Now on " ++ to ++ Bool.pick(String, Nat.is_eq(missed, 0n), "", "; it gets what it missed with the next message"), now}]]),
+      Bool.pick(List<&2, M.Change>, Bool.and(announce, Nat.is_gt(count, 0n)),
+        [M.ActivityLogged{th, Hub.id("p", now, Hub.seq(s)), "info", "provider", "Now on " ++ to ++ Bool.pick(String, Nat.is_eq(missed, 0n), "", "; it gets what it missed with the next message"), now}], Nil{})])
+
+def Switch.go(+s: M.State, +now: Nat, +client: U32, +id: String, +th: String, +from: String, +to: String, +model: String, es: List<&2, String>) -> Step:
+  Step{Switch.changes(s, now, th, from, to, model, es, True{}),
     [Reply.ok(client, id), AgentStop{th}]}
 
 def Switch.k(run: Bool, same: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +th: String, +from: String, +to: String, +model: String, es: List<&2, String>) -> Step:

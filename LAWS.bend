@@ -3007,6 +3007,12 @@ law switch_between_turns:
 law switch_same_nothing:
   {H.Queue.changes(H.Hub.switch(H.Demo.state("claude", M.Completed{}), 5n, 0, "1", "t1", "claude")) == [] : List<&2, M.Change>}
 
+# A first provider choice creates neither narrative history nor a queued
+# handoff; another choice before the first message remains initial too.
+law switch_initial_choice_quiet:
+  {H.Queue.changes(H.Hub.switch.as(H.Demo.state("claude", M.Idle{}), 5n, 0, "1", "t1", "codex", "gpt-6.1-sol", ["high"]))
+    == [M.ProviderSet{"t1", "codex", "gpt-6.1-sol", 5n}, M.SettingSet{"effort.t1", "high", 5n}] : List<&2, M.Change>}
+
 # each provider keeps its own session: a new one starts fresh, and coming
 # back resumes the one it had
 law switch_new_session:
