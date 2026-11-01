@@ -2,7 +2,9 @@
   <a href="README.jp.md"><img src="docs/media/readme/language-ja.svg" alt="日本語" width="92" height="28"></a>
 </p>
 
-<h1>Backplane</h1>
+<p align="center">
+  <img src="docs/media/readme/backplane-banner.png" alt="Backplane, the default for agentic CAD">
+</p>
 
 1. Backplane is a TOTALLY open-source workspace for agentic hardware development.
 2. Backplane is a [KiCad fork](https://github.com/i2cjak/Backplane_KiCad).
